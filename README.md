@@ -14,3 +14,12 @@ So he should be limited some how, but not having these things (till now) :
 
 > Currently watching this seriese -> [Chess Engine in C](https://www.youtube.com/playlist?list=PLZ1QII7yudbc-Ky058TEaOstZHVbT-2hg)
 
+## Roadmap
+
+[x] - defs
+[] - board representation
+[] - pring/debug
+[] - move generation
+[] - make/undo
+[] - search
+
