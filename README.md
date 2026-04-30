@@ -16,10 +16,11 @@ So he should be limited some how, but not having these things (till now) :
 
 ## Roadmap
 
-[x] - defs
-[] - board representation
-[] - pring/debug
-[] - move generation
-[] - make/undo
-[] - search
+**Engine Roadmap**:
 
+- [x] Definitions (defs)
+- [ ] Board Representation
+- [ ] Debug / Printing
+- [ ] Move Generation
+- [ ] Make / Undo Moves
+- [ ] Search (Minimax / Alpha-Beta)
