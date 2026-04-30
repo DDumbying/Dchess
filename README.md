@@ -8,6 +8,7 @@ So he should be limited some how, but not having these things (till now) :
 
 - No Networking
 - **Could** have it's own desing.
+- F Windows
 - IDK what's also but we will see
 
 > Currently watching this seriese -> [Chess Engine in C](https://www.youtube.com/playlist?list=PLZ1QII7yudbc-Ky058TEaOstZHVbT-2hg)
