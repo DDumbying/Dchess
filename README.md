@@ -17,9 +17,9 @@ So he should be limited some how, but not having these things (till now) :
 **Engine Roadmap**:
 
 - [x] Definitions (defs) -> 39550f8
-- [ ] Board Representation
-- [ ] Debug / Printing
-- [ ] Move Generation
+- [x] Board Representation
+- [x] Debug / Printing
+- [x] Move Generation
 - [ ] Make / Undo Moves
 - [ ] Search (Minimax / Alpha-Beta)
 

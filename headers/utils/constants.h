@@ -8,7 +8,8 @@ enum {
 };
 
 enum {
-    PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING
+    P, N, B, R, Q, K,   // white
+    p, n, b, r, q, k    // black
 };
 
 #endif

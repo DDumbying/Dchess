@@ -3,9 +3,9 @@
 
 #include <stdint.h>
 
-typedef uint64_t u64;
+typedef uint64_t U64;
 
-typedef int score;
-typedef int move;
+typedef int Score;
+typedef int Move;
 
 #endif
