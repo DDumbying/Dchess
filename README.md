@@ -19,7 +19,7 @@ So he should be limited some how, but not having these things (till now) :
 - [x] Definitions (defs) -> 39550f8
 - [x] Board Representation
 - [x] Debug / Printing
-- [x] Move Generation
+- [ ] Move Generation
 - [ ] Make / Undo Moves
 - [ ] Search (Minimax / Alpha-Beta)
 
