@@ -12,15 +12,16 @@ So he should be limited some how, but not having these things (till now) :
 - F Windows.
 - IDK what's also but we will see..
 
-> Currently watching this seriese -> [Chess Engine in C](https://www.youtube.com/playlist?list=PLZ1QII7yudbc-Ky058TEaOstZHVbT-2hg)
-
 ## Roadmap
 
 **Engine Roadmap**:
 
-- [x] Definitions (defs)
+- [x] Definitions (defs) -> 39550f8
 - [ ] Board Representation
 - [ ] Debug / Printing
 - [ ] Move Generation
 - [ ] Make / Undo Moves
 - [ ] Search (Minimax / Alpha-Beta)
+
+> Currently watching this seriese -> [Chess Engine in C](https://www.youtube.com/playlist?list=PLZ1QII7yudbc-Ky058TEaOstZHVbT-2hg)
+
