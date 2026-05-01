@@ -2,6 +2,7 @@
 <img src="./assets/images/dchess.png" align="left" width="120" hspace="10" vspace="10">
 
 **A terminal chess engine written in C.**
+
 It's one of these nerdy things that was in my mind for doing it to understand things like `C`, and how really Chess work Technically.
 
 **Links:** [GitHub](https://github.com/ddumbying/) · [Documentation](https://ddumbying.vercel.app/projects/dchess/) </br>
