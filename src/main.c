@@ -1,14 +1,15 @@
+#include "tui/tui.h"
+#include "utils/bitboard.h"
+#include <locale.h>
 #include <stdio.h>
-#include "engine/board.h"
 
-int main() {
-    Position pos;
+int main(void) {
+    setlocale(LC_ALL, "");   /* required for ncurses unicode output */
+    init_attacks();
 
-    init_start_position(&pos);
-    print_board(&pos);
-
-    printf("White occupancy: %llx\n", pos.occupancies[0]);
-    printf("Black occupancy: %llx\n", pos.occupancies[1]);
+    TUIState state;
+    tui_init(&state);
+    tui_run(&state);
 
     return 0;
 }

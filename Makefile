@@ -1,7 +1,16 @@
-CC = gcc
-CFLAGS = -Iheaders -O2
+CC      = gcc
+CFLAGS  = -Iheaders -O2 -Wall -Wno-unused-function
+LDFLAGS = -lncursesw
 
-SRC = $(shell find src -name "*.c")
+SRC     = $(shell find src -name "*.c")
+TARGET  = dchess
 
-all:
-	$(CC) $(CFLAGS) $(SRC) -o engine
+all: $(TARGET)
+
+$(TARGET): $(SRC)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
+
+clean:
+	rm -f $(TARGET)
+
+.PHONY: all clean
