@@ -9,7 +9,7 @@ It's one of these nerdy things that was in my mind for doing it to understand th
 ## Overview
 
 <p align="center">
-  <img src="assets/images/overview.png" width="100%"/>
+  <img src="assets/gif/demo.gif" width="100%"/>
 </p>
 
 ## What it has
