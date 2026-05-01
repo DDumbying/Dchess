@@ -51,4 +51,4 @@ So he should be limited some how, but not having these things (till now) :
 - No GUI for current plans.
 - ~**Could** have it's own desing.~
 - F Windows.
-- IDK what's also but we will see..
+- IDK what else but we will see..
