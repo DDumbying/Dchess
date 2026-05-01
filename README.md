@@ -4,7 +4,7 @@
 **A terminal chess engine written in C.**
 It's one of these nerdy things that was in my mind for doing it to understand things like `C`, and how really Chess work Technically.
 
-**Links:** [GitHub](https://github.com/ddumbying/) · [Documentation](https://ddumbying.vercel.app/projects/dchess/) </br></br>
+**Links:** [GitHub](https://github.com/ddumbying/) · [Documentation](https://ddumbying.vercel.app/projects/dchess/) </br>
 
 ## Overview
 
@@ -21,7 +21,7 @@ It's one of these nerdy things that was in my mind for doing it to understand th
 - Static evaluation
 
 **TUI**
-- ncurses interface with Unicode chess pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
+- ncurses interface with Unicode chess pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚) - *It's temporarly solution btw*
 - Board scales to fill available terminal size
 - Custom 256-color palette — warm parchment/walnut squares, dark charcoal canvas
 - Arrow keys or `hjkl` to move cursor, Enter to select and move
