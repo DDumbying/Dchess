@@ -5,10 +5,7 @@
 #include "engine/search.h"
 #include <ncurses.h>
 
-#define TUI_BOARD_WIN_W  30
-#define TUI_INFO_WIN_W   28
-#define TUI_CMD_WIN_H    3
-#define MAX_MOVE_HISTORY 128
+#define MAX_MOVE_HISTORY 256
 
 typedef struct {
     Position pos;
@@ -17,9 +14,17 @@ typedef struct {
     char     status[256];
     char     last_cmd[64];
     int      engine_depth;
-    int      engine_side;   /* which side engine plays: WHITE, BLACK, or -1 for human vs human */
+    int      engine_side;
     int      game_over;
     char     last_eval[32];
+
+    /* Cursor & selection state (for arrow-key UI) */
+    int      cursor_row;    /* 0-7, display row (rank 8 = row 0) */
+    int      cursor_col;    /* 0-7, display col (file a = col 0)  */
+    int      selected;      /* 1 = a square is selected           */
+    int      sel_row;
+    int      sel_col;
+    int      highlight[8][8]; /* legal move destinations           */
 } TUIState;
 
 void tui_init(TUIState *state);

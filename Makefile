@@ -1,5 +1,5 @@
 CC      = gcc
-CFLAGS  = -Iheaders -O2 -Wall -Wno-unused-function
+CFLAGS  = -Iheaders -O2 -Wall -Wno-unused-function -D_XOPEN_SOURCE=600 $(shell ncursesw6-config --cflags 2>/dev/null || ncursesw5-config --cflags 2>/dev/null || echo "")
 LDFLAGS = -lncursesw
 
 SRC     = $(shell find src -name "*.c")
