@@ -1,7 +1,7 @@
 # Dchess
 
 <p align="center">
-  <img src="assets/images/overview.png" width="700"/>
+  <img src="assets/images/overview.png" width="100%"/>
 </p>
 
 A terminal chess engine written in C. It was one of these nerdy thigns that was in my mind for doing it to understand things like C and how really Chess work Technically.
