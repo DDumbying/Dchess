@@ -45,7 +45,7 @@ One of these nerdy things built out of passion — to actually understand how `C
 - Avg moves per game, longest game, avg time per game, total play time
 - Rolling win-rate history graph — plots win rate and loss rate over time using a sliding 10-game window, with date labels and a 50% guide line. Keeps the last 256 games.
 - Two stat views:
-  - **Tab** (in-game overlay) — compact numeric stats with progress bars, no graph, dismisses on any key
+  - ~**Tab** (in-game overlay) — compact numeric stats with progress bars, no graph, dismisses on any key~
   - **Full stats screen** — all sections plus the history graph filling the remaining space; accessible via `dchess --stats` or `st` command in-game
 
 ## CLI
