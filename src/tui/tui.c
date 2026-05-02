@@ -2,94 +2,299 @@
 #include "tui/render.h"
 #include "tui/input.h"
 #include "tui/commands.h"
+#include "tui/stats_tui.h"
 #include "engine/board.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
 #include "engine/move.h"
 #include "utils/constants.h"
 #include "utils/bitboard.h"
+#include "utils/stats.h"
+#include "utils/cli.h"
 #include <ncurses.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
-#define CP_CANVAS 35   /* must match render.c */
+#define CP_CANVAS    35
+#define CP_BORDER    21
+#define CP_TITLE     22
+#define CP_HINT      29
+#define CP_INFO_VAL  26
+#define CP_STATUS_OK 27
+#define CP_STATUS_ERR 28
+#define CP_SEL_PC    10
 
-void tui_init(TUIState *state) {
-    memset(state, 0, sizeof(*state));
-    init_start_position(&state->pos);
-    state->engine_depth = 5;
-    state->engine_side  = BLACK;
-    state->cursor_row   = 6;  /* rank 2 — white pawn row */
-    state->cursor_col   = 4;  /* e file */
-    snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
-    snprintf(state->status,    sizeof(state->status),    "Ready. Use arrows to move cursor, Enter to select.");
+/* ── Simple position hash for repetition detection ──────────────────────── */
+static U64 hash_position(const Position *pos)
+{
+    U64 h = 0xcbf29ce484222325ULL;
+    for (int i = 0; i < 12; i++) {
+        U64 bb = pos->bitboards[i];
+        h ^= bb * 0x9e3779b97f4a7c15ULL;
+        h += (h << 6) + (h >> 2);
+    }
+    h ^= (U64)pos->side    * 0x517cc1b727220a95ULL;
+    h ^= (U64)pos->castling * 0x6c62272e07bb0142ULL;
+    h ^= (U64)(pos->enpassant + 1) * 0xbf58476d1ce4e5b9ULL;
+    return h;
 }
 
-void tui_cleanup(void) { endwin(); }
+/* ── Check 50-move rule and 3-fold repetition ───────────────────────────── */
+static void check_draw_rules(TUIState *state)
+{
+    if (state->game_over) return;
 
-/* Build highlight[8][8] for legal moves from square (sel_row, sel_col) */
+    /* 50-move rule (halfmove_clock tracks moves since pawn move/capture) */
+    if (state->halfmove_clock >= 100) {  /* 50 moves = 100 half-moves */
+        state->game_over = 1;
+        snprintf(state->game_result, sizeof(state->game_result),
+                 "Draw by 50-move rule!");
+        return;
+    }
+
+    /* 3-fold repetition */
+    U64 cur = hash_position(&state->pos);
+    int count = 0;
+    for (int i = 0; i < state->pos_history_count; i++)
+        if (state->pos_history[i] == cur) count++;
+    if (count >= 2) {   /* current + 2 previous = 3-fold */
+        state->game_over = 1;
+        snprintf(state->game_result, sizeof(state->game_result),
+                 "Draw by repetition!");
+        return;
+    }
+}
+
+/* ── Record position hash after a move ──────────────────────────────────── */
+static void record_position(TUIState *state)
+{
+    if (state->pos_history_count < MAX_MOVE_HISTORY)
+        state->pos_history[state->pos_history_count++] = hash_position(&state->pos);
+}
+
+/* ── Update halfmove clock ───────────────────────────────────────────────── */
+static void update_halfmove(TUIState *state, int from_sq, int to_sq, int piece)
+{
+    int is_pawn    = (piece == 0 || piece == 6);
+    int is_capture = GET_BIT(state->pos.occupancies[BOTH], to_sq);  /* before move */
+    (void)from_sq;
+    if (is_pawn || is_capture)
+        state->halfmove_clock = 0;
+    else
+        state->halfmove_clock++;
+}
+
+/* ── Check no legal moves (checkmate / stalemate) ───────────────────────── */
+static void check_game_over(TUIState *state)
+{
+    if (state->game_over) return;
+
+    MoveList ml;
+    generate_moves(&state->pos, &ml);
+    int legal = 0;
+    for (int i = 0; i < ml.count; i++) {
+        Position tmp;
+        memcpy(&tmp, &state->pos, sizeof(Position));
+        if (make_move(&tmp, ml.moves[i])) { legal = 1; break; }
+    }
+
+    if (!legal) {
+        state->game_over = 1;
+        if (is_in_check(&state->pos, state->pos.side)) {
+            const char *w = state->pos.side == WHITE ? "Black" : "White";
+            snprintf(state->game_result, sizeof(state->game_result),
+                     "Checkmate — %s wins!", w);
+        } else {
+            snprintf(state->game_result, sizeof(state->game_result),
+                     "Stalemate — Draw!");
+        }
+        return;
+    }
+
+    check_draw_rules(state);
+}
+
+/* ── Game-over popup ────────────────────────────────────────────────────── */
+static void show_game_over_popup(WINDOW *board_win, TUIState *state)
+{
+    int bh, bw;
+    getmaxyx(board_win, bh, bw);
+
+    int pw = 46, ph = 9;
+    int pr = (bh - ph) / 2;
+    int pc_col = (bw - pw) / 2;
+
+    WINDOW *pop = newwin(ph, pw, pr, pc_col);
+    keypad(pop, TRUE);
+
+    wattron(pop, COLOR_PAIR(CP_BORDER));
+    box(pop, ACS_VLINE, ACS_HLINE);
+    wattroff(pop, COLOR_PAIR(CP_BORDER));
+
+    wattron(pop, COLOR_PAIR(CP_TITLE)|A_BOLD);
+    mvwprintw(pop, 0, (pw-11)/2, " GAME OVER ");
+    wattroff(pop, COLOR_PAIR(CP_TITLE)|A_BOLD);
+
+    wattron(pop, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
+    int rlen = (int)strlen(state->game_result);
+    mvwprintw(pop, 2, (pw - rlen) / 2, "%s", state->game_result);
+    wattroff(pop, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
+
+    int total_moves = (state->move_count + 1) / 2;
+    int ws = state->white_clock, bs = state->black_clock;
+    wattron(pop, COLOR_PAIR(CP_HINT));
+    mvwprintw(pop, 4, 4, "Moves  : %d", total_moves);
+    mvwprintw(pop, 5, 4, "White  : %02d:%02d   Black : %02d:%02d",
+              ws/60, ws%60, bs/60, bs%60);
+    mvwprintw(pop, 6, 4, "Eval   : %s", state->last_eval);
+    wattroff(pop, COLOR_PAIR(CP_HINT));
+
+    wattron(pop, COLOR_PAIR(CP_STATUS_OK)|A_BOLD);
+    mvwprintw(pop, 7, 6, "[ R ] New game        [ Q ] Quit");
+    wattroff(pop, COLOR_PAIR(CP_STATUS_OK)|A_BOLD);
+
+    wrefresh(pop);
+
+    /* ── Save stats for this completed game ───────────────────────────── */
+    {
+        int result = 0; /* draw by default */
+        const char *r = state->game_result;
+        /* Check if human won or lost */
+        if (strstr(r, "White wins")) {
+            result = (state->player_side == WHITE) ? 1 : -1;
+        } else if (strstr(r, "Black wins")) {
+            result = (state->player_side == BLACK) ? 1 : -1;
+        }
+        int total_secs = state->white_clock + state->black_clock;
+        stats_record(&state->stats,
+                     state->difficulty,
+                     result,
+                     state->player_side,
+                     state->move_count,
+                     total_secs);
+        stats_save(&state->stats);
+    }
+
+    while (1) {
+        int ch = wgetch(pop);
+        if (ch == 'r' || ch == 'R') {
+            init_start_position(&state->pos);
+            state->move_count        = 0;
+            state->game_over         = 0;
+            state->game_result[0]    = '\0';
+            state->turn_start        = time(NULL);
+            state->white_clock       = 0;
+            state->black_clock       = 0;
+            state->halfmove_clock    = 0;
+            state->pos_history_count = 0;
+            state->selected          = 0;
+            memset(state->highlight, 0, sizeof(state->highlight));
+
+            const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
+                                   (state->difficulty == DIFF_HARD)   ? "Hard"   : "Medium";
+            const char *side_str = (state->player_side == WHITE) ? "White" : "Black";
+            snprintf(state->status, sizeof(state->status),
+                     "New game – You play %s | %s difficulty", side_str, diff_str);
+            break;
+        }
+        if (ch == 'q' || ch == 'Q') {
+            delwin(pop);
+            tui_cleanup();
+            exit(0);
+        }
+    }
+    delwin(pop);
+}
+
+/* ── Legal move highlights ──────────────────────────────────────────────── */
 static void build_highlights(TUIState *state)
 {
     memset(state->highlight, 0, sizeof(state->highlight));
     if (!state->selected) return;
 
-    int rank = 7 - state->sel_row;
-    int file = state->sel_col;
-    int from = rank * 8 + file;
-
+    int from = (7 - state->sel_row) * 8 + state->sel_col;
     MoveList ml;
     generate_moves(&state->pos, &ml);
 
     for (int i = 0; i < ml.count; i++) {
         Move m = ml.moves[i];
         if (FROM(m) != from) continue;
-
-        /* Validate — skip if leaves king in check */
         Position tmp;
         memcpy(&tmp, &state->pos, sizeof(Position));
         if (!make_move(&tmp, m)) continue;
-
-        int to_sq   = TO(m);
-        int to_rank = to_sq / 8;
-        int to_file = to_sq % 8;
-        int to_drow = 7 - to_rank;
-        state->highlight[to_drow][to_file] = 1;
+        int to = TO(m);
+        state->highlight[7 - to/8][to%8] = 1;
     }
 }
 
-/* Handle Enter on the cursor: select or move */
-static void cursor_enter(TUIState *state)
+/* ── Commit a move: update clocks, halfmove, history ───────────────────── */
+static void commit_move(TUIState *state, Move m, int piece, const char *buf)
+{
+    int to_sq = TO(m);
+
+    /* Clock: charge the side that just moved */
+    time_t now = time(NULL);
+    int elapsed = (int)(now - state->turn_start);
+    if (state->pos.side == WHITE)   /* side BEFORE make_move */
+        state->white_clock += elapsed;
+    else
+        state->black_clock += elapsed;
+    state->turn_start = now;
+
+    /* Halfmove clock — check BEFORE moving */
+    int is_pawn    = (piece == 0 || piece == 6);
+    int is_capture = 0;
+    if (to_sq >= 0 && to_sq < 64)
+        is_capture = GET_BIT(state->pos.occupancies[BOTH], to_sq) ? 1 : 0;
+    if (is_pawn || is_capture) state->halfmove_clock = 0;
+    else                       state->halfmove_clock++;
+
+    /* Make the move */
+    make_move(&state->pos, m);
+
+    /* Record position hash */
+    record_position(state);
+
+    /* Move history */
+    int idx = state->move_count;
+    if (idx < MAX_MOVE_HISTORY) {
+        strncpy(state->move_history[idx], buf, 7);
+        state->move_history[idx][7] = '\0';
+        state->move_piece[idx] = piece;
+        state->move_time[idx]  = elapsed;
+        state->move_count++;
+    }
+}
+
+/* ── Cursor Enter ───────────────────────────────────────────────────────── */
+static void cursor_enter(TUIState *state, WINDOW *board_win)
 {
     int rank = 7 - state->cursor_row;
     int file = state->cursor_col;
     int sq   = rank * 8 + file;
 
     if (!state->selected) {
-        /* Select only if there's a friendly piece here */
         int piece = -1;
         for (int i = 0; i < 12; i++)
             if (GET_BIT(state->pos.bitboards[i], sq)) { piece = i; break; }
 
-        int is_white_pc = (piece >= 0 && piece < 6);
-        int is_black_pc = (piece >= 6);
-        int friendly = (state->pos.side == WHITE && is_white_pc) ||
-                       (state->pos.side == BLACK && is_black_pc);
-
-        if (piece < 0 || !friendly) {
+        int friendly = (piece >= 0) &&
+                       ((state->pos.side == WHITE && piece < 6) ||
+                        (state->pos.side == BLACK && piece >= 6));
+        if (!friendly) {
             snprintf(state->status, sizeof(state->status),
                      "No friendly piece on %c%d", 'a'+file, rank+1);
             return;
         }
-
         state->selected = 1;
         state->sel_row  = state->cursor_row;
         state->sel_col  = state->cursor_col;
         build_highlights(state);
         snprintf(state->status, sizeof(state->status),
-                 "Selected %c%d — use arrows + Enter to move, Esc to cancel",
+                 "Selected %c%d — move cursor to destination and press Enter",
                  'a'+file, rank+1);
     } else {
-        /* If pressing Enter on the selected square again → deselect */
         if (state->cursor_row == state->sel_row &&
             state->cursor_col == state->sel_col) {
             state->selected = 0;
@@ -98,63 +303,97 @@ static void cursor_enter(TUIState *state)
             return;
         }
 
-        /* Attempt move from sel to cursor */
-        int from_rank = 7 - state->sel_row;
-        int from_file = state->sel_col;
-        int to_rank   = 7 - state->cursor_row;
-        int to_file   = state->cursor_col;
-
-        char mv[6];
-        snprintf(mv, sizeof(mv), "%c%d%c%d",
-                 'a'+from_file, from_rank+1,
-                 'a'+to_file,   to_rank+1);
-
-        /* try_move is in commands.c — replicate lightweight version here */
-        int from_sq = from_rank * 8 + from_file;
-        int to_sq   = to_rank   * 8 + to_file;
+        int from_sq = (7-state->sel_row)*8 + state->sel_col;
+        int to_sq   = (7-state->cursor_row)*8 + state->cursor_col;
 
         MoveList ml;
         generate_moves(&state->pos, &ml);
         int moved = 0;
-        for (int i = 0; i < ml.count; i++) {
-            Move m = ml.moves[i];
-            if (FROM(m) != from_sq || TO(m) != to_sq) continue;
-            /* Default: prefer queen promo */
-            if ((FLAGS(m) & FLAG_PROMOTION) && !(FLAGS(m) & FLAG_PROMO_Q))
-                continue;
 
-            Position saved;
-            memcpy(&saved, &state->pos, sizeof(Position));
-            if (!make_move(&state->pos, m)) {
-                memcpy(&state->pos, &saved, sizeof(Position));
+        for (int i = 0; i < ml.count; i++) {
+            Move mv = ml.moves[i];
+            if (FROM(mv) != from_sq || TO(mv) != to_sq) continue;
+            if ((FLAGS(mv) & FLAG_PROMOTION) && !(FLAGS(mv) & FLAG_PROMO_Q)) continue;
+
+            int piece = -1;
+            for (int j = 0; j < 12; j++)
+                if (GET_BIT(state->pos.bitboards[j], from_sq)) { piece = j; break; }
+
+            /* Validate legality */
+            Position tmp;
+            memcpy(&tmp, &state->pos, sizeof(Position));
+            char buf[8];
+            move_to_str(mv, buf);
+
+            if (!make_move(&tmp, mv)) {
                 snprintf(state->status, sizeof(state->status),
                          "Illegal: leaves king in check");
                 break;
             }
-            char buf[8];
-            move_to_str(m, buf);
-            if (state->move_count < MAX_MOVE_HISTORY)
-                strncpy(state->move_history[state->move_count++], buf, 7);
+            /* Restore and use commit_move */
+            commit_move(state, mv, piece, buf);
             snprintf(state->status, sizeof(state->status), "Played: %s", buf);
 
-            /* Auto-engine move */
-            if (state->engine_side == state->pos.side && !state->game_over)
+            check_game_over(state);
+            state->selected = 0;
+            memset(state->highlight, 0, sizeof(state->highlight));
+
+            if (state->game_over) {
+                show_game_over_popup(board_win, state);
+                return;
+            }
+            if (state->engine_side == state->pos.side)
                 handle_command(state, "go");
+            if (state->game_over)
+                show_game_over_popup(board_win, state);
 
             moved = 1;
             break;
         }
 
-        if (!moved && state->highlight[state->cursor_row][state->cursor_col] == 0) {
-            /* Not a legal destination — re-select cursor's piece if friendly */
-            snprintf(state->status, sizeof(state->status),
-                     "Not a legal move. Select a highlighted square.");
+        if (!moved) {
+            if (!state->highlight[state->cursor_row][state->cursor_col])
+                snprintf(state->status, sizeof(state->status),
+                         "Not a legal move — select a highlighted square.");
+            state->selected = 0;
+            memset(state->highlight, 0, sizeof(state->highlight));
         }
-
-        state->selected = 0;
-        memset(state->highlight, 0, sizeof(state->highlight));
     }
 }
+
+void tui_init(TUIState *state, const CliArgs *args)
+{
+    memset(state, 0, sizeof(*state));
+    init_start_position(&state->pos);
+
+    /* Apply CLI configuration */
+    state->player_side  = args ? args->player_side  : WHITE;
+    state->difficulty   = args ? args->difficulty   : DIFF_MEDIUM;
+    state->engine_depth = args ? args->engine_depth : 5;
+
+    /* Engine plays the opposite side of the human */
+    state->engine_side  = (state->player_side == WHITE) ? BLACK : WHITE;
+
+    /* If player chose black, engine goes first – queue it */
+    state->cursor_row   = 6;
+    state->cursor_col   = 4;
+    state->turn_start   = time(NULL);
+
+    /* Load persistent stats */
+    stats_load(&state->stats);
+
+    record_position(state);   /* record starting position */
+    snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
+
+    const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
+                           (state->difficulty == DIFF_HARD)   ? "Hard"   : "Medium";
+    const char *side_str = (state->player_side == WHITE) ? "White" : "Black";
+    snprintf(state->status, sizeof(state->status),
+             "Ready – You play %s | %s difficulty | arrows/hjkl=move  enter=select",
+             side_str, diff_str);
+}
+
+void tui_cleanup(void) { endwin(); }
 
 void tui_run(TUIState *state)
 {
@@ -169,16 +408,20 @@ void tui_run(TUIState *state)
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
 
-    int cmd_h  = 3;
-    int main_h = rows - cmd_h;
-    int info_w = (cols >= 60) ? 24 : 0;
+    int cmd_h   = 3;
+    int main_h  = rows - cmd_h;
+    /* Wider info panel: 32 cols to fit piece+move+time on both sides */
+    int info_w  = (cols >= 80) ? 32 : (cols >= 60 ? 24 : 0);
     int board_w = cols - info_w;
 
     WINDOW *info_win  = info_w ? newwin(main_h, info_w,  0,      0) : NULL;
     WINDOW *board_win =          newwin(main_h, board_w, 0,  info_w);
     WINDOW *cmd_win   =          newwin(cmd_h,  cols,    main_h, 0);
 
-    /* Canvas background on stdscr only (sub-windows keep their dark default) */
+    /* Stats overlay window — same size as full screen, drawn on demand */
+    WINDOW *stats_win = newwin(rows, cols, 0, 0);
+    keypad(stats_win, TRUE);
+
     wbkgd(stdscr, COLOR_PAIR(CP_CANVAS));
     werase(stdscr);
     wrefresh(stdscr);
@@ -187,9 +430,44 @@ void tui_run(TUIState *state)
     keypad(cmd_win,   TRUE);
 
     char cmd_buf[64];
+    int  stats_visible = 0;   /* 1 while the Tab overlay is shown */
+
+    /* If player chose Black, engine (White) goes first */
+    if (state->engine_side == WHITE) {
+        handle_command(state, "go");
+    }
 
     while (1) {
-        /* Render */
+
+        /* ── Stats overlay mode ─────────────────────────────────────── */
+        if (stats_visible) {
+            /* Reload latest stats (may have changed after last game) */
+            stats_load(&state->stats);
+
+            /* Resize stats_win to current terminal dimensions */
+            getmaxyx(stdscr, rows, cols);
+            wresize(stats_win, rows, cols);
+            mvwin(stats_win, 0, 0);
+
+            draw_stats_compact(stats_win, &state->stats);
+            touchwin(stats_win);
+            wnoutrefresh(stats_win);
+            doupdate();
+
+            /* Any key dismisses the overlay */
+            wgetch(stats_win);
+            stats_visible = 0;
+
+            /* Repaint normal game underneath before looping */
+            werase(stdscr);
+            wnoutrefresh(stdscr);
+            touchwin(board_win);
+            if (info_win) touchwin(info_win);
+            touchwin(cmd_win);
+            continue;
+        }
+
+        /* ── Normal game rendering ──────────────────────────────────── */
         werase(stdscr);
         wnoutrefresh(stdscr);
         render_all(board_win, info_win, cmd_win, state);
@@ -203,41 +481,46 @@ void tui_run(TUIState *state)
         wnoutrefresh(cmd_win);
         doupdate();
 
-        /* Input — try arrow keys first (non-blocking in cmd_win) */
         int ch = read_key(cmd_win, cmd_buf, sizeof(cmd_buf));
+
+        /* Tab key → show stats overlay */
+        if (ch == '\t') {
+            stats_visible = 1;
+            continue;
+        }
 
         switch (ch) {
             case KEY_UP:    case 'k':
-                if (state->cursor_row > 0) state->cursor_row--;
-                break;
+                if (state->cursor_row > 0) state->cursor_row--; break;
             case KEY_DOWN:  case 'j':
-                if (state->cursor_row < 7) state->cursor_row++;
-                break;
+                if (state->cursor_row < 7) state->cursor_row++; break;
             case KEY_LEFT:  case 'h':
-                if (state->cursor_col > 0) state->cursor_col--;
-                break;
+                if (state->cursor_col > 0) state->cursor_col--; break;
             case KEY_RIGHT: case 'l':
-                if (state->cursor_col < 7) state->cursor_col++;
-                break;
+                if (state->cursor_col < 7) state->cursor_col++; break;
             case '\n': case '\r': case KEY_ENTER:
-                if (!state->game_over) cursor_enter(state);
+                if (!state->game_over) cursor_enter(state, board_win);
+                else show_game_over_popup(board_win, state);
                 break;
-            case 27: /* ESC — deselect */
+            case 27:
                 state->selected = 0;
                 memset(state->highlight, 0, sizeof(state->highlight));
                 snprintf(state->status, sizeof(state->status), "Deselected.");
                 break;
-            case -2: /* text command submitted */
+            case -2:
                 if (cmd_buf[0]) {
                     int ret = handle_command(state, cmd_buf);
                     if (ret == -1) goto quit;
+                    check_game_over(state);
+                    if (state->game_over)
+                        show_game_over_popup(board_win, state);
                 }
                 break;
-            default:
-                break;
+            default: break;
         }
     }
 quit:
+    delwin(stats_win);
     delwin(board_win);
     if (info_win) delwin(info_win);
     delwin(cmd_win);

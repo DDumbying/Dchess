@@ -472,7 +472,7 @@ static void draw_status(WINDOW *win, const TUIState *state)
 
     /* Hint line */
     wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, wh-4, 2, "move:e2e4  go  new  flip  depth N  quit");
+    mvwprintw(win, wh-4, 2, "move:e2e4  go  new  flip  depth N  quit  [Tab]=stats");
     wattroff(win, COLOR_PAIR(CP_HINT));
 
     /* Cursor position hint */
@@ -578,7 +578,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
     wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, row++, 2, "  #  W    B");
+    mvwprintw(win, row++, 1, "  # pc  mv   t  pc  mv   t");
     wattroff(win, COLOR_PAIR(CP_HINT));
 
     int cap_h     = 11;
@@ -591,19 +591,56 @@ static void draw_info(WINDOW *win, const TUIState *state)
 
     for (int p = start; p < total && row < wh - cap_h; p++) {
         int wi = p*2, bi = p*2+1;
-        char wm[9]="-", bm[9]="-";
-        if (wi < state->move_count) strncpy(wm, state->move_history[wi], 8);
-        if (bi < state->move_count) strncpy(bm, state->move_history[bi], 8);
         int latest = (p == total - 1);
 
+        /* Move number */
         wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, row, 2, "%3d.", p+1);
+        mvwprintw(win, row, 1, "%3d.", p+1);
         wattroff(win, COLOR_PAIR(CP_HINT));
 
-        attr_t wa = latest ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD : COLOR_PAIR(CP_MOVE_W)|A_BOLD;
-        attr_t ba = latest ? COLOR_PAIR(CP_STATUS_OK)        : COLOR_PAIR(CP_MOVE_B);
-        wattron(win, wa); mvwprintw(win, row, 7,  "%-4s", wm); wattroff(win, wa);
-        wattron(win, ba); mvwprintw(win, row, 12, "%-4s", bm); wattroff(win, ba);
+        /* White move — glyph@6 move@8 time@14 */
+        if (wi < state->move_count) {
+            int pidx = state->move_piece[wi];
+            attr_t wa = latest ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD : COLOR_PAIR(CP_MOVE_W)|A_BOLD;
+            if (pidx >= 0) {
+                cchar_t cc;
+                wchar_t ws2[2] = { PIECE_GLYPH[pidx], L'\0' };
+                setcchar(&cc, ws2, A_BOLD, (short)PAIR_NUMBER(wa), NULL);
+                wattron(win, wa);
+                mvwadd_wch(win, row, 6, &cc);
+                wattroff(win, wa);
+            }
+            wattron(win, wa);
+            mvwprintw(win, row, 8, "%-5s", state->move_history[wi]);
+            wattroff(win, wa);
+            int t = state->move_time[wi];
+            wattron(win, COLOR_PAIR(CP_HINT));
+            if (t < 60)   mvwprintw(win, row, 14, "%2ds", t);
+            else          mvwprintw(win, row, 14, "%dm%d", t/60, t%60);
+            wattroff(win, COLOR_PAIR(CP_HINT));
+        }
+
+        /* Black move — glyph@19 move@21 time@27 */
+        if (bi < state->move_count) {
+            int pidx = state->move_piece[bi];
+            attr_t ba = latest ? COLOR_PAIR(CP_STATUS_OK) : COLOR_PAIR(CP_MOVE_B);
+            if (pidx >= 0) {
+                cchar_t cc;
+                wchar_t ws2[2] = { PIECE_GLYPH[pidx], L'\0' };
+                setcchar(&cc, ws2, 0, (short)PAIR_NUMBER(ba), NULL);
+                wattron(win, ba);
+                mvwadd_wch(win, row, 19, &cc);
+                wattroff(win, ba);
+            }
+            wattron(win, ba);
+            mvwprintw(win, row, 21, "%-5s", state->move_history[bi]);
+            wattroff(win, ba);
+            int t = state->move_time[bi];
+            wattron(win, COLOR_PAIR(CP_HINT));
+            if (t < 60)   mvwprintw(win, row, 27, "%2ds", t);
+            else          mvwprintw(win, row, 27, "%dm%d", t/60, t%60);
+            wattroff(win, COLOR_PAIR(CP_HINT));
+        }
         row++;
     }
     if (state->move_count == 0) {
@@ -641,11 +678,6 @@ static void draw_info(WINDOW *win, const TUIState *state)
     else if (adv < 0) mvwprintw(win, ct++, 2, "+%d Black", -adv);
     else              mvwprintw(win, ct++, 2, "Even");
     wattroff(win, aa);
-
-    wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, wh-3, 2, "Dchess");
-    mvwprintw(win, wh-2, 2, "DDumbying.Org");
-    wattroff(win, COLOR_PAIR(CP_HINT));
 
     wnoutrefresh(win);
 }
@@ -688,6 +720,39 @@ void render_all(WINDOW *board_win, WINDOW *info_win,
     int bc = bw - (int)strlen(brand) - 1;
     if (bc > 10) mvwprintw(board_win, 0, bc, "%s", brand);
     wattroff(board_win, COLOR_PAIR(CP_LINK)|A_BOLD);
+
+    /* ── Clock bar (row 1, inside border) ──
+     * White clock left, Black clock right, always ticking. */
+    {
+        time_t now = time(NULL);
+        int cur_elapsed = (int)(now - state->turn_start);
+        int ws = state->white_clock;
+        int bs = state->black_clock;
+        /* Add live elapsed to the side currently moving */
+        if (!state->game_over) {
+            if (state->pos.side == WHITE) ws += cur_elapsed;
+            else                          bs += cur_elapsed;
+        }
+
+        attr_t wa = (state->pos.side == WHITE && !state->game_over)
+                    ? (COLOR_PAIR(CP_INFO_VAL)|A_BOLD)
+                    : COLOR_PAIR(CP_HINT);
+        attr_t ba = (state->pos.side == BLACK && !state->game_over)
+                    ? (COLOR_PAIR(CP_INFO_VAL)|A_BOLD)
+                    : COLOR_PAIR(CP_HINT);
+
+        char wstr[16], bstr[16];
+        snprintf(wstr, sizeof(wstr), "White: %02d:%02d", ws/60, ws%60);
+        snprintf(bstr, sizeof(bstr), "Black: %02d:%02d", bs/60, bs%60);
+
+        wattron(board_win, wa);
+        mvwprintw(board_win, 1, 2, "%s", wstr);
+        wattroff(board_win, wa);
+
+        wattron(board_win, ba);
+        mvwprintw(board_win, 1, bw - (int)strlen(bstr) - 2, "%s", bstr);
+        wattroff(board_win, ba);
+    }
 
     draw_board(board_win, state);
     draw_status(board_win, state);
