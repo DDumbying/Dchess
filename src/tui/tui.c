@@ -184,11 +184,14 @@ static void show_game_over_popup(WINDOW *board_win, TUIState *state)
             state->game_over         = 0;
             state->game_result[0]    = '\0';
             state->turn_start        = time(NULL);
+            clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
             state->white_clock       = 0;
             state->black_clock       = 0;
             state->halfmove_clock    = 0;
             state->pos_history_count = 0;
             state->selected          = 0;
+            state->clock_started     = 0;
+            state->view_side         = WHITE;
             memset(state->highlight, 0, sizeof(state->highlight));
 
             const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
@@ -213,7 +216,11 @@ static void build_highlights(TUIState *state)
     memset(state->highlight, 0, sizeof(state->highlight));
     if (!state->selected) return;
 
-    int from = (7 - state->sel_row) * 8 + state->sel_col;
+    int flipped = (state->view_side == BLACK);
+    int from_rank = flipped ? state->sel_row : (7 - state->sel_row);
+    int from_file = flipped ? (7 - state->sel_col) : state->sel_col;
+    int from = from_rank * 8 + from_file;
+
     MoveList ml;
     generate_moves(&state->pos, &ml);
 
@@ -224,7 +231,12 @@ static void build_highlights(TUIState *state)
         memcpy(&tmp, &state->pos, sizeof(Position));
         if (!make_move(&tmp, m)) continue;
         int to = TO(m);
-        state->highlight[7 - to/8][to%8] = 1;
+        int to_rank = to / 8;
+        int to_file = to % 8;
+        /* Convert board square back to screen row/col */
+        int srow = flipped ? to_rank : (7 - to_rank);
+        int scol = flipped ? (7 - to_file) : to_file;
+        state->highlight[srow][scol] = 1;
     }
 }
 
@@ -235,12 +247,17 @@ static void commit_move(TUIState *state, Move m, int piece, const char *buf)
 
     /* Clock: charge the side that just moved */
     time_t now = time(NULL);
-    int elapsed = (int)(now - state->turn_start);
-    if (state->pos.side == WHITE)   /* side BEFORE make_move */
-        state->white_clock += elapsed;
-    else
-        state->black_clock += elapsed;
+    int elapsed = 0;
+    if (state->clock_started) {
+        elapsed = (int)(now - state->turn_start);
+        if (state->pos.side == WHITE)
+            state->white_clock += elapsed;
+        else
+            state->black_clock += elapsed;
+    }
+    state->clock_started = 1;
     state->turn_start = now;
+    clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
 
     /* Halfmove clock — check BEFORE moving */
     int is_pawn    = (piece == 0 || piece == 6);
@@ -270,8 +287,9 @@ static void commit_move(TUIState *state, Move m, int piece, const char *buf)
 /* ── Cursor Enter ───────────────────────────────────────────────────────── */
 static void cursor_enter(TUIState *state, WINDOW *board_win)
 {
-    int rank = 7 - state->cursor_row;
-    int file = state->cursor_col;
+    int flipped = (state->view_side == BLACK);
+    int rank = flipped ? state->cursor_row : (7 - state->cursor_row);
+    int file = flipped ? (7 - state->cursor_col) : state->cursor_col;
     int sq   = rank * 8 + file;
 
     if (!state->selected) {
@@ -303,8 +321,10 @@ static void cursor_enter(TUIState *state, WINDOW *board_win)
             return;
         }
 
-        int from_sq = (7-state->sel_row)*8 + state->sel_col;
-        int to_sq   = (7-state->cursor_row)*8 + state->cursor_col;
+        int from_rank_s = flipped ? state->sel_row : (7 - state->sel_row);
+        int from_file_s = flipped ? (7 - state->sel_col) : state->sel_col;
+        int from_sq = from_rank_s * 8 + from_file_s;
+        int to_sq   = sq;
 
         MoveList ml;
         generate_moves(&state->pos, &ml);
@@ -319,7 +339,6 @@ static void cursor_enter(TUIState *state, WINDOW *board_win)
             for (int j = 0; j < 12; j++)
                 if (GET_BIT(state->pos.bitboards[j], from_sq)) { piece = j; break; }
 
-            /* Validate legality */
             Position tmp;
             memcpy(&tmp, &state->pos, sizeof(Position));
             char buf[8];
@@ -330,7 +349,6 @@ static void cursor_enter(TUIState *state, WINDOW *board_win)
                          "Illegal: leaves king in check");
                 break;
             }
-            /* Restore and use commit_move */
             commit_move(state, mv, piece, buf);
             snprintf(state->status, sizeof(state->status), "Played: %s", buf);
 
@@ -339,13 +357,19 @@ static void cursor_enter(TUIState *state, WINDOW *board_win)
             memset(state->highlight, 0, sizeof(state->highlight));
 
             if (state->game_over) {
-                show_game_over_popup(board_win, state);
                 return;
             }
-            if (state->engine_side == state->pos.side)
+            state->clock_side = state->pos.side;
+
+            if (state->two_player) {
+                state->view_side  = state->pos.side;
+                state->cursor_row = 6;
+                state->cursor_col = 4;
+            } else if (state->engine_side == state->pos.side) {
                 handle_command(state, "go");
-            if (state->game_over)
-                show_game_over_popup(board_win, state);
+                state->clock_side = state->pos.side;
+                check_game_over(state);
+            }
 
             moved = 1;
             break;
@@ -370,14 +394,20 @@ void tui_init(TUIState *state, const CliArgs *args)
     state->player_side  = args ? args->player_side  : WHITE;
     state->difficulty   = args ? args->difficulty   : DIFF_MEDIUM;
     state->engine_depth = args ? args->engine_depth : 5;
+    state->two_player   = args ? args->two_player   : 0;
 
-    /* Engine plays the opposite side of the human */
-    state->engine_side  = (state->player_side == WHITE) ? BLACK : WHITE;
+    /* Engine plays the opposite side of the human (disabled in two-player) */
+    state->engine_side  = state->two_player ? -1 :
+                          (state->player_side == WHITE) ? BLACK : WHITE;
+
+    /* Board is always viewed from white's side initially */
+    state->view_side    = WHITE;
 
     /* If player chose black, engine goes first – queue it */
     state->cursor_row   = 6;
     state->cursor_col   = 4;
     state->turn_start   = time(NULL);
+    clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
 
     /* Load persistent stats */
     stats_load(&state->stats);
@@ -410,17 +440,18 @@ void tui_run(TUIState *state)
 
     int cmd_h   = 3;
     int main_h  = rows - cmd_h;
-    /* Wider info panel: 32 cols to fit piece+move+time on both sides */
-    int info_w  = (cols >= 80) ? 32 : (cols >= 60 ? 24 : 0);
-    int board_w = cols - info_w;
+    /* Layout: [INFO panel] [EVAL BAR] [BOARD]
+     * eval_bar is 3 cols wide — narrow vertical strip beside the board */
+    int info_w    = (cols >= 90) ? 32 : (cols >= 70 ? 26 : (cols >= 55 ? 20 : 0));
+    int eval_bar_w = (cols >= 55) ? 3 : 0;
+    int board_w   = cols - info_w - eval_bar_w;
 
-    WINDOW *info_win  = info_w ? newwin(main_h, info_w,  0,      0) : NULL;
-    WINDOW *board_win =          newwin(main_h, board_w, 0,  info_w);
-    WINDOW *cmd_win   =          newwin(cmd_h,  cols,    main_h, 0);
+    WINDOW *info_win     = info_w      ? newwin(main_h, info_w,      0, 0)                   : NULL;
+    WINDOW *eval_bar_win = eval_bar_w  ? newwin(main_h, eval_bar_w,  0, info_w)              : NULL;
+    WINDOW *board_win    =               newwin(main_h, board_w,     0, info_w + eval_bar_w);
+    WINDOW *cmd_win      =               newwin(cmd_h,  cols,    main_h, 0);
 
-    /* Stats overlay window — same size as full screen, drawn on demand */
-    WINDOW *stats_win = newwin(rows, cols, 0, 0);
-    keypad(stats_win, TRUE);
+    /* Stats overlay window removed — draw_stats_mini creates its own popup */
 
     wbkgd(stdscr, COLOR_PAIR(CP_CANVAS));
     werase(stdscr);
@@ -429,63 +460,71 @@ void tui_run(TUIState *state)
     keypad(board_win, TRUE);
     keypad(cmd_win,   TRUE);
 
+    /* Redraw every 100 ms so clocks tick live without waiting for input */
+    wtimeout(cmd_win, 100);
+
     char cmd_buf[64];
-    int  stats_visible = 0;   /* 1 while the Tab overlay is shown */
 
     /* If player chose Black, engine (White) goes first */
     if (state->engine_side == WHITE) {
         handle_command(state, "go");
     }
 
+    /* clock_side tracks whose clock is ticking; starts as the side to move */
+    state->clock_side = state->pos.side;
+
     while (1) {
 
-        /* ── Stats overlay mode ─────────────────────────────────────── */
-        if (stats_visible) {
-            /* Reload latest stats (may have changed after last game) */
-            stats_load(&state->stats);
-
-            /* Resize stats_win to current terminal dimensions */
-            getmaxyx(stdscr, rows, cols);
-            wresize(stats_win, rows, cols);
-            mvwin(stats_win, 0, 0);
-
-            draw_stats_compact(stats_win, &state->stats);
-            touchwin(stats_win);
-            wnoutrefresh(stats_win);
-            doupdate();
-
-            /* Any key dismisses the overlay */
-            wgetch(stats_win);
-            stats_visible = 0;
-
-            /* Repaint normal game underneath before looping */
-            werase(stdscr);
-            wnoutrefresh(stdscr);
-            touchwin(board_win);
-            if (info_win) touchwin(info_win);
+        /* -- If game just ended (e.g. engine delivered checkmate),
+         *    show the popup immediately before the next render -- */
+        if (state->game_over && state->game_result[0]) {
+            /* Render the final board state first so it's visible behind popup */
+            werase(stdscr); wnoutrefresh(stdscr);
+            render_all(board_win, info_win, eval_bar_win, cmd_win, state);
+            touchwin(stdscr); touchwin(board_win);
+            if (info_win)     touchwin(info_win);
+            if (eval_bar_win) touchwin(eval_bar_win);
             touchwin(cmd_win);
-            continue;
+            wnoutrefresh(stdscr); wnoutrefresh(board_win);
+            if (info_win)     wnoutrefresh(info_win);
+            if (eval_bar_win) wnoutrefresh(eval_bar_win);
+            wnoutrefresh(cmd_win);
+            doupdate();
+            show_game_over_popup(board_win, state);
+            /* game_result is cleared by popup on new game; clear flag too */
+            state->game_result[0] = '\0';
+            state->clock_side = state->pos.side;
         }
 
         /* ── Normal game rendering ──────────────────────────────────── */
         werase(stdscr);
         wnoutrefresh(stdscr);
-        render_all(board_win, info_win, cmd_win, state);
+        render_all(board_win, info_win, eval_bar_win, cmd_win, state);
         touchwin(stdscr);
         touchwin(board_win);
-        if (info_win) touchwin(info_win);
+        if (info_win)     touchwin(info_win);
+        if (eval_bar_win) touchwin(eval_bar_win);
         touchwin(cmd_win);
         wnoutrefresh(stdscr);
         wnoutrefresh(board_win);
-        if (info_win) wnoutrefresh(info_win);
+        if (info_win)     wnoutrefresh(info_win);
+        if (eval_bar_win) wnoutrefresh(eval_bar_win);
         wnoutrefresh(cmd_win);
         doupdate();
 
-        int ch = read_key(cmd_win, cmd_buf, sizeof(cmd_buf));
+        int ch = read_key(cmd_win, cmd_buf, sizeof(cmd_buf), &state->insert_mode);
 
-        /* Tab key → show stats overlay */
+        /* Tab key → show small stats popup centered over the board */
         if (ch == '\t') {
-            stats_visible = 1;
+            stats_load(&state->stats);
+            draw_stats_mini(board_win, &state->stats);
+            /* Repaint normal game underneath before looping */
+            werase(stdscr);
+            wnoutrefresh(stdscr);
+            touchwin(board_win);
+            if (info_win)     touchwin(info_win);
+            if (eval_bar_win) touchwin(eval_bar_win);
+            touchwin(cmd_win);
             continue;
         }
 
@@ -500,7 +539,6 @@ void tui_run(TUIState *state)
                 if (state->cursor_col < 7) state->cursor_col++; break;
             case '\n': case '\r': case KEY_ENTER:
                 if (!state->game_over) cursor_enter(state, board_win);
-                else show_game_over_popup(board_win, state);
                 break;
             case 27:
                 state->selected = 0;
@@ -511,17 +549,17 @@ void tui_run(TUIState *state)
                 if (cmd_buf[0]) {
                     int ret = handle_command(state, cmd_buf);
                     if (ret == -1) goto quit;
+                    state->clock_side = state->pos.side;
                     check_game_over(state);
-                    if (state->game_over)
-                        show_game_over_popup(board_win, state);
+                    /* game_over is caught at top of next loop iteration */
                 }
                 break;
             default: break;
         }
     }
 quit:
-    delwin(stats_win);
     delwin(board_win);
+    if (eval_bar_win) delwin(eval_bar_win);
     if (info_win) delwin(info_win);
     delwin(cmd_win);
     tui_cleanup();

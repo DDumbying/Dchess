@@ -25,17 +25,20 @@ One of these nerdy things built out of passion — to actually understand how `C
 - Stalemate and checkmate detection
 
 **TUI**
-- ncurses interface with Unicode chess pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚) *till now*
+- ncurses interface with Unicode chess pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
 - Board scales to fill available terminal size
 - Custom 256-color palette — warm parchment/walnut squares, dark charcoal canvas
-- Arrow keys or `hjkl` to move cursor, Enter to select and move
+- Vim-style modal input — normal mode for cursor navigation (`hjkl`/arrows), press `i` to enter command mode, `ESC` to return
 - Legal move highlighting — blue squares for valid destinations
 - Selected piece highlighted in green
 - Check highlighted on the board — red square, gold king
 - Last-move tint on from/to squares
 - Move history, captured pieces, material advantage displayed in the side panel
-- Per-turn clock tracking for both sides
+- Live per-turn clock for both sides — starts counting on the first move, not at launch
+- Evaluation bar updates live after every engine response
+- Game-over popup appears immediately on checkmate/stalemate without needing a keypress
 - Engine plays one side, human the other — configurable at launch or mid-game
+- **Two-player local mode** — no engine, board flips 180° after each move so the next player faces their own pieces
 
 **Statistics**
 - Persistent stats saved to `~/.local/share/dchess/stats.dat`
@@ -45,7 +48,7 @@ One of these nerdy things built out of passion — to actually understand how `C
 - Avg moves per game, longest game, avg time per game, total play time
 - Rolling win-rate history graph — plots win rate and loss rate over time using a sliding 10-game window, with date labels and a 50% guide line. Keeps the last 256 games.
 - Two stat views:
-  - ~**Tab** (in-game overlay) — compact numeric stats with progress bars, no graph, dismisses on any key~
+  - **Tab** (in-game overlay) — small centered popup with W/L/D bar, win rate, per-difficulty breakdown and avg time; dismisses on any key
   - **Full stats screen** — all sections plus the history graph filling the remaining space; accessible via `dchess --stats` or `st` command in-game
 
 ## CLI
@@ -60,6 +63,7 @@ OPTIONS
         easy   – depth 2   (quick, forgiving)
         medium – depth 5   (balanced)  [default]
         hard   – depth 8   (challenging, slower)
+  -2, --two-player                Local two-player mode — no engine, board flips after each move
   -s, --stats                     Show statistics in a full TUI screen and exit
   -V, --version                   Print version and exit
   -h, --help                      Show help and exit
@@ -69,6 +73,7 @@ EXAMPLES
   dchess --color black            Play as black
   dchess --difficulty hard        Hard mode
   dchess -c black -d easy         Black side, easy difficulty
+  dchess --two-player             Local two-player, board flips each turn
   dchess --stats                  View your stats
 ```
 
@@ -83,7 +88,7 @@ Requires `ncursesw`.
 
 ## Controls
 
-**Cursor (arrow keys or vim keys)**
+**Cursor — normal mode (default)**
 ```
 h / ←       move cursor left
 l / →       move cursor right
@@ -91,10 +96,11 @@ k / ↑       move cursor up
 j / ↓       move cursor down
 Enter       select piece / confirm move
 Esc         deselect
-Tab         open in-game stats overlay (any key to close)
+i           enter command/insert mode
+Tab         open in-game stats popup (any key to close)
 ```
 
-**Command bar (type at the bottom)**
+**Command mode** (press `i` to enter, `ESC` to exit)
 ```
 e2e4        make a move in algebraic notation
 go          let the engine play the current side

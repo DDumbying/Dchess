@@ -8,7 +8,7 @@
  * (plain binary struct, versioned with a magic header).
  * ───────────────────────────────────────────────────────────── */
 
-#define DCHESS_VERSION "0.2.1"
+#define DCHESS_VERSION "1.1.0"
 
 /* Maximum number of individual game records kept for the history graph */
 #define DCHESS_MAX_HISTORY 256

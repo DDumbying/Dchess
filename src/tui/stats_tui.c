@@ -785,3 +785,157 @@ void show_stats_overlay(const DchessStats *s)
     delwin(win);
     endwin();
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * draw_stats_mini()
+ * Small centered popup for the in-game Tab overlay.
+ * Creates its own WINDOW, draws stats, waits for a key, then cleans up.
+ * ══════════════════════════════════════════════════════════════════════ */
+void draw_stats_mini(WINDOW *parent, const DchessStats *s)
+{
+    init_stats_colors();
+
+    int ph, pw;
+    getmaxyx(parent, ph, pw);
+
+    /* Popup dimensions */
+    int pop_w = 46;
+    int pop_h = 18;
+    if (pop_w > pw - 4) pop_w = pw - 4;
+    if (pop_h > ph - 4) pop_h = ph - 4;
+    int pop_r = (ph - pop_h) / 2;
+    int pop_c = (pw - pop_w) / 2;
+
+    WINDOW *pop = newwin(pop_h, pop_w, pop_r, pop_c);
+    keypad(pop, TRUE);
+
+    wattron(pop, COLOR_PAIR(SCP_BORDER));
+    box(pop, ACS_VLINE, ACS_HLINE);
+    wattroff(pop, COLOR_PAIR(SCP_BORDER));
+
+    /* Title */
+    wattron(pop, COLOR_PAIR(SCP_TITLE) | A_BOLD);
+    const char *title = " Statistics ";
+    mvwprintw(pop, 0, (pop_w - (int)strlen(title)) / 2, "%s", title);
+    wattroff(pop, COLOR_PAIR(SCP_TITLE) | A_BOLD);
+
+    /* Dismiss hint */
+    wattron(pop, COLOR_PAIR(SCP_HINT));
+    const char *hint = " any key to close ";
+    mvwprintw(pop, pop_h - 1, (pop_w - (int)strlen(hint)) / 2, "%s", hint);
+    wattroff(pop, COLOR_PAIR(SCP_HINT));
+
+    int total_g = s->games_played[0] + s->games_played[1] + s->games_played[2];
+    int total_w = s->wins[0]   + s->wins[1]   + s->wins[2];
+    int total_l = s->losses[0] + s->losses[1] + s->losses[2];
+    int total_d = s->draws[0]  + s->draws[1]  + s->draws[2];
+    float ovr   = total_g ? 100.0f * total_w / total_g : 0.0f;
+
+    int row = 2;
+    int lm  = 2;
+
+    /* ── Overall W/L/D ── */
+    wattron(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
+    mvwprintw(pop, row++, lm, "Overall  (%d games)", total_g);
+    wattroff(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
+
+    if (total_g == 0) {
+        wattron(pop, COLOR_PAIR(SCP_HINT));
+        mvwprintw(pop, row++, lm, "No games yet — play one first!");
+        wattroff(pop, COLOR_PAIR(SCP_HINT));
+    } else {
+        /* W/L/D mini bar */
+        int bar_w = pop_w - lm * 2 - 2;
+        int fw = (int)((float)bar_w * total_w / total_g);
+        int fl = (int)((float)bar_w * total_l / total_g);
+        int fd = bar_w - fw - fl;
+        if (fd < 0) fd = 0;
+        int cx = lm + 1;
+        for (int i = 0; i < fw; i++) {
+            wattron(pop, COLOR_PAIR(SCP_BAR_WIN) | A_BOLD);
+            mvwaddch(pop, row, cx++, ACS_BLOCK);
+            wattroff(pop, COLOR_PAIR(SCP_BAR_WIN) | A_BOLD);
+        }
+        for (int i = 0; i < fl; i++) {
+            wattron(pop, COLOR_PAIR(SCP_BAR_LOSS) | A_BOLD);
+            mvwaddch(pop, row, cx++, ACS_BLOCK);
+            wattroff(pop, COLOR_PAIR(SCP_BAR_LOSS) | A_BOLD);
+        }
+        for (int i = 0; i < fd; i++) {
+            wattron(pop, COLOR_PAIR(SCP_BAR_DRAW));
+            mvwaddch(pop, row, cx++, ACS_BLOCK);
+            wattroff(pop, COLOR_PAIR(SCP_BAR_DRAW));
+        }
+        row++;
+
+        /* Numeric summary */
+        attr_t oa = (ovr >= 50) ? COLOR_PAIR(SCP_GOOD) | A_BOLD :
+                    (ovr >= 30) ? COLOR_PAIR(SCP_NEUT) | A_BOLD :
+                                  COLOR_PAIR(SCP_BAD)  | A_BOLD;
+        wattron(pop, oa);
+        mvwprintw(pop, row, lm, "Win rate: %.1f%%", ovr);
+        wattroff(pop, oa);
+        wattron(pop, COLOR_PAIR(SCP_VAL));
+        mvwprintw(pop, row, lm + 17, "%dW  %dL  %dD", total_w, total_l, total_d);
+        wattroff(pop, COLOR_PAIR(SCP_VAL));
+        row += 2;
+
+        /* ── Per-difficulty ── */
+        wattron(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
+        mvwprintw(pop, row++, lm, "By difficulty");
+        wattroff(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
+
+        static const char *dname[3] = { "Easy  ", "Medium", "Hard  " };
+        int bar_d = pop_w - lm * 2 - 14;
+        if (bar_d < 6) bar_d = 6;
+
+        for (int d = 0; d < 3; d++) {
+            int g   = s->games_played[d];
+            int w   = s->wins[d];
+            float p = g ? 100.0f * w / g : 0.0f;
+            int  fb = g ? (int)(bar_d * w / g) : 0;
+
+            wattron(pop, COLOR_PAIR(SCP_LABEL) | A_BOLD);
+            mvwprintw(pop, row, lm, "%s", dname[d]);
+            wattroff(pop, COLOR_PAIR(SCP_LABEL) | A_BOLD);
+
+            int bx = lm + 7;
+            for (int i = 0; i < bar_d; i++) {
+                if (i < fb) {
+                    wattron(pop, COLOR_PAIR(SCP_BAR_WIN) | A_BOLD);
+                    mvwaddch(pop, row, bx + i, ACS_BLOCK);
+                    wattroff(pop, COLOR_PAIR(SCP_BAR_WIN) | A_BOLD);
+                } else {
+                    wattron(pop, COLOR_PAIR(SCP_BAR_BG));
+                    mvwaddch(pop, row, bx + i, ACS_BULLET);
+                    wattroff(pop, COLOR_PAIR(SCP_BAR_BG));
+                }
+            }
+            attr_t pa = (p >= 50) ? COLOR_PAIR(SCP_GOOD) | A_BOLD :
+                        (p >= 30) ? COLOR_PAIR(SCP_NEUT) | A_BOLD :
+                                    COLOR_PAIR(SCP_BAD)  | A_BOLD;
+            wattron(pop, pa);
+            mvwprintw(pop, row, bx + bar_d + 2, "%4.0f%%", p);
+            wattroff(pop, pa);
+            wattron(pop, COLOR_PAIR(SCP_HINT));
+            mvwprintw(pop, row, bx + bar_d + 8, "(%dg)", g);
+            wattroff(pop, COLOR_PAIR(SCP_HINT));
+            row++;
+        }
+        row++;
+
+        /* ── Longest game & avg time ── */
+        if (row < pop_h - 2) {
+            int avg_t = total_g ? s->total_time_secs / total_g : 0;
+            wattron(pop, COLOR_PAIR(SCP_VAL));
+            mvwprintw(pop, row, lm, "Avg time  %02d:%02d   Longest  %d moves",
+                      avg_t / 60, avg_t % 60, s->longest_game_moves);
+            wattroff(pop, COLOR_PAIR(SCP_VAL));
+        }
+    }
+
+    touchwin(pop);
+    wrefresh(pop);
+    wgetch(pop);
+    delwin(pop);
+}

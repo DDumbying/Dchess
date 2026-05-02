@@ -29,6 +29,10 @@ void cli_help(void)
         "            medium – depth 5  (balanced)  [default]\n"
         "            hard   – depth 8  (challenging, slower)\n"
         "\n"
+        "    -2, --two-player\n"
+        "          Local two-player mode. No engine. Board flips after each move\n"
+        "          so the next player faces their own pieces.\n"
+        "\n"
         "    -s, --stats\n"
         "          Show your game statistics and exit.\n"
         "\n"
@@ -85,6 +89,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     args->show_version = 0;
     args->show_stats   = 0;
     args->show_help    = 0;
+    args->two_player   = 0;
     args->error        = 0;
     args->error_msg[0] = '\0';
 
@@ -153,6 +158,12 @@ int cli_parse(int argc, char **argv, CliArgs *args)
                 return -1;
             }
             args->engine_depth = diff_to_depth[args->difficulty];
+            continue;
+        }
+
+        /* ── --two-player / -2 ────────────────────────────────────────── */
+        if (strcmp(a, "--two-player") == 0 || strcmp(a, "-2") == 0) {
+            args->two_player = 1;
             continue;
         }
 

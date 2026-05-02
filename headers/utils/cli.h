@@ -17,6 +17,7 @@ typedef struct {
     int show_version;   /* --version flag */
     int show_stats;     /* --stats flag    */
     int show_help;      /* --help flag     */
+    int two_player;     /* --two-player flag: no engine, board flips */
     int error;          /* set on bad argument */
     char error_msg[256];
 } CliArgs;

@@ -19,10 +19,15 @@ static void record_move(TUIState *state, Move m, int piece, const char *buf)
 
     /* Clock */
     time_t now = time(NULL);
-    int elapsed = (int)(now - state->turn_start);
-    if (state->pos.side == WHITE) state->white_clock += elapsed;
-    else                          state->black_clock += elapsed;
+    int elapsed = 0;
+    if (state->clock_started) {
+        elapsed = (int)(now - state->turn_start);
+        if (state->pos.side == WHITE) state->white_clock += elapsed;
+        else                          state->black_clock += elapsed;
+    }
+    state->clock_started = 1;
     state->turn_start = now;
+    clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
 
     /* Halfmove clock */
     int is_pawn    = (piece == 0 || piece == 6);
@@ -123,8 +128,17 @@ static void engine_move(TUIState *state) {
     char buf[8];
     move_to_str(res.best_move, buf);
 
-    float eval_f = res.best_score / 100.0f;
+    /* Normalize score to White's perspective:
+     * negamax returns score for the side that just moved.
+     * If engine plays Black, a positive score means Black is ahead —
+     * flip sign so last_eval is always from White's point of view. */
+    int score_white = (state->pos.side == BLACK) ? res.best_score : -res.best_score;
+    float eval_f = score_white / 100.0f;
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
+
+    /* Record eval history */
+    if (state->eval_count < MAX_MOVE_HISTORY)
+        state->eval_history[state->eval_count++] = res.best_score;
 
     record_move(state, res.best_move, piece, buf);
     snprintf(state->status, sizeof(state->status), "Engine: %s (eval %+.2f)", buf, eval_f);
@@ -157,12 +171,15 @@ int handle_command(TUIState *state, const char *cmd) {
         state->game_over         = 0;
         state->game_result[0]    = '\0';
         state->turn_start        = time(NULL);
+        clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
         state->white_clock       = 0;
         state->black_clock       = 0;
         state->halfmove_clock    = 0;
         state->pos_history_count = 0;
         state->selected          = 0;
+        state->clock_started     = 0;
         memset(state->highlight, 0, sizeof(state->highlight));
+        state->view_side = WHITE;
 
         const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
                                (state->difficulty == DIFF_HARD)   ? "Hard"   : "Medium";

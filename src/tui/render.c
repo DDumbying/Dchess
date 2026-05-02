@@ -17,6 +17,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <time.h>
 
 /* ── Unicode pieces ────────────────────────────────────────────────────── */
 static const wchar_t PIECE_GLYPH[12] = {
@@ -318,6 +319,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
                             int sq_h, int sq_w)
 {
     const Position *pos = &state->pos;
+    int flipped = (state->view_side == BLACK); /* Black at bottom when flipped */
 
     int w_chk = is_in_check(pos, WHITE);
     int b_chk = is_in_check(pos, BLACK);
@@ -328,20 +330,21 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
     parse_last_move(state, &lm_from, &lm_to);
 
     for (int rank = 7; rank >= 0; rank--) {
-        int drow = 7 - rank;
+        /* When flipped, rank 0 (white's back rank) is at the top */
+        int drow = flipped ? rank : (7 - rank);
         int base = start_row + drow * sq_h;
 
-        /* Rank label on middle row of the rank band */
+        /* Rank label */
         wattron(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
         mvwprintw(win, base + sq_h/2, start_col - 2, "%d ", rank + 1);
         wattroff(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
 
         for (int file = 0; file < 8; file++) {
-            int sq    = rank * 8 + file;
+            int dfile = flipped ? (7 - file) : file;
+            int sq    = rank * 8 + dfile;
             int piece = piece_at(pos, sq);
-            int light = (rank + file) % 2 != 0;
+            int light = (rank + dfile) % 2 != 0;
 
-            /* ── Priority: check > cursor > selected > move-hi > last-move > normal ── */
             int is_check  = (sq == wk_sq && w_chk) || (sq == bk_sq && b_chk);
             int is_cursor = (state->cursor_row == drow &&
                              state->cursor_col == file);
@@ -354,7 +357,6 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
             int is_lmv    = (!is_check && !is_cursor && !is_sel && !is_movehi &&
                              (sq == lm_from || sq == lm_to));
 
-            /* ── Square background attr ── */
             attr_t sq_attr;
             if      (is_check)  sq_attr = COLOR_PAIR(CP_CHECK_SQ);
             else if (is_sel)    sq_attr = COLOR_PAIR(CP_SEL);
@@ -363,8 +365,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
             else if (is_lmv)    sq_attr = COLOR_PAIR(light ? CP_LMVL : CP_LMVD);
             else                sq_attr = COLOR_PAIR(light ? CP_LIGHT : CP_DARK);
 
-            /* ── Piece foreground attr ── */
-            attr_t pc_attr = sq_attr; /* default: invisible (empty) */
+            attr_t pc_attr = sq_attr;
             if (piece >= 0) {
                 int iw = (piece < 6);
                 if      (is_check)  pc_attr = COLOR_PAIR(CP_CHECK_PC)   | A_BOLD;
@@ -380,17 +381,19 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
                 }
             }
 
-            int dot = (is_movehi && piece < 0); /* bullet on empty legal-move sq */
+            int dot = (is_movehi && piece < 0);
             int col = start_col + file * sq_w;
             draw_square(win, base, col, sq_h, sq_w, piece, sq_attr, pc_attr, dot);
         }
     }
 
-    /* File labels (a-h) centred under each column */
+    /* File labels — a-h left-to-right when normal, h-a when flipped */
     int lr = start_row + 8 * sq_h;
     wattron(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
-    for (int f = 0; f < 8; f++)
-        mvwprintw(win, lr, start_col + f * sq_w + sq_w/2, "%c", 'a' + f);
+    for (int f = 0; f < 8; f++) {
+        char label = flipped ? ('h' - f) : ('a' + f);
+        mvwprintw(win, lr, start_col + f * sq_w + sq_w/2, "%c", label);
+    }
     wattroff(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
 }
 
@@ -695,8 +698,86 @@ static void draw_cmd(WINDOW *win)
     wnoutrefresh(win);
 }
 
+/* ── draw_eval_bar ───────────────────────────────────────────────────────────
+ *
+ * Vertical evaluation bar styled like chess.com:
+ *   • Black fills from the top
+ *   • White fills from the bottom
+ *   • The boundary between them shifts based on centipawn eval
+ *   • A small score label is shown at the boundary
+ *   • "B" label at top, "W" label at bottom
+ * ─────────────────────────────────────────────────────────────────────────── */
+static void draw_eval_bar(WINDOW *win, const TUIState *state)
+{
+    if (!win) return;
+    wclear(win);
+
+    int wh, ww;
+    getmaxyx(win, wh, ww);
+
+    /* Parse eval — centipawns from white's perspective */
+    float cp = 0.0f;
+    sscanf(state->last_eval, "%f", &cp);
+
+    /* Convert centipawns to pawns, clamp to ±10 for display */
+    float pawns = cp / 100.0f;
+    if (pawns >  10.0f) pawns =  10.0f;
+    if (pawns < -10.0f) pawns = -10.0f;
+
+    /* Bar occupies wh-4 rows (leave 1 top + 1 bottom for labels) */
+    int bar_top    = 1;
+    int bar_bottom = wh - 2;
+    int bar_h      = bar_bottom - bar_top + 1;
+    if (bar_h < 2) bar_h = 2;
+
+    /* Boundary row: 0.0 → exact middle; +10 → top; -10 → bottom */
+    float norm      = (10.0f - pawns) / 20.0f;   /* 0.0=all-white .. 1.0=all-black */
+    int   split_row = bar_top + (int)(norm * (bar_h - 1) + 0.5f);
+    if (split_row < bar_top)    split_row = bar_top;
+    if (split_row > bar_bottom) split_row = bar_bottom;
+
+    /* Draw bar cells — full width of the narrow window */
+    for (int r = bar_top; r <= bar_bottom; r++) {
+        int is_black = (r < split_row);
+        attr_t a = is_black ? (COLOR_PAIR(CP_B_DARK) | A_BOLD)
+                            : (COLOR_PAIR(CP_W_LIGHT) | A_BOLD);
+        wattron(win, a);
+        for (int c = 0; c < ww; c++)
+            mvwaddch(win, r, c, ACS_BLOCK);
+        wattroff(win, a);
+    }
+
+    /* Score label at the boundary (centred, on the split row) */
+    {
+        char label[12];
+        if (cp >= 0)
+            snprintf(label, sizeof(label), "+%.1f", cp / 100.0f);
+        else
+            snprintf(label, sizeof(label), "%.1f",  cp / 100.0f);
+        int llen = (int)strlen(label);
+        int lc   = (ww - llen) / 2;
+        if (lc < 0) lc = 0;
+
+        /* Print score — white text if on black zone, black text if on white zone */
+        attr_t la = (split_row > bar_top + bar_h / 2)
+                    ? (COLOR_PAIR(CP_W_LIGHT) | A_BOLD)
+                    : (COLOR_PAIR(CP_B_DARK)  | A_BOLD);
+        wattron(win, la);
+        mvwprintw(win, split_row, lc, "%.*s", ww, label);
+        wattroff(win, la);
+    }
+
+    /* "B" at top, "W" at bottom */
+    wattron(win, COLOR_PAIR(CP_HINT) | A_BOLD);
+    mvwprintw(win, 0,      (ww - 1) / 2, "B");
+    mvwprintw(win, wh - 1, (ww - 1) / 2, "W");
+    wattroff(win, COLOR_PAIR(CP_HINT) | A_BOLD);
+
+    wnoutrefresh(win);
+}
+
 /* ── render_all ─────────────────────────────────────────────────────────── */
-void render_all(WINDOW *board_win, WINDOW *info_win,
+void render_all(WINDOW *board_win, WINDOW *info_win, WINDOW *eval_bar_win,
                 WINDOW *cmd_win,   const TUIState *state)
 {
     wclear(board_win);
@@ -722,28 +803,38 @@ void render_all(WINDOW *board_win, WINDOW *info_win,
     wattroff(board_win, COLOR_PAIR(CP_LINK)|A_BOLD);
 
     /* ── Clock bar (row 1, inside border) ──
-     * White clock left, Black clock right, always ticking. */
+     * White clock left, Black clock right, ticking with centiseconds. */
     {
-        time_t now = time(NULL);
-        int cur_elapsed = (int)(now - state->turn_start);
-        int ws = state->white_clock;
-        int bs = state->black_clock;
-        /* Add live elapsed to the side currently moving */
-        if (!state->game_over) {
-            if (state->pos.side == WHITE) ws += cur_elapsed;
-            else                          bs += cur_elapsed;
+        struct timespec mono_now;
+        clock_gettime(CLOCK_MONOTONIC, &mono_now);
+
+        /* Elapsed centiseconds since turn started */
+        long cs_elapsed = (mono_now.tv_sec  - state->turn_start_mono.tv_sec)  * 100
+                        + (mono_now.tv_nsec - state->turn_start_mono.tv_nsec) / 10000000;
+        if (cs_elapsed < 0) cs_elapsed = 0;
+
+        /* Accumulated seconds converted to centiseconds */
+        long ws_cs = (long)state->white_clock * 100;
+        long bs_cs = (long)state->black_clock * 100;
+
+        /* Add live ticking to whichever side is on move */
+        if (!state->game_over && state->clock_started) {
+            if (state->clock_side == WHITE) ws_cs += cs_elapsed;
+            else                            bs_cs += cs_elapsed;
         }
 
-        attr_t wa = (state->pos.side == WHITE && !state->game_over)
+        attr_t wa = (state->clock_side == WHITE && !state->game_over)
                     ? (COLOR_PAIR(CP_INFO_VAL)|A_BOLD)
                     : COLOR_PAIR(CP_HINT);
-        attr_t ba = (state->pos.side == BLACK && !state->game_over)
+        attr_t ba = (state->clock_side == BLACK && !state->game_over)
                     ? (COLOR_PAIR(CP_INFO_VAL)|A_BOLD)
                     : COLOR_PAIR(CP_HINT);
 
-        char wstr[16], bstr[16];
-        snprintf(wstr, sizeof(wstr), "White: %02d:%02d", ws/60, ws%60);
-        snprintf(bstr, sizeof(bstr), "Black: %02d:%02d", bs/60, bs%60);
+        char wstr[20], bstr[20];
+        long wm = ws_cs / 6000, ws2 = (ws_cs % 6000) / 100, wcs = ws_cs % 100;
+        long bm = bs_cs / 6000, bs2 = (bs_cs % 6000) / 100, bcs = bs_cs % 100;
+        snprintf(wstr, sizeof(wstr), "W: %02ld:%02ld.%02ld", wm, ws2, wcs);
+        snprintf(bstr, sizeof(bstr), "B: %02ld:%02ld.%02ld", bm, bs2, bcs);
 
         wattron(board_win, wa);
         mvwprintw(board_win, 1, 2, "%s", wstr);
@@ -758,6 +849,7 @@ void render_all(WINDOW *board_win, WINDOW *info_win,
     draw_status(board_win, state);
     wnoutrefresh(board_win);
 
-    if (info_win) draw_info(info_win, state);
+    if (info_win)     draw_info(info_win, state);
+    if (eval_bar_win) draw_eval_bar(eval_bar_win, state);
     draw_cmd(cmd_win);
 }
