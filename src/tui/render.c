@@ -24,7 +24,17 @@ static const wchar_t PIECE_GLYPH[12] = {
     0x2659, 0x2658, 0x2657, 0x2656, 0x2655, 0x2654,  /* ♙♘♗♖♕♔ white */
     0x265F, 0x265E, 0x265D, 0x265C, 0x265B, 0x265A   /* ♟♞♝♜♛♚ black */
 };
-#define GLYPH_W 2   /* every chess glyph occupies exactly 2 terminal cells */
+
+/* Actual rendered width of a chess glyph in this terminal.
+ * Most fonts treat U+2654-U+265F as narrow (1 cell); a few CJK fonts
+ * render them as wide (2 cells). We detect this once at startup. */
+static int GLYPH_W = 1;   /* default; overridden by init_glyph_width() */
+
+static void init_glyph_width(void)
+{
+    int w = wcwidth(PIECE_GLYPH[0]);   /* check ♙ */
+    GLYPH_W = (w == 2) ? 2 : 1;
+}
 
 /* ── Square dimensions — computed at render time to fill available space ── */
 #define SQ_W_MIN 5
@@ -84,6 +94,7 @@ static const wchar_t PIECE_GLYPH[12] = {
 
 void init_colors(void)
 {
+    init_glyph_width();   /* detect 1- vs 2-cell chess glyphs for this terminal */
     if (!has_colors()) return;
     start_color();
     use_default_colors();
@@ -92,7 +103,7 @@ void init_colors(void)
         /* ── Define palette ── */
         init_color(COL_LIGHT,  870, 820, 710);  /* warm parchment       */
         init_color(COL_DARK,   360, 250, 150);  /* rich walnut          */
-        init_color(COL_WPFG,   970, 960, 920);  /* bright cream (white) */
+        /* COL_WPFG slot unused — white pieces use COLOR_YELLOW directly */
         init_color(COL_BPFG,   150, 310, 760);  /* cobalt blue  (black) */
         init_color(COL_CURSOR,  80, 680, 680);  /* teal cursor          */
         init_color(COL_SEL,    150, 680, 150);  /* green selection      */
@@ -109,22 +120,22 @@ void init_colors(void)
         init_pair(CP_DARK,       COL_DARK,   COL_DARK);
 
         /* ── Normal piece pairs ── */
-        init_pair(CP_W_LIGHT,    COL_WPFG,   COL_LIGHT);
-        init_pair(CP_W_DARK,     COL_WPFG,   COL_DARK);
+        init_pair(CP_W_LIGHT,    COLOR_YELLOW, COL_LIGHT);
+        init_pair(CP_W_DARK,     COLOR_YELLOW, COL_DARK);
         init_pair(CP_B_LIGHT,    COL_BPFG,   COL_LIGHT);
         init_pair(CP_B_DARK,     COL_BPFG,   COL_DARK);
 
         /* ── Cursor (arrow-key highlight) ── */
         init_pair(CP_CURSOR,     COL_CANVAS, COL_CURSOR);
-        init_pair(CP_CURSOR_PC,  COL_WPFG,   COL_CURSOR);
+        init_pair(CP_CURSOR_PC,  COLOR_YELLOW, COL_CURSOR);
 
         /* ── Selection ── */
         init_pair(CP_SEL,        COL_CANVAS, COL_SEL);
-        init_pair(CP_SEL_PC,     COL_WPFG,   COL_SEL);
+        init_pair(CP_SEL_PC,     COLOR_YELLOW, COL_SEL);
 
         /* ── Legal move destination highlight ── */
         init_pair(CP_MOVE_HI,    COL_CANVAS, COL_MOVEHI);
-        init_pair(CP_MOVE_HI_PC, COL_WPFG,   COL_MOVEHI);
+        init_pair(CP_MOVE_HI_PC, COLOR_YELLOW, COL_MOVEHI);
 
         /* ── Check ── */
         init_pair(CP_CHECK_SQ,   COL_GOLD,   COL_CHECK);
@@ -133,8 +144,8 @@ void init_colors(void)
         /* ── Last-move ── */
         init_pair(CP_LMVL,       COL_LIGHT,  COL_LMVL);
         init_pair(CP_LMVD,       COL_DARK,   COL_LMVD);
-        init_pair(CP_W_LMVL,     COL_WPFG,   COL_LMVL);
-        init_pair(CP_W_LMVD,     COL_WPFG,   COL_LMVD);
+        init_pair(CP_W_LMVL,     COLOR_YELLOW, COL_LMVL);
+        init_pair(CP_W_LMVD,     COLOR_YELLOW, COL_LMVD);
         init_pair(CP_B_LMVL,     COL_BPFG,   COL_LMVL);
         init_pair(CP_B_LMVD,     COL_BPFG,   COL_LMVD);
 
@@ -159,8 +170,8 @@ void init_colors(void)
         /* ── 8-color fallback ── */
         init_pair(CP_LIGHT,      COLOR_BLACK,  COLOR_WHITE);
         init_pair(CP_DARK,       COLOR_WHITE,  COLOR_BLACK);
-        init_pair(CP_W_LIGHT,    COLOR_BLUE,   COLOR_WHITE);
-        init_pair(CP_W_DARK,     COLOR_WHITE,  COLOR_BLACK);
+        init_pair(CP_W_LIGHT,    COLOR_YELLOW, COLOR_WHITE);
+        init_pair(CP_W_DARK,     COLOR_YELLOW, COLOR_BLACK);
         init_pair(CP_B_LIGHT,    COLOR_RED,    COLOR_WHITE);
         init_pair(CP_B_DARK,     COLOR_RED,    COLOR_BLACK);
         init_pair(CP_CURSOR,     COLOR_BLACK,  COLOR_CYAN);
@@ -173,8 +184,8 @@ void init_colors(void)
         init_pair(CP_CHECK_PC,   COLOR_YELLOW, COLOR_RED);
         init_pair(CP_LMVL,       COLOR_BLACK,  COLOR_GREEN);
         init_pair(CP_LMVD,       COLOR_WHITE,  COLOR_GREEN);
-        init_pair(CP_W_LMVL,     COLOR_BLUE,   COLOR_GREEN);
-        init_pair(CP_W_LMVD,     COLOR_WHITE,  COLOR_GREEN);
+        init_pair(CP_W_LMVL,     COLOR_YELLOW, COLOR_GREEN);
+        init_pair(CP_W_LMVD,     COLOR_YELLOW, COLOR_GREEN);
         init_pair(CP_B_LMVL,     COLOR_RED,    COLOR_GREEN);
         init_pair(CP_B_LMVD,     COLOR_RED,    COLOR_GREEN);
         init_pair(CP_BORDER,     COLOR_CYAN,   -1);
@@ -238,16 +249,23 @@ static void captured_counts(const Position *pos,
     }
 }
 
-/* Write one wide chess glyph using cchar_t (correct 2-cell width) */
+/* Write one chess glyph. When the font renders it as 1 cell (narrow),
+ * we write the glyph then fill the second reserved cell with a background
+ * space so the square background stays clean. */
 static void put_glyph(WINDOW *win, int r, int c, int piece, attr_t attr)
 {
     cchar_t cc;
     wchar_t ws[2] = { PIECE_GLYPH[piece], L'\0' };
-    /* extract only the style bits — PAIR_NUMBER needs the pair portion */
     attr_t style = attr & (A_BOLD | A_DIM | A_UNDERLINE | A_REVERSE);
     setcchar(&cc, ws, style, (short)PAIR_NUMBER(attr), NULL);
     wattron(win, attr);
     mvwadd_wch(win, r, c, &cc);
+    if (GLYPH_W == 1) {
+        /* Font treats this glyph as narrow — fill the gap cell */
+        wattroff(win, attr);
+        wattron(win, attr & ~(A_BOLD | A_DIM));
+        mvwaddch(win, r, c + 1, ' ');
+    }
     wattroff(win, attr);
 }
 
@@ -715,12 +733,11 @@ static void draw_eval_bar(WINDOW *win, const TUIState *state)
     int wh, ww;
     getmaxyx(win, wh, ww);
 
-    /* Parse eval — centipawns from white's perspective */
-    float cp = 0.0f;
-    sscanf(state->last_eval, "%f", &cp);
+    /* Parse eval — already in pawns (e.g. "+1.50") from white's perspective */
+    float pawns = 0.0f;
+    sscanf(state->last_eval, "%f", &pawns);
 
-    /* Convert centipawns to pawns, clamp to ±10 for display */
-    float pawns = cp / 100.0f;
+    /* Clamp to ±10 for display */
     if (pawns >  10.0f) pawns =  10.0f;
     if (pawns < -10.0f) pawns = -10.0f;
 
@@ -750,10 +767,10 @@ static void draw_eval_bar(WINDOW *win, const TUIState *state)
     /* Score label at the boundary (centred, on the split row) */
     {
         char label[12];
-        if (cp >= 0)
-            snprintf(label, sizeof(label), "+%.1f", cp / 100.0f);
+        if (pawns >= 0)
+            snprintf(label, sizeof(label), "+%.1f", pawns);
         else
-            snprintf(label, sizeof(label), "%.1f",  cp / 100.0f);
+            snprintf(label, sizeof(label), "%.1f",  pawns);
         int llen = (int)strlen(label);
         int lc   = (ww - llen) / 2;
         if (lc < 0) lc = 0;

@@ -886,7 +886,7 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
         wattroff(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
 
         static const char *dname[3] = { "Easy  ", "Medium", "Hard  " };
-        int bar_d = pop_w - lm * 2 - 14;
+        int bar_d = pop_w - lm * 2 - 18;   /* leave room: 7 label + bar + 2 gap + 5 pct + 2 gap + 5 count */
         if (bar_d < 6) bar_d = 6;
 
         for (int d = 0; d < 3; d++) {
@@ -915,10 +915,10 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
                         (p >= 30) ? COLOR_PAIR(SCP_NEUT) | A_BOLD :
                                     COLOR_PAIR(SCP_BAD)  | A_BOLD;
             wattron(pop, pa);
-            mvwprintw(pop, row, bx + bar_d + 2, "%4.0f%%", p);
+            mvwprintw(pop, row, bx + bar_d + 1, "%4.0f%%", p);
             wattroff(pop, pa);
             wattron(pop, COLOR_PAIR(SCP_HINT));
-            mvwprintw(pop, row, bx + bar_d + 8, "(%dg)", g);
+            mvwprintw(pop, row, bx + bar_d + 7, "%2dg", g);
             wattroff(pop, COLOR_PAIR(SCP_HINT));
             row++;
         }
