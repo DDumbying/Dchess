@@ -382,8 +382,10 @@ void tui_init(TUIState *state, const CliArgs *args)
     state->difficulty   = args ? args->difficulty   : DIFF_MEDIUM;
     state->engine_depth = args ? args->engine_depth : 5;
     state->two_player   = args ? args->two_player   : 0;
+    state->time_limit_ms = cli_time_limit_for_difficulty(state->difficulty);
     state->show_onboarding = args ?
         (args->menu || (!args->any_gameplay_flag && !args->no_menu)) : 0;
+    state->theme = args ? args->theme : 0;
 
     /* Starting position: a custom FEN if one was given (and it's still
      * valid -- cli_parse() already validated it, but a FEN chosen via
@@ -471,9 +473,15 @@ void tui_run(TUIState *state)
     keypad(stdscr, TRUE);
     curs_set(0);
 
-    init_colors();
+    init_colors(state->theme);
 
-    if (state->show_onboarding) tui_onboarding(state);
+    if (state->show_onboarding) {
+        if (!tui_onboarding(state)) {
+            endwin();
+            return; /* user chose to quit from the onboarding screen */
+        }
+    }
+    init_colors(state->theme); /* re-apply the theme actually chosen/confirmed */
 
     int rows, cols;
     getmaxyx(stdscr, rows, cols);

@@ -14,6 +14,7 @@
 #include "engine/make.h"
 #include "utils/constants.h"
 #include "utils/bitboard.h"
+#include "utils/theme.h"
 #include <string.h>
 #include <stdio.h>
 #include <wchar.h>
@@ -92,28 +93,30 @@ static void init_glyph_width(void)
 #define COL_CANVAS  19
 #define COL_CHROME  20
 
-void init_colors(void)
+void init_colors(int theme)
 {
     init_glyph_width();   /* detect 1- vs 2-cell chess glyphs for this terminal */
     if (!has_colors()) return;
     start_color();
     use_default_colors();
 
+    const Theme *t = theme_get(theme);
+
     if (can_change_color()) {
         /* ── Define palette ── */
-        init_color(COL_LIGHT,  870, 820, 710);  /* warm parchment       */
-        init_color(COL_DARK,   360, 250, 150);  /* rich walnut          */
+        init_color(COL_LIGHT,  t->light[0],  t->light[1],  t->light[2]);
+        init_color(COL_DARK,   t->dark[0],   t->dark[1],   t->dark[2]);
         /* COL_WPFG slot unused — white pieces use COLOR_YELLOW directly */
-        init_color(COL_BPFG,   150, 310, 760);  /* cobalt blue  (black) */
-        init_color(COL_CURSOR,  80, 680, 680);  /* teal cursor          */
-        init_color(COL_SEL,    150, 680, 150);  /* green selection      */
-        init_color(COL_MOVEHI,  80, 120, 500);  /* blue move highlight  */
-        init_color(COL_CHECK,  820, 130, 100);  /* vivid red            */
-        init_color(COL_GOLD,   990, 880, 200);  /* bright gold          */
-        init_color(COL_LMVL,   780, 830, 540);  /* last-move light      */
-        init_color(COL_LMVD,   390, 510, 180);  /* last-move dark       */
-        init_color(COL_CANVAS,  90, 110, 100);  /* dark charcoal canvas */
-        init_color(COL_CHROME, 500, 680, 680);  /* steel teal           */
+        init_color(COL_BPFG,   t->bpfg[0],   t->bpfg[1],   t->bpfg[2]);
+        init_color(COL_CURSOR, t->cursor[0], t->cursor[1], t->cursor[2]);
+        init_color(COL_SEL,    t->sel[0],    t->sel[1],    t->sel[2]);
+        init_color(COL_MOVEHI, t->movehi[0], t->movehi[1], t->movehi[2]);
+        init_color(COL_CHECK,  t->check[0],  t->check[1],  t->check[2]);
+        init_color(COL_GOLD,   t->gold[0],   t->gold[1],   t->gold[2]);
+        init_color(COL_LMVL,   t->lmvl[0],   t->lmvl[1],   t->lmvl[2]);
+        init_color(COL_LMVD,   t->lmvd[0],   t->lmvd[1],   t->lmvd[2]);
+        init_color(COL_CANVAS, t->canvas[0], t->canvas[1], t->canvas[2]);
+        init_color(COL_CHROME, t->chrome[0], t->chrome[1], t->chrome[2]);
 
         /* ── Board squares (fg = bg = same, invisible on empty cells) ── */
         init_pair(CP_LIGHT,      COL_LIGHT,  COL_LIGHT);

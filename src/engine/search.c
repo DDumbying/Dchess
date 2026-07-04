@@ -6,8 +6,32 @@
 #include "utils/constants.h"
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 static long node_count;
+
+/* ── Time budget ─────────────────────────────────────────────────────────
+ * Checked periodically (not every node -- clock_gettime() isn't free)
+ * from inside alpha_beta()/quiescence(). When the deadline passes,
+ * search_aborted latches true and every frame unwinds immediately;
+ * search()'s iterative-deepening loop then discards that in-progress
+ * iteration and returns the last one that finished cleanly. Depth 1 is
+ * always run with the time check disabled (see search()), so a legal
+ * move is always available even under an unreasonably tight budget. */
+static int time_limited;
+static int search_aborted;
+static struct timespec search_deadline;
+
+static int deadline_passed(void) {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (now.tv_sec  != search_deadline.tv_sec)
+        return now.tv_sec > search_deadline.tv_sec;
+    return now.tv_nsec >= search_deadline.tv_nsec;
+}
+
+/* Only actually check the clock every so often. */
+static inline int time_check_due(void) { return (node_count & 2047) == 0; }
 
 static int move_score(Move m) {
     int flags = FLAGS(m);
@@ -92,6 +116,10 @@ static void order_moves(MoveList *ml, Move tt_move) {
 static int quiescence(Position *pos, int alpha, int beta, int qply) {
     node_count++;
 
+    if (search_aborted) return alpha; /* unwind quickly; result gets discarded */
+    if (time_limited && time_check_due() && deadline_passed())
+        search_aborted = 1;
+
     int in_check = is_in_check(pos, pos->side);
 
     if (!in_check) {
@@ -138,6 +166,10 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
 
 static int alpha_beta(Position *pos, int depth, int alpha, int beta) {
     node_count++;
+
+    if (search_aborted) return alpha; /* unwind quickly; result gets discarded */
+    if (time_limited && time_check_due() && deadline_passed())
+        search_aborted = 1;
 
     if (depth == 0) return quiescence(pos, alpha, beta, 0);
 
@@ -196,41 +228,73 @@ static int alpha_beta(Position *pos, int depth, int alpha, int beta) {
     return alpha;
 }
 
-SearchResult search(Position *pos, int depth) {
-    SearchResult res = {0, -INF, 0};
+SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
+    SearchResult best = {0, -INF, 0, 0};
     node_count = 0;
     tt_ensure();
+    search_aborted = 0;
 
-    MoveList ml;
-    generate_moves(pos, &ml);
-    U64 root_key = hash_position(pos);
-    TTEntry *hit = tt_probe(root_key);
-    order_moves(&ml, hit ? hit->best : 0);
-
-    int alpha = -INF, beta = INF;
-
-    for (int i = 0; i < ml.count; i++) {
-        Position saved;
-        memcpy(&saved, pos, sizeof(Position));
-
-        if (!make_move(pos, ml.moves[i])) {
-            memcpy(pos, &saved, sizeof(Position));
-            continue;
-        }
-
-        int score = -alpha_beta(pos, depth-1, -beta, -alpha);
-        memcpy(pos, &saved, sizeof(Position));
-
-        if (score > alpha) {
-            alpha = score;
-            res.best_move  = ml.moves[i];
-            res.best_score = score;
+    if (time_limit_ms > 0) {
+        clock_gettime(CLOCK_MONOTONIC, &search_deadline);
+        search_deadline.tv_sec  += time_limit_ms / 1000;
+        search_deadline.tv_nsec += (long)(time_limit_ms % 1000) * 1000000L;
+        if (search_deadline.tv_nsec >= 1000000000L) {
+            search_deadline.tv_sec  += 1;
+            search_deadline.tv_nsec -= 1000000000L;
         }
     }
 
-    if (res.best_move)
-        tt_store(root_key, depth, alpha, TT_EXACT, res.best_move);
+    for (int depth = 1; depth <= max_depth; depth++) {
+        /* Depth 1 always runs uncapped, so `best` is never left empty --
+         * see the header comment on search(). Every deeper iteration is
+         * subject to the time budget, if one was given. */
+        time_limited = (depth > 1) && (time_limit_ms > 0);
 
-    res.nodes = node_count;
-    return res;
+        MoveList ml;
+        generate_moves(pos, &ml);
+        U64 root_key = hash_position(pos);
+        TTEntry *hit = tt_probe(root_key);
+        order_moves(&ml, hit ? hit->best : 0);
+
+        int alpha = -INF, beta = INF;
+        Move iter_best_move  = 0;
+        int  iter_best_score = -INF;
+        int  legal = 0;
+
+        for (int i = 0; i < ml.count; i++) {
+            Position saved;
+            memcpy(&saved, pos, sizeof(Position));
+
+            if (!make_move(pos, ml.moves[i])) {
+                memcpy(pos, &saved, sizeof(Position));
+                continue;
+            }
+            legal++;
+
+            int score = -alpha_beta(pos, depth - 1, -beta, -alpha);
+            memcpy(pos, &saved, sizeof(Position));
+
+            if (search_aborted) break; /* this iteration's numbers are unreliable */
+
+            if (score > alpha) {
+                alpha = score;
+                iter_best_move  = ml.moves[i];
+                iter_best_score = score;
+            }
+        }
+
+        if (search_aborted) break; /* keep the previous (complete) iteration's `best` */
+
+        best.best_move     = iter_best_move;
+        best.best_score     = iter_best_score;
+        best.depth_reached  = depth;
+        if (iter_best_move)
+            tt_store(root_key, depth, alpha, TT_EXACT, iter_best_move);
+
+        if (legal == 0) break; /* checkmate/stalemate: nothing deeper to find */
+        if (time_limit_ms > 0 && deadline_passed()) break;
+    }
+
+    best.nodes = node_count;
+    return best;
 }

@@ -5,6 +5,8 @@
 #include "engine/move.h"
 #include "engine/hash.h"
 #include "engine/fen.h"
+#include "tui/render.h"
+#include "utils/theme.h"
 #include "utils/constants.h"
 #include "utils/bitboard.h"
 #include "utils/stats.h"
@@ -103,7 +105,7 @@ static void engine_move(TUIState *state) {
      * terminal would just look frozen until the search returns. */
     if (state->request_redraw) state->request_redraw(state->redraw_ctx);
 
-    SearchResult res = search(&state->pos, state->engine_depth);
+    SearchResult res = search(&state->pos, state->engine_depth, state->time_limit_ms);
 
     if (!res.best_move) {
         state->game_over = 1;
@@ -139,7 +141,8 @@ static void engine_move(TUIState *state) {
         state->eval_history[state->eval_count++] = res.best_score;
 
     record_move(state, res.best_move, piece, buf);
-    snprintf(state->status, sizeof(state->status), "Engine: %s (eval %+.2f)", buf, eval_f);
+    snprintf(state->status, sizeof(state->status), "Engine: %s (eval %+.2f, depth %d)",
+             buf, eval_f, res.depth_reached);
 }
 
 int handle_command(TUIState *state, const char *cmd) {
@@ -159,7 +162,9 @@ int handle_command(TUIState *state, const char *cmd) {
         int d = atoi(cmd + 6);
         if (d >= 1 && d <= 8) {
             state->engine_depth = d;
-            snprintf(state->status, sizeof(state->status), "Depth set to %d", d);
+            snprintf(state->status, sizeof(state->status),
+                     "Depth cap set to %d (still bounded by the %.1fs time budget)",
+                     d, state->time_limit_ms / 1000.0f);
         }
         return 1;
     }
@@ -221,6 +226,20 @@ int handle_command(TUIState *state, const char *cmd) {
             engine_move(state);
         return 1;
     }
+    if (strncmp(cmd, "theme ", 6) == 0) {
+        int t = theme_from_name(cmd + 6);
+        if (t < 0) {
+            snprintf(state->status, sizeof(state->status),
+                     "Unknown theme '%s'. Use: classic | midnight | forest | contrast",
+                     cmd + 6);
+            return 1;
+        }
+        state->theme = t;
+        init_colors(t);
+        if (state->request_redraw) state->request_redraw(state->redraw_ctx);
+        snprintf(state->status, sizeof(state->status), "Theme: %s", theme_name(t));
+        return 1;
+    }
     if (strcmp(cmd, "flip") == 0) {
         if      (state->engine_side == BLACK)  state->engine_side = WHITE;
         else if (state->engine_side == WHITE)  state->engine_side = -1;
@@ -231,7 +250,7 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "eval") == 0) {
-        SearchResult res = search(&state->pos, 1);
+        SearchResult res = search(&state->pos, 1, 0);
         snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", res.best_score/100.0f);
         snprintf(state->status, sizeof(state->status), "Eval: %s", state->last_eval);
         return 1;

@@ -86,6 +86,15 @@ typedef struct {
      * after ncurses is up, to decide whether to show the interactive
      * onboarding screen before creating the game windows. */
     int show_onboarding;
+
+    /* Color theme index (see render.h theme_name()/theme_from_name()).
+     * Applied via init_colors(); can change live from the onboarding
+     * screen or the in-game "theme <name>" command. */
+    int theme;
+
+    /* Wall-clock time budget (ms) for search()'s iterative deepening,
+     * paired with engine_depth via cli_time_limit_for_difficulty(). */
+    int time_limit_ms;
 } TUIState;
 
 /* Pass CLI config so tui_init can configure engine side & depth */

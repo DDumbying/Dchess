@@ -21,7 +21,8 @@ typedef struct {
     char fen[128];       /* --fen <string>: custom starting position, empty = standard start */
     int menu;            /* --menu flag: force the interactive onboarding screen */
     int no_menu;         /* --no-menu flag: force-skip onboarding even with no other flags */
-    int any_gameplay_flag; /* set if --color/--difficulty/--two-player/--fen was given */
+    int theme;           /* --theme <name>: color theme index, default 0 ("classic") */
+    int any_gameplay_flag; /* set if --color/--difficulty/--two-player/--fen/--theme was given */
     int error;          /* set on bad argument */
     char error_msg[256];
 } CliArgs;
@@ -33,6 +34,11 @@ int  cli_parse(int argc, char **argv, CliArgs *args);
  * onboarding screen can derive engine_depth from a difficulty choice
  * without duplicating the mapping. */
 int  cli_depth_for_difficulty(int difficulty);
+
+/* Wall-clock time budget (milliseconds) paired with each difficulty's
+ * depth cap, for search()'s iterative deepening. Whichever runs out
+ * first -- depth or time -- ends the search. */
+int  cli_time_limit_for_difficulty(int difficulty);
 
 /* Print the help page and exit(0). */
 void cli_help(void);

@@ -3,6 +3,7 @@
 #include "utils/constants.h"
 #include "engine/board.h"
 #include "engine/fen.h"
+#include "utils/theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,10 +11,23 @@
 /* ── Depth table ─────────────────────────────────────────────────────────── */
 static const int diff_to_depth[3] = { 2, 5, 8 };
 
+/* ── Time budget table (ms) ──────────────────────────────────────────────
+ * Generous on purpose: iterative deepening + the transposition table
+ * mean most positions finish well before the budget runs out, so this
+ * mainly exists as a worst-case cap rather than something players will
+ * feel in normal play. */
+static const int diff_to_time_ms[3] = { 1500, 4000, 12000 };
+
 int cli_depth_for_difficulty(int difficulty)
 {
     if (difficulty < 0 || difficulty > 2) difficulty = DIFF_MEDIUM;
     return diff_to_depth[difficulty];
+}
+
+int cli_time_limit_for_difficulty(int difficulty)
+{
+    if (difficulty < 0 || difficulty > 2) difficulty = DIFF_MEDIUM;
+    return diff_to_time_ms[difficulty];
 }
 
 /* ── Help page ───────────────────────────────────────────────────────────── */
@@ -33,9 +47,9 @@ void cli_help(void)
         "\n"
         "    -d, --difficulty <easy|medium|hard>\n"
         "          Set the engine strength.\n"
-        "            easy   – depth 2  (quick, forgiving)\n"
-        "            medium – depth 5  (balanced)  [default]\n"
-        "            hard   – depth 8  (challenging, slower)\n"
+        "            easy   – depth 2, up to 1.5s  (quick, forgiving)\n"
+        "            medium – depth 5, up to 4s   (balanced)  [default]\n"
+        "            hard   – depth 8, up to 12s  (challenging, slower)\n"
         "\n"
         "    -2, --two-player\n"
         "          Local two-player mode. No engine. Board flips after each move\n"
@@ -52,6 +66,11 @@ void cli_help(void)
         "    --no-menu\n"
         "          Skip the onboarding screen and start immediately, even with\n"
         "          no other flags given (restores the classic instant-start).\n"
+        "\n"
+        "    --theme <name>\n"
+        "          Color theme: classic | midnight | forest | contrast\n"
+        "          (default: classic). Also changeable from the onboarding\n"
+        "          screen or the in-game 'theme <name>' command.\n"
         "\n"
         "    -s, --stats\n"
         "          Show your game statistics and exit.\n"
@@ -70,6 +89,7 @@ void cli_help(void)
         "    dchess -c black -d easy         Play as black on easy, no menu\n"
         "    dchess --fen \"<FEN string>\"      Start from a custom position\n"
         "    dchess --menu -d hard           Menu, pre-filled to hard difficulty\n"
+        "    dchess --theme midnight         Start with the midnight color theme\n"
         "    dchess --stats                  View your stats\n"
         "\n"
         "  IN-GAME COMMANDS  (type in the command bar at the bottom)\n"
@@ -82,6 +102,8 @@ void cli_help(void)
         "    fen         Show the current position as a FEN string\n"
         "    loadfen <FEN>\n"
         "                Load a custom position mid-game\n"
+        "    theme <name>\n"
+        "                Switch color theme: classic | midnight | forest | contrast\n"
         "    help        List in-game commands\n"
         "    quit / q    Exit dchess\n"
         "\n"
@@ -119,6 +141,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     args->fen[0]        = '\0';
     args->menu          = 0;
     args->no_menu       = 0;
+    args->theme         = 0;
     args->any_gameplay_flag = 0;
     args->error        = 0;
     args->error_msg[0] = '\0';
@@ -230,6 +253,33 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         /* ── --no-menu ─────────────────────────────────────────────────── */
         if (strcmp(a, "--no-menu") == 0) {
             args->no_menu = 1;
+            continue;
+        }
+
+        /* ── --theme <name> ───────────────────────────────────────────── */
+        if (strcmp(a, "--theme") == 0) {
+            if (i + 1 >= argc) {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Option '--theme' requires a name argument");
+                args->error = 1;
+                return -1;
+            }
+            const char *val = argv[++i];
+            int t = theme_from_name(val);
+            if (t < 0) {
+                char list[128] = {0};
+                for (int ti = 0; ti < theme_count(); ti++) {
+                    strncat(list, theme_name(ti), sizeof(list) - strlen(list) - 1);
+                    if (ti + 1 < theme_count())
+                        strncat(list, " | ", sizeof(list) - strlen(list) - 1);
+                }
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Unknown theme '%s'. Use: %s", val, list);
+                args->error = 1;
+                return -1;
+            }
+            args->theme = t;
+            args->any_gameplay_flag = 1;
             continue;
         }
 
