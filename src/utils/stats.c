@@ -54,6 +54,15 @@ static void ensure_dir(void)
 
 /* ── Public API ──────────────────────────────────────────────────────────── */
 
+/* Reads `n` objects of `size` from `f` into `ptr`; returns 1 on a full
+ * read, 0 short of it (truncated/corrupt file). Checking this matters
+ * here: without it, a truncated stats.dat left fields partially zeroed
+ * and partially garbage instead of cleanly falling back to "no stats". */
+static int fread_ok(void *ptr, size_t size, size_t n, FILE *f)
+{
+    return size == 0 || n == 0 || fread(ptr, size, n, f) == n;
+}
+
 int stats_load(DchessStats *s)
 {
     memset(s, 0, sizeof(*s));
@@ -65,44 +74,53 @@ int stats_load(DchessStats *s)
 
     unsigned long magic   = 0;
     int           version = 0;
-    fread(&magic,   sizeof(magic),   1, f);
-    fread(&version, sizeof(version), 1, f);
+    int ok = fread_ok(&magic,   sizeof(magic),   1, f) &&
+             fread_ok(&version, sizeof(version), 1, f);
 
-    if (magic == STATS_MAGIC) {
+    if (ok && magic == STATS_MAGIC) {
         if (version == STATS_VERSION) {
-            fread(&s->games_played,       sizeof(s->games_played),       1, f);
-            fread(&s->wins,               sizeof(s->wins),               1, f);
-            fread(&s->losses,             sizeof(s->losses),             1, f);
-            fread(&s->draws,              sizeof(s->draws),              1, f);
-            fread(&s->total_moves,        sizeof(s->total_moves),        1, f);
-            fread(&s->total_time_secs,    sizeof(s->total_time_secs),    1, f);
-            fread(&s->longest_game_moves, sizeof(s->longest_game_moves), 1, f);
-            fread(&s->played_as_white,    sizeof(s->played_as_white),    1, f);
-            fread(&s->played_as_black,    sizeof(s->played_as_black),    1, f);
-            fread(&s->wins_as_white,      sizeof(s->wins_as_white),      1, f);
-            fread(&s->wins_as_black,      sizeof(s->wins_as_black),      1, f);
-            fread(&s->history_count,      sizeof(s->history_count),      1, f);
-            if (s->history_count < 0 || s->history_count > DCHESS_MAX_HISTORY)
-                s->history_count = 0;
-            fread(s->history, sizeof(GameRecord), s->history_count, f);
+            ok = fread_ok(&s->games_played,       sizeof(s->games_played),       1, f) &&
+                 fread_ok(&s->wins,               sizeof(s->wins),               1, f) &&
+                 fread_ok(&s->losses,             sizeof(s->losses),             1, f) &&
+                 fread_ok(&s->draws,              sizeof(s->draws),              1, f) &&
+                 fread_ok(&s->total_moves,        sizeof(s->total_moves),        1, f) &&
+                 fread_ok(&s->total_time_secs,    sizeof(s->total_time_secs),    1, f) &&
+                 fread_ok(&s->longest_game_moves, sizeof(s->longest_game_moves), 1, f) &&
+                 fread_ok(&s->played_as_white,    sizeof(s->played_as_white),    1, f) &&
+                 fread_ok(&s->played_as_black,    sizeof(s->played_as_black),    1, f) &&
+                 fread_ok(&s->wins_as_white,      sizeof(s->wins_as_white),      1, f) &&
+                 fread_ok(&s->wins_as_black,      sizeof(s->wins_as_black),      1, f) &&
+                 fread_ok(&s->history_count,      sizeof(s->history_count),      1, f);
+            if (ok) {
+                if (s->history_count < 0 || s->history_count > DCHESS_MAX_HISTORY)
+                    s->history_count = 0;
+                ok = fread_ok(s->history, sizeof(GameRecord), s->history_count, f);
+            }
         } else if (version == 1) {
             DchessStatsV1 old;
             memset(&old, 0, sizeof(old));
-            fread(&old, sizeof(old), 1, f);
-            memcpy(s->games_played, old.games_played, sizeof(old.games_played));
-            memcpy(s->wins,         old.wins,         sizeof(old.wins));
-            memcpy(s->losses,       old.losses,       sizeof(old.losses));
-            memcpy(s->draws,        old.draws,        sizeof(old.draws));
-            s->total_moves        = old.total_moves;
-            s->total_time_secs    = old.total_time_secs;
-            s->longest_game_moves = old.longest_game_moves;
-            s->played_as_white    = old.played_as_white;
-            s->played_as_black    = old.played_as_black;
-            s->wins_as_white      = old.wins_as_white;
-            s->wins_as_black      = old.wins_as_black;
-            s->history_count      = 0;
+            ok = fread_ok(&old, sizeof(old), 1, f);
+            if (ok) {
+                memcpy(s->games_played, old.games_played, sizeof(old.games_played));
+                memcpy(s->wins,         old.wins,         sizeof(old.wins));
+                memcpy(s->losses,       old.losses,       sizeof(old.losses));
+                memcpy(s->draws,        old.draws,        sizeof(old.draws));
+                s->total_moves        = old.total_moves;
+                s->total_time_secs    = old.total_time_secs;
+                s->longest_game_moves = old.longest_game_moves;
+                s->played_as_white    = old.played_as_white;
+                s->played_as_black    = old.played_as_black;
+                s->wins_as_white      = old.wins_as_white;
+                s->wins_as_black      = old.wins_as_black;
+                s->history_count      = 0;
+            }
         }
+    } else {
+        ok = 0;
     }
+
+    if (!ok) memset(s, 0, sizeof(*s)); /* truncated/corrupt file: fall back cleanly */
+
     fclose(f);
     return 0;
 }

@@ -3,6 +3,8 @@
 #include "engine/make.h"
 #include "engine/search.h"
 #include "engine/move.h"
+#include "engine/hash.h"
+#include "engine/fen.h"
 #include "utils/constants.h"
 #include "utils/bitboard.h"
 #include "utils/stats.h"
@@ -40,18 +42,8 @@ static void record_move(TUIState *state, Move m, int piece, const char *buf)
     make_move(&state->pos, m);
 
     /* Position history for repetition */
-    if (state->pos_history_count < MAX_MOVE_HISTORY) {
-        /* Simple hash inline */
-        U64 h = 0xcbf29ce484222325ULL;
-        for (int i = 0; i < 12; i++) {
-            h ^= state->pos.bitboards[i] * 0x9e3779b97f4a7c15ULL;
-            h += (h << 6) + (h >> 2);
-        }
-        h ^= (U64)state->pos.side     * 0x517cc1b727220a95ULL;
-        h ^= (U64)state->pos.castling * 0x6c62272e07bb0142ULL;
-        h ^= (U64)(state->pos.enpassant+1) * 0xbf58476d1ce4e5b9ULL;
-        state->pos_history[state->pos_history_count++] = h;
-    }
+    if (state->pos_history_count < MAX_MOVE_HISTORY)
+        state->pos_history[state->pos_history_count++] = hash_position(&state->pos);
 
     /* Move history */
     int idx = state->move_count;
@@ -105,6 +97,12 @@ static int try_move(TUIState *state, const char *movestr) {
 
 static void engine_move(TUIState *state) {
     snprintf(state->status, sizeof(state->status), "Engine thinking...");
+    /* search() below blocks the whole process (no background thread),
+     * so force the "thinking" status onto the screen now — otherwise
+     * ncurses only flushes output between main-loop iterations and the
+     * terminal would just look frozen until the search returns. */
+    if (state->request_redraw) state->request_redraw(state->redraw_ctx);
+
     SearchResult res = search(&state->pos, state->engine_depth);
 
     if (!res.best_move) {
@@ -187,8 +185,39 @@ int handle_command(TUIState *state, const char *cmd) {
         snprintf(state->status, sizeof(state->status),
                  "New game – You play %s | %s difficulty", side_str, diff_str);
 
-        /* If player is Black, engine (White) moves first */
-        if (state->engine_side == WHITE)
+        /* If it's already engine's turn (player is Black in a standard
+         * start), engine moves first */
+        if (!state->two_player && state->engine_side == state->pos.side)
+            engine_move(state);
+        return 1;
+    }
+    if (strcmp(cmd, "fen") == 0) {
+        char buf[FEN_BUFSIZE];
+        int fullmove = state->move_count / 2 + 1;
+        position_to_fen(&state->pos, state->halfmove_clock, fullmove, buf, sizeof(buf));
+        snprintf(state->status, sizeof(state->status), "FEN: %s", buf);
+        return 1;
+    }
+    if (strncmp(cmd, "loadfen ", 8) == 0) {
+        Position pos;
+        int hm = 0, fm = 1;
+        if (!parse_fen(cmd + 8, &pos, &hm, &fm)) {
+            snprintf(state->status, sizeof(state->status), "Invalid FEN, position unchanged");
+            return 1;
+        }
+        state->pos               = pos;
+        state->halfmove_clock    = hm;
+        state->move_count        = (fm - 1) * 2 + (pos.side == BLACK ? 1 : 0);
+        state->game_over         = 0;
+        state->game_result[0]    = '\0';
+        state->pos_history_count = 0;
+        state->selected          = 0;
+        memset(state->highlight, 0, sizeof(state->highlight));
+        if (state->pos_history_count < MAX_MOVE_HISTORY)
+            state->pos_history[state->pos_history_count++] = hash_position(&state->pos);
+        snprintf(state->status, sizeof(state->status), "Position loaded from FEN");
+
+        if (!state->two_player && state->engine_side == state->pos.side)
             engine_move(state);
         return 1;
     }
@@ -224,7 +253,7 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
-                 "e2e4|go|new|flip|depth N|eval|stats|quit  (dchess --help for full docs)");
+                 "e2e4|go|new|flip|depth N|eval|fen|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;

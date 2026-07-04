@@ -3,10 +3,13 @@
 #include "tui/input.h"
 #include "tui/commands.h"
 #include "tui/stats_tui.h"
+#include "tui/onboard.h"
 #include "engine/board.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
 #include "engine/move.h"
+#include "engine/hash.h"
+#include "engine/fen.h"
 #include "utils/constants.h"
 #include "utils/bitboard.h"
 #include "utils/stats.h"
@@ -24,21 +27,6 @@
 #define CP_STATUS_OK 27
 #define CP_STATUS_ERR 28
 #define CP_SEL_PC    10
-
-/* ── Simple position hash for repetition detection ──────────────────────── */
-static U64 hash_position(const Position *pos)
-{
-    U64 h = 0xcbf29ce484222325ULL;
-    for (int i = 0; i < 12; i++) {
-        U64 bb = pos->bitboards[i];
-        h ^= bb * 0x9e3779b97f4a7c15ULL;
-        h += (h << 6) + (h >> 2);
-    }
-    h ^= (U64)pos->side    * 0x517cc1b727220a95ULL;
-    h ^= (U64)pos->castling * 0x6c62272e07bb0142ULL;
-    h ^= (U64)(pos->enpassant + 1) * 0xbf58476d1ce4e5b9ULL;
-    return h;
-}
 
 /* ── Check 50-move rule and 3-fold repetition ───────────────────────────── */
 static void check_draw_rules(TUIState *state)
@@ -388,13 +376,32 @@ static void cursor_enter(TUIState *state, WINDOW *board_win)
 void tui_init(TUIState *state, const CliArgs *args)
 {
     memset(state, 0, sizeof(*state));
-    init_start_position(&state->pos);
 
     /* Apply CLI configuration */
     state->player_side  = args ? args->player_side  : WHITE;
     state->difficulty   = args ? args->difficulty   : DIFF_MEDIUM;
     state->engine_depth = args ? args->engine_depth : 5;
     state->two_player   = args ? args->two_player   : 0;
+    state->show_onboarding = args ?
+        (args->menu || (!args->any_gameplay_flag && !args->no_menu)) : 0;
+
+    /* Starting position: a custom FEN if one was given (and it's still
+     * valid -- cli_parse() already validated it, but a FEN chosen via
+     * the onboarding screen goes through this same path, so re-check
+     * defensively rather than assume), otherwise the standard setup. */
+    int fen_ok = 0;
+    if (args && args->fen[0]) {
+        int hm = 0, fm = 1;
+        fen_ok = parse_fen(args->fen, &state->pos, &hm, &fm);
+        if (fen_ok) {
+            state->halfmove_clock = hm;
+            /* move_count is half-moves played so far; FEN's fullmove
+             * number is only a 1-based per-side-pair counter, so this
+             * is an approximation used purely for display purposes. */
+            state->move_count = (fm - 1) * 2 + (state->pos.side == BLACK ? 1 : 0);
+        }
+    }
+    if (!fen_ok) init_start_position(&state->pos);
 
     /* Engine plays the opposite side of the human (disabled in two-player) */
     state->engine_side  = state->two_player ? -1 :
@@ -418,12 +425,43 @@ void tui_init(TUIState *state, const CliArgs *args)
     const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
                            (state->difficulty == DIFF_HARD)   ? "Hard"   : "Medium";
     const char *side_str = (state->player_side == WHITE) ? "White" : "Black";
-    snprintf(state->status, sizeof(state->status),
-             "Ready – You play %s | %s difficulty | arrows/hjkl=move  enter=select",
-             side_str, diff_str);
+    if (args && args->fen[0] && !fen_ok) {
+        snprintf(state->status, sizeof(state->status),
+                 "Invalid --fen, started standard game instead | You play %s | %s difficulty",
+                 side_str, diff_str);
+    } else {
+        snprintf(state->status, sizeof(state->status),
+                 "Ready – You play %s | %s difficulty | arrows/hjkl=move  enter=select",
+                 side_str, diff_str);
+    }
 }
 
 void tui_cleanup(void) { endwin(); }
+
+/* ── Forced repaint hook (see TUIState.request_redraw) ──────────────────── */
+typedef struct {
+    WINDOW   *board_win, *info_win, *eval_bar_win, *cmd_win;
+    TUIState *state;
+} RedrawCtx;
+
+static void do_redraw(void *ctx)
+{
+    RedrawCtx *r = (RedrawCtx*)ctx;
+    werase(stdscr);
+    wnoutrefresh(stdscr);
+    render_all(r->board_win, r->info_win, r->eval_bar_win, r->cmd_win, r->state);
+    touchwin(stdscr);
+    touchwin(r->board_win);
+    if (r->info_win)     touchwin(r->info_win);
+    if (r->eval_bar_win) touchwin(r->eval_bar_win);
+    touchwin(r->cmd_win);
+    wnoutrefresh(stdscr);
+    wnoutrefresh(r->board_win);
+    if (r->info_win)     wnoutrefresh(r->info_win);
+    if (r->eval_bar_win) wnoutrefresh(r->eval_bar_win);
+    wnoutrefresh(r->cmd_win);
+    doupdate();
+}
 
 void tui_run(TUIState *state)
 {
@@ -434,6 +472,8 @@ void tui_run(TUIState *state)
     curs_set(0);
 
     init_colors();
+
+    if (state->show_onboarding) tui_onboarding(state);
 
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -463,10 +503,19 @@ void tui_run(TUIState *state)
     /* Redraw every 100 ms so clocks tick live without waiting for input */
     wtimeout(cmd_win, 100);
 
-    char cmd_buf[64];
+    /* Let engine_move() (in commands.c) force a repaint before it blocks
+     * on search() — see the RedrawCtx/do_redraw definitions above. */
+    RedrawCtx redraw_ctx = { board_win, info_win, eval_bar_win, cmd_win, state };
+    state->request_redraw = do_redraw;
+    state->redraw_ctx     = &redraw_ctx;
 
-    /* If player chose Black, engine (White) goes first */
-    if (state->engine_side == WHITE) {
+    char cmd_buf[256];
+
+    /* Engine moves first if it's already engine's turn in the starting
+     * position -- true for "player chose Black" in a standard game, but
+     * also needs checking explicitly for a custom FEN that starts with
+     * the engine's side to move (e.g. loaded from --fen or onboarding). */
+    if (!state->two_player && state->engine_side == state->pos.side) {
         handle_command(state, "go");
     }
 

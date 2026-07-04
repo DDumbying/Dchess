@@ -73,6 +73,19 @@ typedef struct {
      * In single-player this equals player_side and never changes.
      * In two-player this flips between WHITE and BLACK after each move. */
     int  view_side;
+
+    /* Lets code outside tui.c (engine_move() in commands.c) force an
+     * immediate screen repaint before a long blocking call, so status
+     * text like "Engine thinking..." is actually painted to the
+     * terminal instead of looking frozen until search() returns.
+     * Installed by tui_run(); NULL (and safely skipped) if unset. */
+    void (*request_redraw)(void *ctx);
+    void  *redraw_ctx;
+
+    /* Set by tui_init() from CliArgs; tui_run() checks this once, right
+     * after ncurses is up, to decide whether to show the interactive
+     * onboarding screen before creating the game windows. */
+    int show_onboarding;
 } TUIState;
 
 /* Pass CLI config so tui_init can configure engine side & depth */

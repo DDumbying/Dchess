@@ -6,9 +6,6 @@ U64 pawn_attacks[2][64];
 U64 knight_attacks[64];
 U64 king_attacks[64];
 
-static U64 bishop_masks[64];
-static U64 rook_masks[64];
-
 /* ---- leaper attack tables ---- */
 
 static U64 mask_pawn_attacks(int side, int sq) {
@@ -24,24 +21,14 @@ static U64 mask_pawn_attacks(int side, int sq) {
 }
 
 static U64 mask_knight_attacks(int sq) {
-    U64 bb = 1ULL << sq, a = 0;
-    if (bb & ~0x0101010101010101ULL) { a |= bb << 15; a |= bb >> 17; }
-    if (bb & ~0x8080808080808080ULL) { a |= bb << 17; a |= bb >> 15; }
-    if (bb & ~0x0303030303030303ULL) a |= bb >> 10;
-    if (bb & ~0xC0C0C0C0C0C0C0C0ULL) a |= bb << 10;
-    if (bb & ~0x0303030303030303ULL) a |= bb << 6;
-    if (bb & ~0xC0C0C0C0C0C0C0C0ULL) a |= bb >> 6;
-    /* simpler: */
-    a = 0;
-    U64 b = 1ULL << sq;
+    U64 b  = 1ULL << sq;
     U64 l1 = (b >> 1) & 0x7f7f7f7f7f7f7f7fULL;
     U64 l2 = (b >> 2) & 0x3f3f3f3f3f3f3f3fULL;
     U64 r1 = (b << 1) & 0xfefefefefefefefeULL;
     U64 r2 = (b << 2) & 0xfcfcfcfcfcfcfcfcULL;
     U64 h1 = l1 | r1;
     U64 h2 = l2 | r2;
-    a = (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8);
-    return a;
+    return (h1 << 16) | (h1 >> 16) | (h2 << 8) | (h2 >> 8);
 }
 
 static U64 mask_king_attacks(int sq) {
@@ -58,16 +45,6 @@ static U64 mask_king_attacks(int sq) {
 }
 
 /* ---- slider attacks (classical approach) ---- */
-
-static U64 ray(int sq, int dr, int df) {
-    U64 result = 0;
-    int r = sq / 8 + dr, f = sq % 8 + df;
-    while (r >= 0 && r < 8 && f >= 0 && f < 8) {
-        result |= 1ULL << (r * 8 + f);
-        r += dr; f += df;
-    }
-    return result;
-}
 
 static U64 bishop_attacks_slow(int sq, U64 occ) {
     U64 a = 0;

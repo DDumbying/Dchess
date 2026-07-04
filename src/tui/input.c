@@ -28,7 +28,7 @@
  */
 int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
 {
-    static char ibuf[64];
+    static char ibuf[256];
     static int  ilen = 0;
 
     int h, w;

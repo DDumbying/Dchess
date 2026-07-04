@@ -4,16 +4,8 @@
 #include "utils/constants.h"
 #include <string.h>
 
-/* Castle right masks: when a square is touched, revoke these rights */
-static const int castling_rights[64] = {
-    [a1] = ~CASTLE_WHITE_QUEEN,
-    [h1] = ~CASTLE_WHITE_KING,
-    [e1] = ~(CASTLE_WHITE_KING|CASTLE_WHITE_QUEEN),
-    [a8] = ~CASTLE_BLACK_QUEEN,
-    [h8] = ~CASTLE_BLACK_KING,
-    [e8] = ~(CASTLE_BLACK_KING|CASTLE_BLACK_QUEEN),
-};
-
+/* Castle right masks: when a square is touched, revoke these rights.
+ * (Populated into cr[] below by init_rights() on first use.) */
 static void init_rights(int rights[64]) {
     for (int i = 0; i < 64; i++) rights[i] = ~0;
     rights[a1] = ~CASTLE_WHITE_QUEEN;
@@ -98,9 +90,4 @@ int make_move(Position *pos, Move move) {
         return 0; /* illegal */
     }
     return 1;
-}
-
-void undo_move(Position *pos, Move move, const Position *saved) {
-    (void)move;
-    memcpy(pos, saved, sizeof(Position));
 }

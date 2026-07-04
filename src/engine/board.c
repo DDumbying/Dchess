@@ -7,7 +7,7 @@
 void clear_position(Position* pos) {
     memset(pos, 0, sizeof(Position));
 
-    pos->enpassant = -1;
+    pos->enpassant = NO_SQ;
 }
 
 void update_occupancies(Position* pos) {
@@ -56,7 +56,6 @@ void init_start_position(Position* pos) {
     pos->bitboards[k] = 0x1000000000000000ULL;
 
     pos->side = WHITE;
-    pos->enpassant = -1;
 
     pos->castling =
         CASTLE_WHITE_KING |

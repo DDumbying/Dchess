@@ -70,7 +70,7 @@ void generate_moves(const Position *pos, MoveList *ml) {
             /* en passant */
             if (pos->enpassant != NO_SQ) {
                 if (pawn_attacks[WHITE][sq] & (1ULL << pos->enpassant))
-                    add_move(ml, sq, pos->enpassant, P, FLAG_ENPASSANT);
+                    add_move(ml, sq, pos->enpassant, P, FLAG_CAPTURE | FLAG_ENPASSANT);
             }
         }
         /* castling */
@@ -104,7 +104,7 @@ void generate_moves(const Position *pos, MoveList *ml) {
             }
             if (pos->enpassant != NO_SQ) {
                 if (pawn_attacks[BLACK][sq] & (1ULL << pos->enpassant))
-                    add_move(ml, sq, pos->enpassant, p, FLAG_ENPASSANT);
+                    add_move(ml, sq, pos->enpassant, p, FLAG_CAPTURE | FLAG_ENPASSANT);
             }
         }
         /* castling */
