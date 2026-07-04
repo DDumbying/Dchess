@@ -9,8 +9,6 @@ today, and what a realistic path forward looks like. It's meant to be read
 once for context and then revisited as a changelog/roadmap whenever the
 project picks back up.
 
----
-
 ## 1. What Dchess is
 
 Dchess is a terminal chess engine written in C, played through a full-screen
@@ -36,8 +34,6 @@ At a glance, it currently offers:
 - CLI flags for scripted/non-interactive use, alongside the visual menu
 
 Version string as of this writing: `1.0.0-alpha` (see `headers/utils/stats.h`).
-
----
 
 ## 2. Where it started
 
@@ -94,8 +90,6 @@ hobby project built in bursts. Specifically, when this work began:
 None of this is a knock on the project — it's exactly what an actively
 worked-on hobby engine looks like mid-stream. The point of writing it down
 here is so the starting point is on the record, not just the end state.
-
----
 
 ## 3. What changed, and why
 
@@ -208,8 +202,6 @@ would need the raw FEN string threaded through, which `TUIState` doesn't
 currently retain past the point `tui_init()` turns it into a `Position`),
 just not done yet.
 
----
-
 ## 4. Current architecture
 
 ```
@@ -271,8 +263,6 @@ back up:
 - **The transposition table and quiescence search are engine-only changes**
   -- nothing in `tui/` needed to change for either.
 
----
-
 ## 5. What's still genuinely open
 
 Being direct about the current gaps, in the order they'd probably matter
@@ -300,8 +290,6 @@ most if you sat down to keep improving this:
 7. **No opening book, no PGN import/export, no UCI protocol support** -- so
    Dchess can't currently interoperate with other chess GUIs, engines, or
    game databases; it's a closed, self-contained TUI experience.
-
----
 
 ## 6. What Dchess should be
 
@@ -335,8 +323,6 @@ protocol support would let it plug into any standard chess GUI (Arena,
 CuteChess, even lichess bot accounts) for free, without touching the TUI at
 all -- the engine's search/movegen layer is already cleanly separated from
 the `ncurses` layer, which makes this more tractable than it might sound.
-
----
 
 ## 7. Roadmap
 
@@ -374,8 +360,6 @@ Roughly in priority order, based on effort vs. payoff:
 - Expand `perft.c` with more known-hard test positions (there are a few
   more standard ones beyond Kiwipete and the promotion-heavy position used
   here) and push depths higher where runtime allows.
-
----
 
 ## 8. Quick reference: verifying any of this yourself
 
