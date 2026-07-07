@@ -170,39 +170,43 @@ void init_colors(int theme)
         init_pair(CP_CANVAS,     COL_CANVAS,  COL_CANVAS);
 
     } else {
-        /* ── 8-color fallback ── */
+        /* ── 8-color fallback ──────────────────────────────────────────
+         * No custom RGB on this terminal, only the 8 standard ANSI
+         * colors -- board squares stay a fixed black/white regardless
+         * of theme (safest for piece readability); the accent colors
+         * (t->fb_*) are what actually varies by theme here. */
         init_pair(CP_LIGHT,      COLOR_BLACK,  COLOR_WHITE);
         init_pair(CP_DARK,       COLOR_WHITE,  COLOR_BLACK);
         init_pair(CP_W_LIGHT,    COLOR_YELLOW, COLOR_WHITE);
         init_pair(CP_W_DARK,     COLOR_YELLOW, COLOR_BLACK);
         init_pair(CP_B_LIGHT,    COLOR_RED,    COLOR_WHITE);
         init_pair(CP_B_DARK,     COLOR_RED,    COLOR_BLACK);
-        init_pair(CP_CURSOR,     COLOR_BLACK,  COLOR_CYAN);
-        init_pair(CP_CURSOR_PC,  COLOR_WHITE,  COLOR_CYAN);
-        init_pair(CP_SEL,        COLOR_BLACK,  COLOR_GREEN);
-        init_pair(CP_SEL_PC,     COLOR_WHITE,  COLOR_GREEN);
-        init_pair(CP_MOVE_HI,    COLOR_WHITE,  COLOR_BLUE);
-        init_pair(CP_MOVE_HI_PC, COLOR_WHITE,  COLOR_BLUE);
-        init_pair(CP_CHECK_SQ,   COLOR_YELLOW, COLOR_RED);
-        init_pair(CP_CHECK_PC,   COLOR_YELLOW, COLOR_RED);
-        init_pair(CP_LMVL,       COLOR_BLACK,  COLOR_GREEN);
-        init_pair(CP_LMVD,       COLOR_WHITE,  COLOR_GREEN);
-        init_pair(CP_W_LMVL,     COLOR_YELLOW, COLOR_GREEN);
-        init_pair(CP_W_LMVD,     COLOR_YELLOW, COLOR_GREEN);
-        init_pair(CP_B_LMVL,     COLOR_RED,    COLOR_GREEN);
-        init_pair(CP_B_LMVD,     COLOR_RED,    COLOR_GREEN);
-        init_pair(CP_BORDER,     COLOR_CYAN,   -1);
-        init_pair(CP_TITLE,      COLOR_CYAN,   -1);
+        init_pair(CP_CURSOR,     COLOR_BLACK,  t->fb_cursor_bg);
+        init_pair(CP_CURSOR_PC,  COLOR_WHITE,  t->fb_cursor_bg);
+        init_pair(CP_SEL,        COLOR_BLACK,  t->fb_sel_bg);
+        init_pair(CP_SEL_PC,     COLOR_WHITE,  t->fb_sel_bg);
+        init_pair(CP_MOVE_HI,    COLOR_WHITE,  t->fb_movehi_bg);
+        init_pair(CP_MOVE_HI_PC, COLOR_WHITE,  t->fb_movehi_bg);
+        init_pair(CP_CHECK_SQ,   COLOR_YELLOW, t->fb_check_bg);
+        init_pair(CP_CHECK_PC,   COLOR_YELLOW, t->fb_check_bg);
+        init_pair(CP_LMVL,       COLOR_BLACK,  t->fb_sel_bg);
+        init_pair(CP_LMVD,       COLOR_WHITE,  t->fb_sel_bg);
+        init_pair(CP_W_LMVL,     COLOR_YELLOW, t->fb_sel_bg);
+        init_pair(CP_W_LMVD,     COLOR_YELLOW, t->fb_sel_bg);
+        init_pair(CP_B_LMVL,     COLOR_RED,    t->fb_sel_bg);
+        init_pair(CP_B_LMVD,     COLOR_RED,    t->fb_sel_bg);
+        init_pair(CP_BORDER,     t->fb_accent, -1);
+        init_pair(CP_TITLE,      t->fb_accent, -1);
         init_pair(CP_LINK,       COLOR_WHITE,  -1);
-        init_pair(CP_LABEL,      COLOR_CYAN,   -1);
+        init_pair(CP_LABEL,      t->fb_accent, -1);
         init_pair(CP_INFO_HEAD,  COLOR_YELLOW, -1);
         init_pair(CP_INFO_VAL,   COLOR_WHITE,  -1);
         init_pair(CP_STATUS_OK,  COLOR_GREEN,  -1);
         init_pair(CP_STATUS_ERR, COLOR_RED,    -1);
-        init_pair(CP_HINT,       COLOR_CYAN,   -1);
+        init_pair(CP_HINT,       t->fb_accent, -1);
         init_pair(CP_CMD,        COLOR_WHITE,  -1);
         init_pair(CP_MOVE_W,     COLOR_WHITE,  -1);
-        init_pair(CP_MOVE_B,     COLOR_CYAN,   -1);
+        init_pair(CP_MOVE_B,     t->fb_accent, -1);
         init_pair(CP_CAP_W,      COLOR_BLUE,   -1);
         init_pair(CP_CAP_B,      COLOR_RED,    -1);
         init_pair(CP_CANVAS,     COLOR_WHITE,  COLOR_BLACK);

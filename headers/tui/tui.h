@@ -7,6 +7,7 @@
 #include "utils/cli.h"
 #include <ncurses.h>
 #include <time.h>
+#include <pthread.h>
 
 #define MAX_MOVE_HISTORY 256
 
@@ -95,6 +96,38 @@ typedef struct {
     /* Wall-clock time budget (ms) for search()'s iterative deepening,
      * paired with engine_depth via cli_time_limit_for_difficulty(). */
     int time_limit_ms;
+
+    /* ── Background engine search ─────────────────────────────────────────
+     * The engine's search() runs on a separate thread so the UI stays
+     * responsive (clock ticking, redraws, quit) while it thinks, instead
+     * of the whole process blocking for up to time_limit_ms.
+     *
+     * search_snapshot is a PRIVATE COPY of the position taken at the
+     * moment the search is kicked off -- the worker thread only ever
+     * touches this copy, never the live `pos` above, so the main thread
+     * can keep safely reading/rendering `pos` the entire time a search
+     * is in flight. `pos` itself is only updated afterward, on the main
+     * thread, once the result has been collected.
+     *
+     * search_running is only ever touched by the main thread (set before
+     * pthread_create, cleared after pthread_join) -- it's how the rest of
+     * the UI knows a search is in flight and should reject any command
+     * that would otherwise race with it (a new move, a new game, loading
+     * a different position, another concurrent search() call, etc.).
+     * search_ready/search_result are the one genuine cross-thread
+     * handoff and are protected by search_mutex: the worker thread locks,
+     * writes the result, sets search_ready, and unlocks just before it
+     * exits; the main thread's poll_engine_search() (see commands.c)
+     * locks, checks/copies/clears, and unlocks once per main-loop
+     * iteration (~every 100ms, via the existing redraw timeout). */
+    pthread_t       search_thread;
+    pthread_mutex_t search_mutex;
+    int             search_running;
+    int             search_ready;
+    Position        search_snapshot;
+    int             search_depth_arg;     /* engine_depth, captured at kickoff */
+    int             search_time_limit_arg; /* time_limit_ms, captured at kickoff */
+    SearchResult    search_result;
 } TUIState;
 
 /* Pass CLI config so tui_init can configure engine side & depth */

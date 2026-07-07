@@ -12,11 +12,17 @@
 static const int diff_to_depth[3] = { 2, 5, 8 };
 
 /* ── Time budget table (ms) ──────────────────────────────────────────────
- * Generous on purpose: iterative deepening + the transposition table
- * mean most positions finish well before the budget runs out, so this
- * mainly exists as a worst-case cap rather than something players will
- * feel in normal play. */
-static const int diff_to_time_ms[3] = { 1500, 4000, 12000 };
+ * Generous on purpose, but not unlimited: measured against the opening
+ * position, this engine's depth 7 takes ~26s and depth 8 ~170s to
+ * complete (no null-move pruning or late-move reductions to tame the
+ * branching factor), while producing the *same* recommended move as
+ * depth 6 did in well under a second. So a large budget mostly just
+ * waits, without a corresponding strength gain, on calm positions --
+ * hard's budget below is sized to usually finish depth 6 comfortably
+ * and sometimes reach into depth 7 on sharper or simpler (lower
+ * branching factor) positions, without committing to depth 7/8's full
+ * cost on every single move. */
+static const int diff_to_time_ms[3] = { 1500, 3000, 5000 };
 
 int cli_depth_for_difficulty(int difficulty)
 {
@@ -48,8 +54,8 @@ void cli_help(void)
         "    -d, --difficulty <easy|medium|hard>\n"
         "          Set the engine strength.\n"
         "            easy   – depth 2, up to 1.5s  (quick, forgiving)\n"
-        "            medium – depth 5, up to 4s   (balanced)  [default]\n"
-        "            hard   – depth 8, up to 12s  (challenging, slower)\n"
+        "            medium – depth 5, up to 3s   (balanced)  [default]\n"
+        "            hard   – depth 8, up to 5s   (challenging, slower)\n"
         "\n"
         "    -2, --two-player\n"
         "          Local two-player mode. No engine. Board flips after each move\n"
@@ -95,6 +101,8 @@ void cli_help(void)
         "  IN-GAME COMMANDS  (type in the command bar at the bottom)\n"
         "    e2e4        Make a move in algebraic notation\n"
         "    go          Let the engine play the current side\n"
+        "    stop        Have a thinking engine return its best move now,\n"
+        "                instead of waiting out the rest of its time budget\n"
         "    new         Reset the board to a new game\n"
         "    flip        Swap which side the engine plays\n"
         "    depth N     Change search depth (1–8) mid-game\n"

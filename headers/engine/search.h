@@ -19,4 +19,14 @@ typedef struct {
  * exists) even under a very tight budget. */
 SearchResult search(Position *pos, int max_depth, int time_limit_ms);
 
+/* Asks an in-progress search() (running on another thread) to stop as
+ * soon as possible. search() will still return the last iteration that
+ * completed cleanly -- never nothing, as long as depth 1 finished (see
+ * above). Safe to call whether or not a search is actually running;
+ * has no effect until the *next* search() call otherwise (each search()
+ * clears this at its own start). Thread-safe: this is the one function
+ * in this file meant to be called from a different thread than the one
+ * running search() itself. */
+void search_cancel(void);
+
 #endif

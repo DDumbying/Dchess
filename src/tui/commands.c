@@ -15,8 +15,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 
-/* Record a move + clock + halfmove into state (shared by try_move and engine_move) */
+/* Record a move + clock + halfmove into state (shared by try_move and apply_engine_result) */
 static void record_move(TUIState *state, Move m, int piece, const char *buf)
 {
     int to_sq = TO(m);
@@ -97,16 +98,60 @@ static int try_move(TUIState *state, const char *movestr) {
     return 0;
 }
 
-static void engine_move(TUIState *state) {
+/* Runs on a separate thread (see start_engine_search()). Searches only
+ * state->search_snapshot -- a private copy taken at kickoff time -- so
+ * this never touches state->pos, and the main thread can keep safely
+ * reading/rendering state->pos the whole time this runs. */
+static void *engine_search_worker(void *arg) {
+    TUIState *state = (TUIState *)arg;
+    SearchResult res = search(&state->search_snapshot,
+                               state->search_depth_arg, state->search_time_limit_arg);
+
+    pthread_mutex_lock(&state->search_mutex);
+    state->search_result = res;
+    state->search_ready  = 1;
+    pthread_mutex_unlock(&state->search_mutex);
+
+    return NULL;
+}
+
+/* Kicks off a background search and returns immediately -- it does not
+ * wait for a result. Call poll_engine_search() (from the main loop) to
+ * notice when it finishes and apply the move. A no-op if a search is
+ * already running, so it's safe to call this defensively. */
+static void start_engine_search(TUIState *state) {
+    if (state->search_running) return;
+
+    /* engine_depth/time_limit_ms are captured into the search itself via
+     * arguments inside the worker below; search_snapshot is captured
+     * here, before the thread starts, so nothing the worker reads can
+     * change out from under it once it's running. */
+    state->search_snapshot      = state->pos;
+    state->search_depth_arg     = state->engine_depth;
+    state->search_time_limit_arg = state->time_limit_ms;
+    state->search_ready         = 0;
+    state->search_running       = 1;
+
     snprintf(state->status, sizeof(state->status), "Engine thinking...");
-    /* search() below blocks the whole process (no background thread),
-     * so force the "thinking" status onto the screen now — otherwise
-     * ncurses only flushes output between main-loop iterations and the
-     * terminal would just look frozen until the search returns. */
     if (state->request_redraw) state->request_redraw(state->redraw_ctx);
 
-    SearchResult res = search(&state->pos, state->engine_depth, state->time_limit_ms);
+    if (pthread_create(&state->search_thread, NULL, engine_search_worker, state) != 0) {
+        /* Thread creation failing is rare (resource exhaustion) but not
+         * impossible -- fall back to a synchronous search rather than
+         * leaving search_running stuck true forever with nothing ever
+         * going to clear it. */
+        state->search_running = 0;
+        SearchResult res = search(&state->pos, state->engine_depth, state->time_limit_ms);
+        state->search_result = res;
+        state->search_ready  = 1;
+    }
+}
 
+/* Applies a completed search result: plays the move (or ends the game),
+ * updates eval history and the status line. Shared by poll_engine_search()
+ * (the normal, threaded path) and start_engine_search()'s same-thread
+ * fallback above. */
+static void apply_engine_result(TUIState *state, SearchResult res) {
     if (!res.best_move) {
         state->game_over = 1;
         if (is_in_check(&state->pos, state->pos.side)) {
@@ -145,17 +190,97 @@ static void engine_move(TUIState *state) {
              buf, eval_f, res.depth_reached);
 }
 
+int poll_engine_search(TUIState *state) {
+    if (!state->search_running) return 0;
+
+    pthread_mutex_lock(&state->search_mutex);
+    int ready = state->search_ready;
+    SearchResult res = state->search_result;
+    pthread_mutex_unlock(&state->search_mutex);
+
+    if (!ready) return 0;
+
+    pthread_join(state->search_thread, NULL);
+    state->search_running = 0;
+    apply_engine_result(state, res);
+    return 1;
+}
+
+/* Cancels an in-flight search and waits for the worker thread to actually
+ * stop -- near-instant in practice (the cancellation check runs every
+ * ~512 nodes; see search.c). Whatever the search had come up with is
+ * discarded, not applied, since the caller is about to replace the game
+ * state entirely (new game, a loaded position, a side swap) rather than
+ * continue the game the search was computing a move for. Use this, not
+ * a "please wait" rejection, for commands that mean "start over." */
+static void cancel_running_search(TUIState *state) {
+    if (!state->search_running) return;
+    search_cancel();
+    pthread_join(state->search_thread, NULL);
+    state->search_running = 0;
+    state->search_ready    = 0;
+}
+
 int handle_command(TUIState *state, const char *cmd) {
     if (!cmd || !cmd[0]) return 1;
 
-    if (cmd[0] >= 'a' && cmd[0] <= 'h' && cmd[1] >= '1' && cmd[1] <= '8') {
+    /* "stop": ask an in-flight search to return its best-guess-so-far
+     * move right now, same idea as UCI's "stop" -- the last cleanly
+     * completed iteration always has a legal move ready (see search.c),
+     * so this always has something to apply, never nothing. */
+    if (strcmp(cmd, "stop") == 0) {
+        if (!state->search_running) {
+            snprintf(state->status, sizeof(state->status), "No search in progress");
+            return 1;
+        }
+        search_cancel();
+        pthread_join(state->search_thread, NULL);
+        state->search_running = 0;
+        pthread_mutex_lock(&state->search_mutex);
+        SearchResult res = state->search_result;
+        state->search_ready = 0;
+        pthread_mutex_unlock(&state->search_mutex);
+        apply_engine_result(state, res);
+        return 1;
+    }
+
+    /* Commands that don't touch state->pos and wouldn't call search()
+     * again concurrently (fen, theme, help, stats, quit) are always
+     * safe to run immediately, search or no search.
+     *
+     * Moves/"go"/"eval" are simply rejected while the engine thinks --
+     * none of them mean "start over," so waiting (or using "stop" first)
+     * makes more sense than force-cancelling on their behalf. */
+    int is_move = (cmd[0] >= 'a' && cmd[0] <= 'h' && cmd[1] >= '1' && cmd[1] <= '8');
+    int reject_while_thinking =
+        is_move ||
+        strcmp(cmd, "go") == 0 ||
+        strcmp(cmd, "eval") == 0;
+
+    if (reject_while_thinking && state->search_running) {
+        snprintf(state->status, sizeof(state->status),
+                 "Engine is thinking — please wait, or use 'stop'");
+        return 1;
+    }
+
+    /* "new"/"loadfen"/"flip" all mean "replace the current game state,"
+     * so a stale in-flight search for the position being replaced isn't
+     * worth waiting for -- cancel it (discarding whatever it had found;
+     * see cancel_running_search()) and proceed immediately instead of
+     * making the player wait or rejecting the command outright. */
+    if (strcmp(cmd, "new") == 0 || strcmp(cmd, "flip") == 0 ||
+        strncmp(cmd, "loadfen ", 8) == 0) {
+        cancel_running_search(state);
+    }
+
+    if (is_move) {
         if (!state->game_over && try_move(state, cmd))
             if (state->engine_side == state->pos.side && !state->game_over)
-                engine_move(state);
+                start_engine_search(state);
         return 1;
     }
     if (strcmp(cmd, "go") == 0) {
-        if (!state->game_over) engine_move(state);
+        if (!state->game_over) start_engine_search(state);
         return 1;
     }
     if (strncmp(cmd, "depth ", 6) == 0) {
@@ -193,7 +318,7 @@ int handle_command(TUIState *state, const char *cmd) {
         /* If it's already engine's turn (player is Black in a standard
          * start), engine moves first */
         if (!state->two_player && state->engine_side == state->pos.side)
-            engine_move(state);
+            start_engine_search(state);
         return 1;
     }
     if (strcmp(cmd, "fen") == 0) {
@@ -223,7 +348,7 @@ int handle_command(TUIState *state, const char *cmd) {
         snprintf(state->status, sizeof(state->status), "Position loaded from FEN");
 
         if (!state->two_player && state->engine_side == state->pos.side)
-            engine_move(state);
+            start_engine_search(state);
         return 1;
     }
     if (strncmp(cmd, "theme ", 6) == 0) {
@@ -272,7 +397,7 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
-                 "e2e4|go|new|flip|depth N|eval|fen|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
+                 "e2e4|go|stop|new|flip|depth N|eval|fen|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;

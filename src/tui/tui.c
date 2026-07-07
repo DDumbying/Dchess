@@ -16,6 +16,7 @@
 #include "utils/cli.h"
 #include <ncurses.h>
 #include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -354,9 +355,13 @@ static void cursor_enter(TUIState *state, WINDOW *board_win)
                 state->cursor_row = 6;
                 state->cursor_col = 4;
             } else if (state->engine_side == state->pos.side) {
+                /* "go" just kicks off a background search and returns
+                 * immediately -- nothing has happened yet, so there's
+                 * nothing to sync or check here. The main loop's
+                 * poll_engine_search() re-syncs clock_side and calls
+                 * check_game_over() once the engine's move actually
+                 * lands (see tui_run()). */
                 handle_command(state, "go");
-                state->clock_side = state->pos.side;
-                check_game_over(state);
             }
 
             moved = 1;
@@ -376,6 +381,13 @@ static void cursor_enter(TUIState *state, WINDOW *board_win)
 void tui_init(TUIState *state, const CliArgs *args)
 {
     memset(state, 0, sizeof(*state));
+
+    /* tui_init() can run twice (CLI defaults, then again from onboarding
+     * with the player's choices) -- always before any background search
+     * could possibly be in flight, so re-initializing an all-zeroed,
+     * never-locked mutex here is safe in practice even without an
+     * explicit destroy first. */
+    pthread_mutex_init(&state->search_mutex, NULL);
 
     /* Apply CLI configuration */
     state->player_side  = args ? args->player_side  : WHITE;
@@ -511,8 +523,10 @@ void tui_run(TUIState *state)
     /* Redraw every 100 ms so clocks tick live without waiting for input */
     wtimeout(cmd_win, 100);
 
-    /* Let engine_move() (in commands.c) force a repaint before it blocks
-     * on search() — see the RedrawCtx/do_redraw definitions above. */
+    /* Let start_engine_search() (in commands.c) force a repaint right
+     * after it sets the "Engine thinking..." status and before the
+     * background search thread starts, so that status is visible
+     * immediately instead of waiting for the next 100ms redraw tick. */
     RedrawCtx redraw_ctx = { board_win, info_win, eval_bar_win, cmd_win, state };
     state->request_redraw = do_redraw;
     state->redraw_ctx     = &redraw_ctx;
@@ -531,6 +545,14 @@ void tui_run(TUIState *state)
     state->clock_side = state->pos.side;
 
     while (1) {
+
+        /* -- If the engine's background search (see poll_engine_search())
+         *    just finished, apply its move and re-sync clock/game-over
+         *    state before anything else this iteration -- */
+        if (poll_engine_search(state)) {
+            state->clock_side = state->pos.side;
+            check_game_over(state);
+        }
 
         /* -- If game just ended (e.g. engine delivered checkmate),
          *    show the popup immediately before the next render -- */
@@ -615,6 +637,14 @@ void tui_run(TUIState *state)
         }
     }
 quit:
+    /* Deliberately not joining state->search_thread here even if a
+     * background search is still running: main() returns right after
+     * this function does, which ends the whole process (and every
+     * thread in it) immediately. Waiting for pthread_join() instead
+     * would make "quit" block for however much of the time budget the
+     * search has left (up to a few seconds) -- a real regression versus
+     * quitting being instant, for no benefit, since the search thread
+     * holds no resources (files, locks) that need an orderly release. */
     delwin(board_win);
     if (eval_bar_win) delwin(eval_bar_win);
     if (info_win) delwin(info_win);

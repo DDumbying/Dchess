@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdatomic.h>
 
 static long node_count;
 
@@ -22,6 +23,19 @@ static int time_limited;
 static int search_aborted;
 static struct timespec search_deadline;
 
+/* ── Cancellation ────────────────────────────────────────────────────────
+ * search_cancel() is the one function in this file meant to be called
+ * from a *different* thread than the one running search() -- e.g. the
+ * UI thread asking a background search to stop early (see commands.c).
+ * That makes this the one piece of shared state in search.c that
+ * actually needs a real cross-thread guarantee rather than the
+ * single-threaded "only one search() in flight at a time" invariant
+ * everything else here relies on, hence stdatomic.h instead of a plain
+ * int like search_aborted above. */
+static atomic_int cancel_requested;
+
+void search_cancel(void) { atomic_store(&cancel_requested, 1); }
+
 static int deadline_passed(void) {
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -30,8 +44,8 @@ static int deadline_passed(void) {
     return now.tv_nsec >= search_deadline.tv_nsec;
 }
 
-/* Only actually check the clock every so often. */
 static inline int time_check_due(void) { return (node_count & 2047) == 0; }
+static inline int cancel_check_due(void) { return (node_count & 511) == 0; }
 
 static int move_score(Move m) {
     int flags = FLAGS(m);
@@ -119,6 +133,8 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
     if (search_aborted) return alpha; /* unwind quickly; result gets discarded */
     if (time_limited && time_check_due() && deadline_passed())
         search_aborted = 1;
+    if (cancel_check_due() && atomic_load(&cancel_requested))
+        search_aborted = 1;
 
     int in_check = is_in_check(pos, pos->side);
 
@@ -169,6 +185,8 @@ static int alpha_beta(Position *pos, int depth, int alpha, int beta) {
 
     if (search_aborted) return alpha; /* unwind quickly; result gets discarded */
     if (time_limited && time_check_due() && deadline_passed())
+        search_aborted = 1;
+    if (cancel_check_due() && atomic_load(&cancel_requested))
         search_aborted = 1;
 
     if (depth == 0) return quiescence(pos, alpha, beta, 0);
@@ -233,6 +251,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
     node_count = 0;
     tt_ensure();
     search_aborted = 0;
+    atomic_store(&cancel_requested, 0);
 
     if (time_limit_ms > 0) {
         clock_gettime(CLOCK_MONOTONIC, &search_deadline);
