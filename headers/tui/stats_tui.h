@@ -20,8 +20,6 @@ void show_stats_overlay(const DchessStats *s);
 /* Draw full stats + win-rate history graph into an existing window */
 void draw_stats_overlay(WINDOW *win, const DchessStats *s);
 
-/* Compact numeric-only stats for the in-game Tab overlay (no graph) */
-void draw_stats_compact(WINDOW *win, const DchessStats *s);
 
 /* Small centered popup for in-game quick stats (Tab key) */
 void draw_stats_mini(WINDOW *parent, const DchessStats *s);

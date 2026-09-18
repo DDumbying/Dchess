@@ -10,6 +10,7 @@
  */
 
 #include "tui/render.h"
+#include "tui/colors.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
 #include "utils/constants.h"
@@ -41,57 +42,42 @@ static void init_glyph_width(void)
 #define SQ_W_MIN 5
 #define SQ_H_MIN 2
 
-/* ── Color pair IDs ─────────────────────────────────────────────────────── */
-#define CP_LIGHT        1   /* light square bg                    */
-#define CP_DARK         2   /* dark  square bg                    */
-#define CP_W_LIGHT      3   /* white piece fg on light sq         */
-#define CP_W_DARK       4   /* white piece fg on dark  sq         */
-#define CP_B_LIGHT      5   /* black piece fg on light sq         */
-#define CP_B_DARK       6   /* black piece fg on dark  sq         */
-#define CP_CURSOR       7   /* cursor highlight (no piece)        */
-#define CP_CURSOR_PC    8   /* cursor highlight (piece)           */
-#define CP_SEL          9   /* selected square bg                 */
-#define CP_SEL_PC      10   /* selected square piece              */
-#define CP_MOVE_HI     11   /* legal-move dest highlight bg       */
-#define CP_MOVE_HI_PC  12   /* legal-move dest with piece         */
-#define CP_CHECK_SQ    13   /* king-in-check square               */
-#define CP_CHECK_PC    14   /* king piece on check sq             */
-#define CP_LMVL        15   /* last-move light sq                 */
-#define CP_LMVD        16   /* last-move dark  sq                 */
-#define CP_W_LMVL      17
-#define CP_W_LMVD      18
-#define CP_B_LMVL      19
-#define CP_B_LMVD      20
-#define CP_BORDER      21
-#define CP_TITLE       22
-#define CP_LINK        23
-#define CP_LABEL       24
-#define CP_INFO_HEAD   25
-#define CP_INFO_VAL    26
-#define CP_STATUS_OK   27
-#define CP_STATUS_ERR  28
-#define CP_HINT        29
-#define CP_CMD         30
-#define CP_MOVE_W      31
-#define CP_MOVE_B      32
-#define CP_CAP_W       33
-#define CP_CAP_B       34
-#define CP_CANVAS      35
 
-/* ── Custom color slot IDs (init_color) ──────────────────────────────────  */
-#define COL_LIGHT    8
-#define COL_DARK     9
-#define COL_WPFG    10
-#define COL_BPFG    11
-#define COL_CURSOR  12
-#define COL_SEL     13
-#define COL_MOVEHI  14
-#define COL_CHECK   15
-#define COL_GOLD    16
-#define COL_LMVL    17
-#define COL_LMVD    18
-#define COL_CANVAS  19
-#define COL_CHROME  20
+
+/* ── 8-color fallback contrast helpers ───────────────────────────────────
+ * In the fallback path the highlight backgrounds come from the theme
+ * (t->fb_*), but the foregrounds used to be hard-coded. Any theme that
+ * picked a background equal to one of those foregrounds rendered that
+ * cell invisible -- e.g. "contrast" sets fb_sel_bg = FB_WHITE, and the
+ * selected piece was drawn COLOR_WHITE on it. Deriving the foreground
+ * from the background instead makes every theme legible by construction,
+ * and keeps a new theme from reintroducing the same bug. */
+
+/* Of the 8 ANSI colors, which read as light backgrounds? */
+static int fb_is_light(int bg)
+{
+    return bg == COLOR_WHITE || bg == COLOR_YELLOW || bg == COLOR_CYAN;
+}
+
+/* Foreground for an empty highlighted square. */
+static int fb_plain_fg(int bg)
+{
+    return fb_is_light(bg) ? COLOR_BLACK : COLOR_WHITE;
+}
+
+/* Foreground for a WHITE piece sitting on `bg`. */
+static int fb_white_pc_fg(int bg)
+{
+    return fb_is_light(bg) ? COLOR_BLUE : COLOR_WHITE;
+}
+
+/* Foreground for a BLACK piece sitting on `bg`. Red reads as "black
+ * piece" everywhere else in this file, so keep it unless the background
+ * is itself red. */
+static int fb_black_pc_fg(int bg)
+{
+    return (bg == COLOR_RED || bg == COLOR_MAGENTA) ? COLOR_BLACK : COLOR_RED;
+}
 
 void init_colors(int theme)
 {
@@ -181,20 +167,20 @@ void init_colors(int theme)
         init_pair(CP_W_DARK,     COLOR_YELLOW, COLOR_BLACK);
         init_pair(CP_B_LIGHT,    COLOR_RED,    COLOR_WHITE);
         init_pair(CP_B_DARK,     COLOR_RED,    COLOR_BLACK);
-        init_pair(CP_CURSOR,     COLOR_BLACK,  t->fb_cursor_bg);
-        init_pair(CP_CURSOR_PC,  COLOR_WHITE,  t->fb_cursor_bg);
-        init_pair(CP_SEL,        COLOR_BLACK,  t->fb_sel_bg);
-        init_pair(CP_SEL_PC,     COLOR_WHITE,  t->fb_sel_bg);
-        init_pair(CP_MOVE_HI,    COLOR_WHITE,  t->fb_movehi_bg);
-        init_pair(CP_MOVE_HI_PC, COLOR_WHITE,  t->fb_movehi_bg);
-        init_pair(CP_CHECK_SQ,   COLOR_YELLOW, t->fb_check_bg);
-        init_pair(CP_CHECK_PC,   COLOR_YELLOW, t->fb_check_bg);
-        init_pair(CP_LMVL,       COLOR_BLACK,  t->fb_sel_bg);
-        init_pair(CP_LMVD,       COLOR_WHITE,  t->fb_sel_bg);
-        init_pair(CP_W_LMVL,     COLOR_YELLOW, t->fb_sel_bg);
-        init_pair(CP_W_LMVD,     COLOR_YELLOW, t->fb_sel_bg);
-        init_pair(CP_B_LMVL,     COLOR_RED,    t->fb_sel_bg);
-        init_pair(CP_B_LMVD,     COLOR_RED,    t->fb_sel_bg);
+        init_pair(CP_CURSOR,     fb_plain_fg(t->fb_cursor_bg),    t->fb_cursor_bg);
+        init_pair(CP_CURSOR_PC,  fb_white_pc_fg(t->fb_cursor_bg), t->fb_cursor_bg);
+        init_pair(CP_SEL,        fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
+        init_pair(CP_SEL_PC,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+        init_pair(CP_MOVE_HI,    fb_plain_fg(t->fb_movehi_bg),    t->fb_movehi_bg);
+        init_pair(CP_MOVE_HI_PC, fb_white_pc_fg(t->fb_movehi_bg), t->fb_movehi_bg);
+        init_pair(CP_CHECK_SQ,   fb_plain_fg(t->fb_check_bg),     t->fb_check_bg);
+        init_pair(CP_CHECK_PC,   fb_white_pc_fg(t->fb_check_bg),  t->fb_check_bg);
+        init_pair(CP_LMVL,       fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
+        init_pair(CP_LMVD,       fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
+        init_pair(CP_W_LMVL,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+        init_pair(CP_W_LMVD,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+        init_pair(CP_B_LMVL,     fb_black_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+        init_pair(CP_B_LMVD,     fb_black_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
         init_pair(CP_BORDER,     t->fb_accent, -1);
         init_pair(CP_TITLE,      t->fb_accent, -1);
         init_pair(CP_LINK,       COLOR_WHITE,  -1);
@@ -229,8 +215,8 @@ static void hfill(WINDOW *w, int r, int c, int len, chtype ch)
 static void parse_last_move(const TUIState *s, int *from, int *to)
 {
     *from = *to = -1;
-    if (s->move_count < 1) return;
-    const char *mv = s->move_history[s->move_count - 1];
+    if (s->game.move_count < 1) return;
+    const char *mv = s->game.move_history[s->game.move_count - 1];
     if (!mv || strlen(mv) < 4) return;
     if (mv[0]<'a'||mv[0]>'h'||mv[2]<'a'||mv[2]>'h') return;
     if (mv[1]<'1'||mv[1]>'8'||mv[3]<'1'||mv[3]>'8') return;
@@ -343,7 +329,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
                             int start_row, int start_col,
                             int sq_h, int sq_w)
 {
-    const Position *pos = &state->pos;
+    const Position *pos = &state->game.pos;
     int flipped = (state->view_side == BLACK); /* Black at bottom when flipped */
 
     int w_chk = is_in_check(pos, WHITE);
@@ -492,7 +478,7 @@ static void draw_status(WINDOW *win, const TUIState *state)
     wattroff(win, st);
 
     /* Check callout */
-    if (is_in_check(&state->pos, state->pos.side)) {
+    if (is_in_check(&state->game.pos, state->game.pos.side)) {
         wattron(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
         mvwprintw(win, wh-5, ww-14, " !! CHECK !! ");
         wattroff(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
@@ -513,7 +499,7 @@ static void draw_status(WINDOW *win, const TUIState *state)
     }
 
     /* Game info */
-    const char *side = state->pos.side == WHITE ? "White" : "Black";
+    const char *side = state->game.pos.side == WHITE ? "White" : "Black";
     wattron(win, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
     mvwprintw(win, wh-3, 2, "[ %s to move ]  depth:%d  eval:%s",
               side, state->engine_depth, state->last_eval);
@@ -588,11 +574,11 @@ static void draw_info(WINDOW *win, const TUIState *state)
     wattron(win, COLOR_PAIR(CP_INFO_VAL));
     mvwprintw(win, row++, 2, "depth : %d",  state->engine_depth);
     mvwprintw(win, row++, 2, "eval  : %s",  state->last_eval);
-    mvwprintw(win, row++, 2, "side  : %s",  state->pos.side == WHITE ? "White" : "Black");
+    mvwprintw(win, row++, 2, "side  : %s",  state->game.pos.side == WHITE ? "White" : "Black");
     mvwprintw(win, row++, 2, "engine: %s",  eng);
     wattroff(win, COLOR_PAIR(CP_INFO_VAL));
 
-    if (is_in_check(&state->pos, state->pos.side)) {
+    if (is_in_check(&state->game.pos, state->game.pos.side)) {
         wattron(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
         mvwprintw(win, row++, 2, "** CHECK **");
         wattroff(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
@@ -613,7 +599,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
     int hist_rows = wh - row - cap_h;
     if (hist_rows < 1) hist_rows = 1;
 
-    int total  = (state->move_count + 1) / 2;
+    int total  = (state->game.move_count + 1) / 2;
     int start  = total - hist_rows;
     if (start < 0) start = 0;
 
@@ -627,8 +613,8 @@ static void draw_info(WINDOW *win, const TUIState *state)
         wattroff(win, COLOR_PAIR(CP_HINT));
 
         /* White move — glyph@6 move@8 time@14 */
-        if (wi < state->move_count) {
-            int pidx = state->move_piece[wi];
+        if (wi < state->game.move_count) {
+            int pidx = state->game.move_piece[wi];
             attr_t wa = latest ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD : COLOR_PAIR(CP_MOVE_W)|A_BOLD;
             if (pidx >= 0) {
                 cchar_t cc;
@@ -639,9 +625,9 @@ static void draw_info(WINDOW *win, const TUIState *state)
                 wattroff(win, wa);
             }
             wattron(win, wa);
-            mvwprintw(win, row, 8, "%-5s", state->move_history[wi]);
+            mvwprintw(win, row, 8, "%-5s", state->game.move_history[wi]);
             wattroff(win, wa);
-            int t = state->move_time[wi];
+            int t = state->game.move_time[wi];
             wattron(win, COLOR_PAIR(CP_HINT));
             if (t < 60)   mvwprintw(win, row, 14, "%2ds", t);
             else          mvwprintw(win, row, 14, "%dm%d", t/60, t%60);
@@ -649,8 +635,8 @@ static void draw_info(WINDOW *win, const TUIState *state)
         }
 
         /* Black move — glyph@19 move@21 time@27 */
-        if (bi < state->move_count) {
-            int pidx = state->move_piece[bi];
+        if (bi < state->game.move_count) {
+            int pidx = state->game.move_piece[bi];
             attr_t ba = latest ? COLOR_PAIR(CP_STATUS_OK) : COLOR_PAIR(CP_MOVE_B);
             if (pidx >= 0) {
                 cchar_t cc;
@@ -661,9 +647,9 @@ static void draw_info(WINDOW *win, const TUIState *state)
                 wattroff(win, ba);
             }
             wattron(win, ba);
-            mvwprintw(win, row, 21, "%-5s", state->move_history[bi]);
+            mvwprintw(win, row, 21, "%-5s", state->game.move_history[bi]);
             wattroff(win, ba);
-            int t = state->move_time[bi];
+            int t = state->game.move_time[bi];
             wattron(win, COLOR_PAIR(CP_HINT));
             if (t < 60)   mvwprintw(win, row, 27, "%2ds", t);
             else          mvwprintw(win, row, 27, "%dm%d", t/60, t%60);
@@ -671,7 +657,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
         }
         row++;
     }
-    if (state->move_count == 0) {
+    if (state->game.move_count == 0) {
         wattron(win, COLOR_PAIR(CP_HINT));
         mvwprintw(win, row, 2, "(no moves)");
         wattroff(win, COLOR_PAIR(CP_HINT));
@@ -691,7 +677,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
     int cw[6], cb[6];
-    captured_counts(&state->pos, cw, cb);
+    captured_counts(&state->game.pos, cw, cb);
     int adv = 0;
     for (int i = 0; i < 5; i++) adv += (cb[i] - cw[i]) * PC_VAL[i];
 
@@ -732,6 +718,32 @@ static void draw_cmd(WINDOW *win)
  *   • A small score label is shown at the boundary
  *   • "B" label at top, "W" label at bottom
  * ─────────────────────────────────────────────────────────────────────────── */
+/* ── Clock display ───────────────────────────────────────────────────────
+ * "W: 03:07.42" -- minutes:seconds.centiseconds, tagged with the side.
+ * Minutes are clamped so the field can never outgrow the buffer: a game
+ * long enough to reach 99 minutes pins the display there rather than
+ * widening (and truncating) mid-render. */
+#define CLOCK_MAX_MINUTES 99
+#define CLOCK_STR_SIZE    16   /* "W: 99:59.99" + NUL, with room to spare */
+
+static void format_clock(char side, long centiseconds, char *out)
+{
+    if (centiseconds < 0) centiseconds = 0;
+
+    long minutes = centiseconds / 6000;
+    long seconds = (centiseconds % 6000) / 100;
+    long cs      = centiseconds % 100;
+
+    if (minutes > CLOCK_MAX_MINUTES) {
+        minutes = CLOCK_MAX_MINUTES;
+        seconds = 59;
+        cs      = 99;
+    }
+
+    snprintf(out, CLOCK_STR_SIZE, "%c: %02ld:%02ld.%02ld",
+             side, minutes, seconds, cs);
+}
+
 static void draw_eval_bar(WINDOW *win, const TUIState *state)
 {
     if (!win) return;
@@ -833,32 +845,30 @@ void render_all(WINDOW *board_win, WINDOW *info_win, WINDOW *eval_bar_win,
         clock_gettime(CLOCK_MONOTONIC, &mono_now);
 
         /* Elapsed centiseconds since turn started */
-        long cs_elapsed = (mono_now.tv_sec  - state->turn_start_mono.tv_sec)  * 100
-                        + (mono_now.tv_nsec - state->turn_start_mono.tv_nsec) / 10000000;
+        long cs_elapsed = (mono_now.tv_sec  - state->game.turn_start_mono.tv_sec)  * 100
+                        + (mono_now.tv_nsec - state->game.turn_start_mono.tv_nsec) / 10000000;
         if (cs_elapsed < 0) cs_elapsed = 0;
 
         /* Accumulated seconds converted to centiseconds */
-        long ws_cs = (long)state->white_clock * 100;
-        long bs_cs = (long)state->black_clock * 100;
+        long ws_cs = (long)state->game.white_clock * 100;
+        long bs_cs = (long)state->game.black_clock * 100;
 
         /* Add live ticking to whichever side is on move */
-        if (!state->game_over && state->clock_started) {
-            if (state->clock_side == WHITE) ws_cs += cs_elapsed;
+        if (!state->game.game_over && state->game.clock_started) {
+            if (state->game.clock_side == WHITE) ws_cs += cs_elapsed;
             else                            bs_cs += cs_elapsed;
         }
 
-        attr_t wa = (state->clock_side == WHITE && !state->game_over)
+        attr_t wa = (state->game.clock_side == WHITE && !state->game.game_over)
                     ? (COLOR_PAIR(CP_INFO_VAL)|A_BOLD)
                     : COLOR_PAIR(CP_HINT);
-        attr_t ba = (state->clock_side == BLACK && !state->game_over)
+        attr_t ba = (state->game.clock_side == BLACK && !state->game.game_over)
                     ? (COLOR_PAIR(CP_INFO_VAL)|A_BOLD)
                     : COLOR_PAIR(CP_HINT);
 
-        char wstr[20], bstr[20];
-        long wm = ws_cs / 6000, ws2 = (ws_cs % 6000) / 100, wcs = ws_cs % 100;
-        long bm = bs_cs / 6000, bs2 = (bs_cs % 6000) / 100, bcs = bs_cs % 100;
-        snprintf(wstr, sizeof(wstr), "W: %02ld:%02ld.%02ld", wm, ws2, wcs);
-        snprintf(bstr, sizeof(bstr), "B: %02ld:%02ld.%02ld", bm, bs2, bcs);
+        char wstr[CLOCK_STR_SIZE], bstr[CLOCK_STR_SIZE];
+        format_clock('W', ws_cs, wstr);
+        format_clock('B', bs_cs, bstr);
 
         wattron(board_win, wa);
         mvwprintw(board_win, 1, 2, "%s", wstr);

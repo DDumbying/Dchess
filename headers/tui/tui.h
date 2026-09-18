@@ -3,27 +3,33 @@
 
 #include "engine/board.h"
 #include "engine/search.h"
+#include "game/game.h"
 #include "utils/stats.h"
 #include "utils/cli.h"
 #include <ncurses.h>
 #include <time.h>
 #include <pthread.h>
 
-#define MAX_MOVE_HISTORY 256
-
+/* ── The TUI's own state ─────────────────────────────────────────────────
+ *
+ * What is on screen and how the player is interacting with it. The game
+ * being played lives in `game` (see game/game.h) and the rules logic
+ * belongs there, not here -- this struct is the view and the controller.
+ *
+ * The split matters: this file used to hold the position, the move log,
+ * the clocks, the draw-rule bookkeeping, the cursor AND the search
+ * thread in one flat struct, which is how the same move-committing code
+ * ended up written twice and a stale search result ended up playable
+ * onto a board it was never computed for. */
 typedef struct {
-    Position pos;
-    char     move_history[MAX_MOVE_HISTORY][8];
-    int      move_piece[MAX_MOVE_HISTORY];
-    int      move_time[MAX_MOVE_HISTORY];
-    int      move_count;
+    /* The game being played. Advance it only via game_play(). */
+    GameState game;
+
     char     status[256];
     char     last_cmd[64];
     int      engine_depth;
     int      engine_side;
-    int      game_over;
-    char     game_result[64];
-    char     last_eval[32];
+    char     last_eval[32];   /* formatted for display, e.g. "+0.34" */
 
     /* Cursor & selection */
     int      cursor_row;
@@ -33,17 +39,6 @@ typedef struct {
     int      sel_col;
     int      highlight[8][8];
 
-    /* Clocks: total seconds spent by each side */
-    int             white_clock;      /* accumulated seconds */
-    int             black_clock;
-    time_t          turn_start;       /* when the current turn began (seconds) */
-    struct timespec turn_start_mono;  /* high-res start for centisecond display */
-
-    /* Draw detection */
-    int      halfmove_clock;          /* moves since last pawn move or capture */
-    U64      pos_history[MAX_MOVE_HISTORY]; /* hash of each position for repetition */
-    int      pos_history_count;
-
     /* Game configuration from CLI */
     int      player_side;   /* WHITE or BLACK  – the human's color */
     int      difficulty;    /* DIFF_EASY / DIFF_MEDIUM / DIFF_HARD */
@@ -51,21 +46,8 @@ typedef struct {
     /* Persistent statistics */
     DchessStats stats;
 
-    /* Evaluation history (centipawns, one entry per half-move) */
-    int  eval_history[MAX_MOVE_HISTORY];
-    int  eval_count;
-
     /* Vim-style input mode: 0 = normal (hjkl navigate), 1 = insert (type commands) */
     int  insert_mode;
-
-    /* Side that owns the currently-ticking clock (WHITE or BLACK),
-     * updated whenever a move is committed so rendering is correct even
-     * while the engine is thinking synchronously. */
-    int  clock_side;
-
-    /* Set to 1 once the first move of the game has been made;
-     * clocks don't tick until then. */
-    int  clock_started;
 
     /* Two-player (local) mode: no engine, board flips after each move */
     int  two_player;
@@ -128,6 +110,16 @@ typedef struct {
     int             search_depth_arg;     /* engine_depth, captured at kickoff */
     int             search_time_limit_arg; /* time_limit_ms, captured at kickoff */
     SearchResult    search_result;
+
+    /* hash_position(search_snapshot), captured at kickoff. A completed
+     * result is only applied if the live `pos` still hashes to this --
+     * i.e. the board the engine was thinking about is still the board on
+     * screen. Without it, anything that mutates `pos` mid-search (a
+     * cursor move, a new game started from the game-over popup) would
+     * have the stale result played on top of it, moving a piece that is
+     * no longer there. Cheaper and more robust than trying to enumerate
+     * every path that can touch `pos`. */
+    U64             search_snapshot_hash;
 } TUIState;
 
 /* Pass CLI config so tui_init can configure engine side & depth */

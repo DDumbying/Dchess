@@ -1,4 +1,5 @@
 #include "tui/onboard.h"
+#include "tui/colors.h"
 #include "tui/render.h"
 #include "tui/stats_tui.h"
 #include "engine/board.h"
@@ -13,10 +14,6 @@
 /* Same color-pair IDs render.c/tui.c use -- there's no shared header
  * for these in this codebase, so each file that needs a few of them
  * redefines those (matches the existing convention in tui.c). */
-#define CP_BORDER     21
-#define CP_TITLE      22
-#define CP_HINT       29
-#define CP_STATUS_OK  27
 
 enum { ROW_SIDE, ROW_DIFFICULTY, ROW_POSITION, ROW_THEME, ROW_START, ROW_COUNT };
 
