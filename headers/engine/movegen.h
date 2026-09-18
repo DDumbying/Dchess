@@ -11,6 +11,13 @@ typedef struct {
 
 void generate_moves(const Position *pos, MoveList *ml);
 
+/* Does the side to move have at least one legal move? Generation alone
+ * isn't enough to answer this -- generate_moves() is pseudo-legal, so a
+ * non-empty MoveList can still be checkmate/stalemate once moves that
+ * leave the king in check are filtered out. Pair with is_in_check() to
+ * tell the two apart. */
+int has_legal_moves(const Position *pos);
+
 /* Is the given side's king in check? */
 int is_in_check(const Position *pos, int side);
 
