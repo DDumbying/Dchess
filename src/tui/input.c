@@ -53,6 +53,11 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
 
     int ch = wgetch(win);
 
+    /* A resize is not a keystroke: hand it straight back so the caller
+     * can rebuild its windows. Swallowing it here (as the default
+     * branches below would) left the UI drawn for the old size. */
+    if (ch == KEY_RESIZE) return KEY_RESIZE;
+
     /* ESC always exits insert mode */
     if (ch == 27) {
         ibuf[0] = '\0';

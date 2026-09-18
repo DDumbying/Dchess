@@ -89,35 +89,60 @@ int tui_onboarding(TUIState *state)
     choice.fen[0]         = '\0';
     choice.theme          = state->theme;
 
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
+    /* Geometry is recomputed every iteration rather than once up front,
+     * and the window rebuilt whenever it changes. That is what makes this
+     * screen survive a terminal resize: there is no KEY_RESIZE special
+     * case, the panel simply notices it is the wrong size and replaces
+     * itself. */
+    int pw = 0, ph = 0, pr = 0, pc = 0;
+    WINDOW *shadow = NULL, *win = NULL;
 
-    int pw = 62, ph = 17;
-    if (pw > cols - 2) pw = cols - 2;
-    if (ph > rows - 2) ph = rows - 2;
-    int pr = (rows - ph) / 2;
-    int pc = (cols - pw) / 2;
-    if (pr < 0) pr = 0;
-    if (pc < 0) pc = 0;
-
-    WINDOW *shadow = panel_shadow(ph, pw, pr, pc);
-    WINDOW *win    = newwin(ph, pw, pr, pc);
-    keypad(win, TRUE);
-
-    /* Every labeled row prints a fixed 16-char label (e.g. "Play as:        ")
-     * followed by a value field. Both together must fit inside the box:
-     * pw columns total, minus the border (2 cols) minus the left margin
-     * (col 3 start, i.e. 2 cols in from the border) leaves (pw - 4)
-     * interior columns to spend on "label + value" combined. */
     int label_w = 16;
-    int content_w = (pw - 4) - label_w;
-    if (content_w < 8) content_w = 8;
-    int start_w = pw - 4; /* "> Start Game" has no separate label prefix */
+    int content_w = 8, start_w = 8;
 
     int cursor_row = ROW_SIDE;
     int result = 1; /* 1 = start game, 0 = quit */
 
     while (1) {
+        int rows, cols;
+        getmaxyx(stdscr, rows, cols);
+
+        int want_w = 62, want_h = 17;
+        if (want_w > cols - 2) want_w = cols - 2;
+        if (want_h > rows - 2) want_h = rows - 2;
+        if (want_w < 1) want_w = 1;
+        if (want_h < 1) want_h = 1;
+        int want_r = (rows - want_h) / 2;
+        int want_c = (cols - want_w) / 2;
+        if (want_r < 0) want_r = 0;
+        if (want_c < 0) want_c = 0;
+
+        if (!win || want_w != pw || want_h != ph ||
+            want_r != pr || want_c != pc) {
+            if (win) delwin(win);
+            panel_shadow_destroy(shadow);
+
+            pw = want_w; ph = want_h; pr = want_r; pc = want_c;
+
+            werase(stdscr);
+            wrefresh(stdscr);
+
+            shadow = panel_shadow(ph, pw, pr, pc);
+            win    = newwin(ph, pw, pr, pc);
+            keypad(win, TRUE);
+
+            /* Every labeled row prints a fixed 16-char label (e.g.
+             * "Play as:        ") followed by a value field. Both must
+             * fit inside the box: pw columns total, minus the border
+             * (2 cols) minus the left margin (col 3 start, i.e. 2 cols in
+             * from the border) leaves (pw - 4) interior columns to spend
+             * on "label + value" combined. */
+            content_w = (pw - 4) - label_w;
+            if (content_w < 8) content_w = 8;
+            start_w = pw - 4;
+            if (start_w < 8) start_w = 8;
+        }
+
         werase(win);
         wattron(win, COLOR_PAIR(CP_BORDER));
         box(win, 0, 0);

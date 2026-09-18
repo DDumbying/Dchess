@@ -23,13 +23,25 @@
 #include <time.h>
 
 
+/* Declared ahead of the panels below, which are defined before Screen is
+ * but need to rebuild it when the terminal resizes under them. */
+typedef struct Screen Screen;
+static void screen_handle_resize(Screen *sc);
+static WINDOW *screen_board(const Screen *sc);
+
 /* ── Game-over popup ────────────────────────────────────────────────────── */
-static void show_game_over_popup(WINDOW *board_win, TUIState *state)
+/* Builds (or rebuilds) the game-over panel and its shadow at the current
+ * terminal size. Split out from the input loop so a resize can simply
+ * throw both windows away and call this again. */
+static void build_game_over_panel(WINDOW *board_win, const TUIState *state,
+                                  WINDOW **out_pop, WINDOW **out_shadow)
 {
     int bh, bw;
     getmaxyx(board_win, bh, bw);
 
     int pw = 46, ph = 9;
+    if (pw > bw) pw = bw;
+    if (ph > bh) ph = bh;
 
     /* newwin() takes SCREEN coordinates while the centring below is
      * relative to board_win, so the window's own origin has to be added
@@ -72,6 +84,15 @@ static void show_game_over_popup(WINDOW *board_win, TUIState *state)
 
     wrefresh(pop);
 
+    *out_pop    = pop;
+    *out_shadow = shadow;
+}
+
+static void show_game_over_popup(Screen *sc, TUIState *state)
+{
+    WINDOW *pop, *shadow;
+    build_game_over_panel(screen_board(sc), state, &pop, &shadow);
+
     /* ── Save stats for this completed game ───────────────────────────── */
     {
         int result = 0; /* draw by default */
@@ -94,6 +115,20 @@ static void show_game_over_popup(WINDOW *board_win, TUIState *state)
 
     while (1) {
         int ch = wgetch(pop);
+
+        if (ch == KEY_RESIZE) {
+            /* The popup can sit here indefinitely, so it has to follow
+             * the terminal -- and it must rebuild the board behind it
+             * too, since it swallowed the resize the main loop would
+             * otherwise have acted on. The stats above are recorded once
+             * outside this loop, so rebuilding cannot re-record them. */
+            delwin(pop);
+            panel_shadow_destroy(shadow);
+            screen_handle_resize(sc);
+            build_game_over_panel(screen_board(sc), state, &pop, &shadow);
+            continue;
+        }
+
         if (ch == 'r' || ch == 'R') {
             /* tui_new_game() also cancels any search still in flight.
              * One can be: handle_command() kicks the engine off *before*
@@ -313,14 +348,22 @@ void tui_cleanup(void) { endwin(); }
  * times -- in the redraw hook, before the game-over popup, and in the
  * main loop -- each copy having to remember the NULL checks on the two
  * optional windows. */
-typedef struct {
+struct Screen {
     WINDOW   *board, *info, *eval_bar, *cmd;
     TUIState *state;
-} Screen;
+};
 
-/* Lay out [INFO panel][EVAL BAR][BOARD] above a command line. The info
- * panel and eval bar are dropped on terminals too narrow for them. */
-static Screen screen_create(TUIState *state)
+/* Smallest terminal the layout can be built for at all. Below this the
+ * windows would come out zero-height or zero-width, newwin() would hand
+ * back NULL, and everything downstream would dereference it. */
+#define MIN_ROWS 10
+#define MIN_COLS 30
+
+/* Fill `sc`'s windows for the current terminal size. Windows are
+ * replaced in place rather than the Screen being returned by value, so
+ * that TUIState.redraw_ctx -- which points at the caller's Screen --
+ * stays valid across a resize. */
+static void screen_build(Screen *sc)
 {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -332,33 +375,74 @@ static Screen screen_create(TUIState *state)
     int eval_bar_w = (cols >= 55) ? 3 : 0;
     int board_w    = cols - info_w - eval_bar_w;
 
-    Screen sc = {
-        .board    = newwin(main_h, board_w, 0, info_w + eval_bar_w),
-        .info     = info_w     ? newwin(main_h, info_w,     0, 0)      : NULL,
-        .eval_bar = eval_bar_w ? newwin(main_h, eval_bar_w, 0, info_w) : NULL,
-        .cmd      = newwin(cmd_h, cols, main_h, 0),
-        .state    = state,
-    };
+    sc->board    = newwin(main_h, board_w, 0, info_w + eval_bar_w);
+    sc->info     = info_w     ? newwin(main_h, info_w,     0, 0)      : NULL;
+    sc->eval_bar = eval_bar_w ? newwin(main_h, eval_bar_w, 0, info_w) : NULL;
+    sc->cmd      = newwin(cmd_h, cols, main_h, 0);
 
     wbkgd(stdscr, COLOR_PAIR(CP_CANVAS));
     werase(stdscr);
     wrefresh(stdscr);
 
-    keypad(sc.board, TRUE);
-    keypad(sc.cmd,   TRUE);
+    keypad(sc->board, TRUE);
+    keypad(sc->cmd,   TRUE);
 
     /* Wake up every 100ms even without input, so the clocks tick live. */
-    wtimeout(sc.cmd, 100);
+    wtimeout(sc->cmd, 100);
+}
 
+/* Lay out [INFO panel][EVAL BAR][BOARD] above a command line. The info
+ * panel and eval bar are dropped on terminals too narrow for them. */
+static Screen screen_create(TUIState *state)
+{
+    Screen sc;
+    memset(&sc, 0, sizeof(sc));
+    sc.state = state;
+    screen_build(&sc);
     return sc;
+}
+
+static void screen_free_windows(Screen *sc)
+{
+    if (sc->board)    delwin(sc->board);
+    if (sc->eval_bar) delwin(sc->eval_bar);
+    if (sc->info)     delwin(sc->info);
+    if (sc->cmd)      delwin(sc->cmd);
+    sc->board = sc->info = sc->eval_bar = sc->cmd = NULL;
 }
 
 static void screen_destroy(Screen *sc)
 {
-    delwin(sc->board);
-    if (sc->eval_bar) delwin(sc->eval_bar);
-    if (sc->info)     delwin(sc->info);
-    delwin(sc->cmd);
+    screen_free_windows(sc);
+}
+
+/* Is the terminal currently big enough to lay the game out? */
+static int screen_too_small(void)
+{
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    return rows < MIN_ROWS || cols < MIN_COLS;
+}
+
+/* Tell the player to make the window bigger, since there is no layout we
+ * could draw instead. stdscr is used directly: the game's own windows do
+ * not exist at this point. */
+static void screen_draw_too_small(void)
+{
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+
+    werase(stdscr);
+    const char *msg = "Terminal too small";
+    char detail[64];
+    snprintf(detail, sizeof(detail), "need %dx%d, have %dx%d",
+             MIN_COLS, MIN_ROWS, cols, rows);
+
+    if (rows > 0 && cols > (int)strlen(msg))
+        mvwprintw(stdscr, rows / 2, (cols - (int)strlen(msg)) / 2, "%s", msg);
+    if (rows > 2 && cols > (int)strlen(detail))
+        mvwprintw(stdscr, rows / 2 + 1, (cols - (int)strlen(detail)) / 2, "%s", detail);
+    wrefresh(stdscr);
 }
 
 static void screen_paint(const Screen *sc)
@@ -378,7 +462,30 @@ static void screen_paint(const Screen *sc)
 /* Adapter for TUIState.request_redraw, which cannot know about Screen. */
 static void screen_paint_hook(void *ctx) { screen_paint((const Screen *)ctx); }
 
+static WINDOW *screen_board(const Screen *sc) { return sc->board; }
+
 /* ── Key handling ───────────────────────────────────────────────────────── */
+
+/* Rebuild every window for the terminal's new size and repaint. Blocks
+ * while the terminal is too small to lay out at all, because there is no
+ * smaller layout to fall back to -- the windows would be degenerate and
+ * newwin() would start returning NULL. */
+static void screen_handle_resize(Screen *sc)
+{
+    screen_free_windows(sc);
+
+    while (screen_too_small()) {
+        screen_draw_too_small();
+        /* stdscr has no timeout set, so this blocks until a key or the
+         * next resize -- exactly the two things worth waking for. The
+         * game is paused meanwhile: there is no usable layout to play
+         * on, so neither the clocks nor a finished search are polled. */
+        wgetch(stdscr);
+    }
+
+    screen_build(sc);
+    screen_paint(sc);
+}
 
 /* Returns 0 when the player asked to quit, 1 to keep going. */
 static int handle_key(Screen *sc, int ch, const char *cmd_buf)
@@ -449,6 +556,12 @@ void tui_run(TUIState *state)
     }
     init_colors(state->theme); /* re-apply the theme actually confirmed */
 
+    keypad(stdscr, TRUE);
+    while (screen_too_small()) {
+        screen_draw_too_small();
+        wgetch(stdscr);
+    }
+
     Screen sc = screen_create(state);
 
     /* Let start_engine_search() force a repaint right after it sets the
@@ -472,13 +585,18 @@ void tui_run(TUIState *state)
 
         if (state->game.game_over && state->game.result[0]) {
             screen_paint(&sc);   /* show the final position behind the popup */
-            show_game_over_popup(sc.board, state);
+            show_game_over_popup(&sc, state);
             state->game.result[0] = '\0';
         }
 
         screen_paint(&sc);
 
         int ch = read_key(sc.cmd, cmd_buf, sizeof(cmd_buf), &state->insert_mode);
+
+        if (ch == KEY_RESIZE) {
+            screen_handle_resize(&sc);
+            continue;
+        }
 
         if (ch == '\t') {   /* stats popup over the board */
             stats_load(&state->stats);
