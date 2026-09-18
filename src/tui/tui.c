@@ -1,6 +1,7 @@
 #include "tui/tui.h"
 #include "tui/render.h"
 #include "tui/colors.h"
+#include "tui/panel.h"
 #include "tui/input.h"
 #include "tui/commands.h"
 #include "tui/stats_tui.h"
@@ -29,10 +30,18 @@ static void show_game_over_popup(WINDOW *board_win, TUIState *state)
     getmaxyx(board_win, bh, bw);
 
     int pw = 46, ph = 9;
-    int pr = (bh - ph) / 2;
-    int pc_col = (bw - pw) / 2;
 
-    WINDOW *pop = newwin(ph, pw, pr, pc_col);
+    /* newwin() takes SCREEN coordinates while the centring below is
+     * relative to board_win, so the window's own origin has to be added
+     * -- without it the popup drifts left and sits over the info panel
+     * instead of over the board it belongs to. */
+    int bwr, bwc;
+    getbegyx(board_win, bwr, bwc);
+    int pr     = bwr + (bh - ph) / 2;
+    int pc_col = bwc + (bw - pw) / 2;
+
+    WINDOW *shadow = panel_shadow(ph, pw, pr, pc_col);
+    WINDOW *pop    = newwin(ph, pw, pr, pc_col);
     keypad(pop, TRUE);
 
     wattron(pop, COLOR_PAIR(CP_BORDER));
@@ -100,11 +109,13 @@ static void show_game_over_popup(WINDOW *board_win, TUIState *state)
              * frame, so it must be stopped before exit() tears down. */
             cancel_engine_search(state);
             delwin(pop);
+            panel_shadow_destroy(shadow);
             tui_cleanup();
             exit(0);
         }
     }
     delwin(pop);
+    panel_shadow_destroy(shadow);
 }
 
 /* ── Screen <-> board coordinate mapping ─────────────────────────────────

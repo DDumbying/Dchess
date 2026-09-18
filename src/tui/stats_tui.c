@@ -6,6 +6,7 @@
 
 #include "tui/stats_tui.h"
 #include "tui/colors.h"
+#include "tui/panel.h"
 #include "utils/stats.h"
 #include <ncurses.h>
 #include <string.h>
@@ -556,10 +557,17 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
     int pop_h = 18;
     if (pop_w > pw - 4) pop_w = pw - 4;
     if (pop_h > ph - 4) pop_h = ph - 4;
-    int pop_r = (ph - pop_h) / 2;
-    int pop_c = (pw - pop_w) / 2;
+    /* newwin() takes SCREEN coordinates, but the centring above is
+     * relative to `parent`. Without adding the parent's own origin the
+     * popup lands too far left and sits on top of the info panel
+     * instead of over the board. */
+    int par_r, par_c;
+    getbegyx(parent, par_r, par_c);
+    int pop_r = par_r + (ph - pop_h) / 2;
+    int pop_c = par_c + (pw - pop_w) / 2;
 
-    WINDOW *pop = newwin(pop_h, pop_w, pop_r, pop_c);
+    WINDOW *shadow = panel_shadow(pop_h, pop_w, pop_r, pop_c);
+    WINDOW *pop    = newwin(pop_h, pop_w, pop_r, pop_c);
     keypad(pop, TRUE);
 
     wattron(pop, COLOR_PAIR(SCP_BORDER));
@@ -691,4 +699,5 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
     wrefresh(pop);
     wgetch(pop);
     delwin(pop);
+    panel_shadow_destroy(shadow);
 }

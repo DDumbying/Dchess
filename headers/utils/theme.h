@@ -24,6 +24,13 @@ typedef struct {
     int light[3], dark[3], bpfg[3], cursor[3], sel[3], movehi[3],
         check[3], gold[3], lmvl[3], lmvd[3], canvas[3], chrome[3];
 
+    /* Drop shadow cast by panels (onboarding, popups). Deliberately a
+     * mid-grey rather than black: every theme's canvas is already
+     * near-black, so a black shadow would be invisible against it. It is
+     * painted as a half-tone block, which reads as shade rather than as
+     * a solid slab. */
+    int shadow[3];
+
     /* Fallback palette for terminals that don't support can_change_color()
      * (no custom RGB, only the 8 standard ANSI colors) -- common enough
      * that a theme needs to look different here too, not just in the

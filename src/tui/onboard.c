@@ -1,5 +1,6 @@
 #include "tui/onboard.h"
 #include "tui/colors.h"
+#include "tui/panel.h"
 #include "tui/render.h"
 #include "tui/stats_tui.h"
 #include "engine/board.h"
@@ -99,7 +100,8 @@ int tui_onboarding(TUIState *state)
     if (pr < 0) pr = 0;
     if (pc < 0) pc = 0;
 
-    WINDOW *win = newwin(ph, pw, pr, pc);
+    WINDOW *shadow = panel_shadow(ph, pw, pr, pc);
+    WINDOW *win    = newwin(ph, pw, pr, pc);
     keypad(win, TRUE);
 
     /* Every labeled row prints a fixed 16-char label (e.g. "Play as:        ")
@@ -251,6 +253,7 @@ int tui_onboarding(TUIState *state)
 
 done:
     delwin(win);
+    panel_shadow_destroy(shadow);
     if (!result) return 0;
 
     CliArgs chosen;

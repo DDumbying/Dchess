@@ -15,8 +15,8 @@
  * silently repaint whatever the stale copies pointed at.
  *
  * Ranges are carved up so they cannot collide:
- *     1 - 35   CP_*    main game UI  (render.c)
- *     8 - 20   COL_*   custom RGB slots, NOT pairs -- a different
+ *     1 - 37   CP_*    main game UI  (render.c)
+ *     8 - 21   COL_*   custom RGB slots, NOT pairs -- a different
  *                      namespace, so overlapping CP_* numbers is fine
  *    40 - 57   SCP_*   statistics screens (stats_tui.c)
  *    60 - 68   SCOL_*  custom RGB slots for the statistics screens
@@ -61,6 +61,8 @@
 #define CP_CAP_W       33
 #define CP_CAP_B       34
 #define CP_CANVAS      35
+#define CP_SHADOW      36   /* panel drop shadow                  */
+#define CP_FRAME       37   /* board frame / grid border          */
 
 /* ── Custom RGB slots for the game UI (init_color, not init_pair) ───────── */
 #define COL_LIGHT       8
@@ -76,6 +78,7 @@
 #define COL_LMVD       18
 #define COL_CANVAS     19
 #define COL_CHROME     20
+#define COL_SHADOW     21
 
 /* ── Statistics screen pairs (stats_tui.c) ──────────────────────────────── */
 #define SCP_BORDER     40
