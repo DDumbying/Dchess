@@ -11,6 +11,7 @@
 
 #include "tui/render.h"
 #include "tui/colors.h"
+#include "tui/piece_art.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
 #include "utils/constants.h"
@@ -103,6 +104,7 @@ void init_colors(int theme)
         init_color(COL_LMVD,   t->lmvd[0],   t->lmvd[1],   t->lmvd[2]);
         init_color(COL_CANVAS, t->canvas[0], t->canvas[1], t->canvas[2]);
         init_color(COL_CHROME, t->chrome[0], t->chrome[1], t->chrome[2]);
+        init_color(COL_SHADOW, t->shadow[0], t->shadow[1], t->shadow[2]);
 
         /* ── Board squares (fg = bg = same, invisible on empty cells) ── */
         init_pair(CP_LIGHT,      COL_LIGHT,  COL_LIGHT);
@@ -154,6 +156,8 @@ void init_colors(int theme)
         init_pair(CP_CAP_W,      COLOR_WHITE, -1);
         init_pair(CP_CAP_B,      COLOR_YELLOW,-1);
         init_pair(CP_CANVAS,     COL_CANVAS,  COL_CANVAS);
+        init_pair(CP_SHADOW,     COL_SHADOW,  -1);
+        init_pair(CP_FRAME,      COL_CHROME,  -1);
 
     } else {
         /* ── 8-color fallback ──────────────────────────────────────────
@@ -196,6 +200,10 @@ void init_colors(int theme)
         init_pair(CP_CAP_W,      COLOR_BLUE,   -1);
         init_pair(CP_CAP_B,      COLOR_RED,    -1);
         init_pair(CP_CANVAS,     COLOR_WHITE,  COLOR_BLACK);
+        /* "Bright black" is the only grey the 8-colour palette offers;
+         * paired with A_DIM at draw time it reads as shade. */
+        init_pair(CP_SHADOW,     COLOR_BLACK,  -1);
+        init_pair(CP_FRAME,      t->fb_accent, -1);
     }
 }
 
@@ -276,6 +284,35 @@ static void put_glyph(WINDOW *win, int r, int c, int piece, attr_t attr)
  * piece   : 0-11 index, or -1 for empty
  * dot     : draw a subtle "•" indicator for legal-move destinations
  * ──────────────────────────────────────────────────────────────────────── */
+/* Draw a piece as multi-row art, centred in the square. The square's
+ * background has already been laid down by the caller; this only paints
+ * the silhouette cells, leaving the gaps showing that background so
+ * highlights and the cursor still read through. */
+static void draw_piece_art(WINDOW *win, int row, int col,
+                           int sq_h, int sq_w,
+                           const PieceArtTier *tier, int piece,
+                           attr_t sq_attr, attr_t pc_attr)
+{
+    int top  = row + (sq_h - tier->rows) / 2;
+    int left = col + (sq_w - tier->cols) / 2;
+
+    for (int r = 0; r < tier->rows; r++) {
+        const wchar_t *line = piece_art_row(tier, piece, r);
+        if (!line) continue;
+
+        for (int c = 0; c < tier->cols && line[c]; c++) {
+            if (line[c] == L' ') continue;   /* let the background show */
+
+            cchar_t cc;
+            wchar_t ws[2] = { line[c], L'\0' };
+            attr_t style = pc_attr & (A_BOLD | A_DIM | A_UNDERLINE | A_REVERSE);
+            setcchar(&cc, ws, style, (short)PAIR_NUMBER(pc_attr), NULL);
+            mvwadd_wch(win, top + r, left + c, &cc);
+        }
+    }
+    (void)sq_attr;
+}
+
 static void draw_square(WINDOW *win,
                         int row, int col,
                         int sq_h, int sq_w,
@@ -283,6 +320,23 @@ static void draw_square(WINDOW *win,
                         attr_t sq_attr, attr_t pc_attr,
                         int dot)
 {
+    /* Art needs room; below that the square falls back to the single
+     * centred glyph this board has always drawn. */
+    const PieceArtTier *tier = piece_art_for_square(sq_h, sq_w);
+
+    if (piece >= 0 && tier) {
+        /* Lay the whole square down as background first, then paint the
+         * silhouette over it -- simpler than the row-by-row padding the
+         * glyph path needs, and it keeps the layering contract. */
+        wattron(win, sq_attr);
+        for (int roff = 0; roff < sq_h; roff++)
+            hfill(win, row + roff, col, sq_w, ' ');
+        wattroff(win, sq_attr);
+
+        draw_piece_art(win, row, col, sq_h, sq_w, tier, piece, sq_attr, pc_attr);
+        return;
+    }
+
     /* Non-middle rows — pure background */
     int mid = sq_h / 2;
     wattron(win, sq_attr);
@@ -319,15 +373,39 @@ static void draw_square(WINDOW *win,
     wattroff(win, sq_attr);
 }
 
-/* ── draw_board_grid ─────────────────────────────────────────────────────
- *
- * Renders all 64 squares with rank/file labels.
- * start_row, start_col = top-left of rank-8, file-a square (inside border).
- * Label column is 2 chars to the left of start_col.
- * ─────────────────────────────────────────────────────────────────────── */
+/* A single-line frame hugging the 8x8 grid. Drawn before the squares so
+ * that nothing can paint over a square, and offset one cell outside the
+ * grid on every side. */
+static void draw_board_frame(WINDOW *win, int start_row, int start_col,
+                             int sq_h, int sq_w)
+{
+    int h = 8 * sq_h;
+    int w = 8 * sq_w;
+    int top = start_row - 1, bottom = start_row + h;
+    int left = start_col - 1, right = start_col + w;
+
+    wattron(win, COLOR_PAIR(CP_FRAME));
+
+    mvwaddch(win, top,    left,  ACS_ULCORNER);
+    mvwaddch(win, top,    right, ACS_URCORNER);
+    mvwaddch(win, bottom, left,  ACS_LLCORNER);
+    mvwaddch(win, bottom, right, ACS_LRCORNER);
+
+    for (int c = 0; c < w; c++) {
+        mvwaddch(win, top,    left + 1 + c, ACS_HLINE);
+        mvwaddch(win, bottom, left + 1 + c, ACS_HLINE);
+    }
+    for (int r = 0; r < h; r++) {
+        mvwaddch(win, start_row + r, left,  ACS_VLINE);
+        mvwaddch(win, start_row + r, right, ACS_VLINE);
+    }
+
+    wattroff(win, COLOR_PAIR(CP_FRAME));
+}
+
 static void draw_board_grid(WINDOW *win, const TUIState *state,
                             int start_row, int start_col,
-                            int sq_h, int sq_w)
+                            int sq_h, int sq_w, int framed)
 {
     const Position *pos = &state->game.pos;
     int flipped = (state->view_side == BLACK); /* Black at bottom when flipped */
@@ -340,6 +418,8 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
     int lm_from, lm_to;
     parse_last_move(state, &lm_from, &lm_to);
 
+    if (framed) draw_board_frame(win, start_row, start_col, sq_h, sq_w);
+
     for (int rank = 7; rank >= 0; rank--) {
         /* When flipped, rank 0 (white's back rank) is at the top */
         int drow = flipped ? rank : (7 - rank);
@@ -347,7 +427,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
 
         /* Rank label */
         wattron(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
-        mvwprintw(win, base + sq_h/2, start_col - 2, "%d ", rank + 1);
+        mvwprintw(win, base + sq_h/2, start_col - (framed ? 3 : 2), "%d", rank + 1);
         wattroff(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
 
         for (int file = 0; file < 8; file++) {
@@ -398,8 +478,9 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
         }
     }
 
-    /* File labels — a-h left-to-right when normal, h-a when flipped */
-    int lr = start_row + 8 * sq_h;
+    /* File labels — a-h left-to-right when normal, h-a when flipped.
+     * One row below the frame's bottom edge so they never collide. */
+    int lr = start_row + 8 * sq_h + (framed ? 1 : 0);
     wattron(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
     for (int f = 0; f < 8; f++) {
         char label = flipped ? ('h' - f) : ('a' + f);
@@ -413,45 +494,77 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
  * Scales square size to fill available space, then centers.
  * Keeps aspect: sq_w = sq_h * 2 + 1  (so pieces look square).
  * ─────────────────────────────────────────────────────────────────────── */
+/* Largest square size whose whole board fits in the given area.
+ *
+ * Squares keep the aspect sq_w = sq_h * 2 + 1, which reads as square
+ * because terminal cells are about twice as tall as they are wide.
+ * Returns 0 if not even a 1-row square fits, leaving *out_h / *out_w
+ * untouched. */
+static int fit_board(int avail_h, int avail_w, int framed,
+                     int *out_h, int *out_w)
+{
+    int chrome_h = framed ? 3 : 1;   /* frame top+bottom + file labels */
+    int chrome_w = framed ? 4 : 2;   /* rank label + frame either side */
+
+    int best = 0;
+    for (int h = 1; h <= 8; h++) {
+        int w = h * 2 + 1;
+        if (w < GLYPH_W + 2) w = GLYPH_W + 2;
+        if (8 * h + chrome_h <= avail_h && 8 * w + chrome_w <= avail_w)
+            best = h;
+    }
+    if (!best) return 0;
+
+    *out_h = best;
+    *out_w = best * 2 + 1;
+    if (*out_w < GLYPH_W + 2) *out_w = GLYPH_W + 2;
+    return 1;
+}
+
 static void draw_board(WINDOW *win, const TUIState *state)
 {
     int wh, ww;
     getmaxyx(win, wh, ww);
 
     /* Available area (inside border, above status section) */
-    int avail_h = wh - 7;   /* top border + 5 status rows + bottom border */
-    int avail_w = ww - 6;   /* 2 borders + 2 rank-label cols + 2 margin   */
+    /* Row 0 is the window border and row 1 holds the clocks, so the board
+     * starts at row 2 -- the clock row used to be unaccounted for, which
+     * is why a short terminal drew rank 8 straight over the clocks. */
+    int avail_h = wh - 8;   /* border + clock row + 5 status rows + border */
+    int avail_w = ww - 6;   /* 2 borders + rank-label col + margins        */
 
-    /* Scale up from minimums to fill space.
-     * Constraint: sq_w = sq_h * 2 + 1  keeps the board square-ish.
-     * We compute the max sq_h that fits in both dimensions. */
-    int sq_h = avail_h / 8;
-    if (sq_h < SQ_H_MIN) sq_h = SQ_H_MIN;
-
-    /* Derive sq_w from sq_h, then check horizontal fit */
-    int sq_w = sq_h * 2 + 1;
-    if (sq_w < SQ_W_MIN) sq_w = SQ_W_MIN;
-
-    /* If too wide, shrink sq_w (and sq_h to match) */
-    while (sq_w * 8 > avail_w && sq_w > SQ_W_MIN) {
-        sq_w--;
-        sq_h = (sq_w - 1) / 2;
-        if (sq_h < SQ_H_MIN) { sq_h = SQ_H_MIN; break; }
+    /* Pick the largest square size that actually fits. A framed board
+     * costs 2 extra rows and 2 extra columns, so on a short terminal it
+     * is dropped rather than allowed to push the bottom ranks off the
+     * window -- which is what used to happen: at 80x24 rank 1 was simply
+     * cut off and the overflow corrupted the status lines below. */
+    int sq_h, sq_w;
+    int framed = 1;
+    if (!fit_board(avail_h, avail_w, 1, &sq_h, &sq_w)) {
+        framed = 0;
+        if (!fit_board(avail_h, avail_w, 0, &sq_h, &sq_w)) {
+            /* Nothing fits; draw the smallest board and let it clip. */
+            sq_h = 1;
+            sq_w = GLYPH_W + 2;
+        }
     }
 
-    /* Piece must always fit: sq_w >= GLYPH_W + 1 padding each side */
-    if (sq_w < GLYPH_W + 2) sq_w = GLYPH_W + 2;
+    int chrome_h = framed ? 3 : 1;
+    int chrome_w = framed ? 4 : 2;
+    int board_h = 8 * sq_h + chrome_h;
+    int board_w = 8 * sq_w + chrome_w;
 
-    int board_h = 8 * sq_h + 1;   /* +1 for file labels */
-    int board_w = 2 + 8 * sq_w;   /* +2 for rank labels */
+    /* Centre inside the available area. The minimums keep the frame and
+     * the rank labels inside the window's own border: the frame sits one
+     * cell outside the grid, the rank label one cell outside that. */
+    int sr = 2 + (avail_h - board_h) / 2;
+    int sc = 2 + (avail_w - board_w) / 2 + 2;
+    int min_r = framed ? 3 : 2;
+    int min_c = framed ? 4 : 3;
+    if (sr < min_r) sr = min_r;
+    if (sc < min_c) sc = min_c;
 
-    /* Centre inside available area */
-    int sr = 1 + (avail_h - board_h) / 2;
-    int sc = 2 + (avail_w - board_w) / 2 + 2;   /* +2 rank-label offset */
-    if (sr < 1) sr = 1;
-    if (sc < 4) sc = 4;
-
-    draw_board_grid(win, state, sr, sc, sq_h, sq_w);
+    draw_board_grid(win, state, sr, sc, sq_h, sq_w, framed);
 }
 
 /* ── Status bar (inside board window) ──────────────────────────────────── */
