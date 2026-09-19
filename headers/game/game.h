@@ -3,6 +3,7 @@
 
 #include "engine/board.h"
 #include "engine/move.h"
+#include "engine/fen.h"
 #include <time.h>
 
 /* The played game: position, move log, clocks and draw bookkeeping.
@@ -30,7 +31,8 @@ typedef struct {
     Position pos;
 
     /* Move log, parallel arrays indexed 0..move_count-1 */
-    char move_history[MAX_MOVE_HISTORY][8];  /* "e2e4", "e7e8q", ... */
+    char move_history[MAX_MOVE_HISTORY][8];  /* SAN: "e4", "Nxd5", "O-O" */
+    Move move_made[MAX_MOVE_HISTORY];        /* the move itself */
     int  move_piece[MAX_MOVE_HISTORY];       /* piece index 0-11 that moved */
     int  move_time[MAX_MOVE_HISTORY];        /* seconds spent on that move */
     int  move_count;                         /* half-moves played */
@@ -51,6 +53,10 @@ typedef struct {
     /* Outcome. result is non-empty exactly when game_over is set. */
     int  game_over;
     char result[64];
+
+    /* Empty unless the game began somewhere other than the standard
+     * position; PGN needs it to be readable. */
+    char start_fen[FEN_BUFSIZE];
 
     /* Engine evaluation after each half-move, in centipawns */
     int  eval_history[MAX_MOVE_HISTORY];

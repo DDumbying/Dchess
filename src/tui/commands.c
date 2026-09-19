@@ -88,10 +88,9 @@ static int try_move(TUIState *state, const char *movestr)
         return 0;
     }
 
-    char text[8];
-    move_to_str(m, text);
     game_play(&state->game, m);
-    snprintf(state->status, sizeof(state->status), "Played: %s", text);
+    snprintf(state->status, sizeof(state->status), "Played: %s",
+             state->game.move_history[state->game.move_count - 1]);
     return 1;
 }
 
@@ -162,12 +161,11 @@ static void apply_engine_result(TUIState *state, SearchResult res)
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
     game_record_eval(&state->game, res.best_score);
 
-    char text[8];
-    move_to_str(res.best_move, text);
     game_play(&state->game, res.best_move);
 
     snprintf(state->status, sizeof(state->status), "Engine: %s (eval %+.2f, depth %d)",
-             text, eval_f, res.depth_reached);
+             state->game.move_history[state->game.move_count - 1],
+             eval_f, res.depth_reached);
 }
 
 

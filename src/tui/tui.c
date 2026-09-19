@@ -229,10 +229,9 @@ static void move_to_square(TUIState *state, int to_sq)
         return;
     }
 
-    char text[8];
-    move_to_str(m, text);
     game_play(&state->game, m);
-    snprintf(state->status, sizeof(state->status), "Played: %s", text);
+    snprintf(state->status, sizeof(state->status), "Played: %s",
+             state->game.move_history[state->game.move_count - 1]);
 
     game_update_status(&state->game);
     clear_selection(state);

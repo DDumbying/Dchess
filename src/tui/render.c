@@ -233,12 +233,9 @@ static void parse_last_move(const TUIState *s, int *from, int *to)
 {
     *from = *to = -1;
     if (s->game.move_count < 1) return;
-    const char *mv = s->game.move_history[s->game.move_count - 1];
-    if (!mv || strlen(mv) < 4) return;
-    if (mv[0]<'a'||mv[0]>'h'||mv[2]<'a'||mv[2]>'h') return;
-    if (mv[1]<'1'||mv[1]>'8'||mv[3]<'1'||mv[3]>'8') return;
-    *from = (mv[1]-'1')*8 + (mv[0]-'a');
-    *to   = (mv[3]-'1')*8 + (mv[2]-'a');
+    Move m = s->game.move_made[s->game.move_count - 1];
+    *from = FROM(m);
+    *to   = TO(m);
 }
 
 static int popcount64(U64 b)
