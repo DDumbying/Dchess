@@ -65,34 +65,3 @@ void init_start_position(Position* pos) {
 
     update_occupancies(pos);
 }
-
-void print_board(Position* pos) {
-    for (int rank = 7; rank >= 0; rank--) {
-        printf("%d  ", rank + 1);
-
-        for (int file = 0; file < 8; file++) {
-            int sq = rank * 8 + file;
-            int piece = -1;
-
-            for (int i = 0; i < 12; i++) {
-                if (pos->bitboards[i] & (1ULL << sq)) {
-                    piece = i;
-                    break;
-                }
-            }
-
-            char c = '.';
-
-            if (piece != -1) {
-                char symbols[] = "PNBRQKpnbrqk";
-                c = symbols[piece];
-            }
-
-            printf("%c ", c);
-        }
-
-        printf("\n");
-    }
-
-    printf("\n   a b c d e f g h\n\n");
-}

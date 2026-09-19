@@ -1,5 +1,7 @@
 #include "tui/tui.h"
 #include "tui/render.h"
+#include "tui/colors.h"
+#include "tui/panel.h"
 #include "tui/input.h"
 #include "tui/commands.h"
 #include "tui/stats_tui.h"
@@ -20,101 +22,38 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define CP_CANVAS    35
-#define CP_BORDER    21
-#define CP_TITLE     22
-#define CP_HINT      29
-#define CP_INFO_VAL  26
-#define CP_STATUS_OK 27
-#define CP_STATUS_ERR 28
-#define CP_SEL_PC    10
 
-/* ── Check 50-move rule and 3-fold repetition ───────────────────────────── */
-static void check_draw_rules(TUIState *state)
-{
-    if (state->game_over) return;
-
-    /* 50-move rule (halfmove_clock tracks moves since pawn move/capture) */
-    if (state->halfmove_clock >= 100) {  /* 50 moves = 100 half-moves */
-        state->game_over = 1;
-        snprintf(state->game_result, sizeof(state->game_result),
-                 "Draw by 50-move rule!");
-        return;
-    }
-
-    /* 3-fold repetition */
-    U64 cur = hash_position(&state->pos);
-    int count = 0;
-    for (int i = 0; i < state->pos_history_count; i++)
-        if (state->pos_history[i] == cur) count++;
-    if (count >= 2) {   /* current + 2 previous = 3-fold */
-        state->game_over = 1;
-        snprintf(state->game_result, sizeof(state->game_result),
-                 "Draw by repetition!");
-        return;
-    }
-}
-
-/* ── Record position hash after a move ──────────────────────────────────── */
-static void record_position(TUIState *state)
-{
-    if (state->pos_history_count < MAX_MOVE_HISTORY)
-        state->pos_history[state->pos_history_count++] = hash_position(&state->pos);
-}
-
-/* ── Update halfmove clock ───────────────────────────────────────────────── */
-static void update_halfmove(TUIState *state, int from_sq, int to_sq, int piece)
-{
-    int is_pawn    = (piece == 0 || piece == 6);
-    int is_capture = GET_BIT(state->pos.occupancies[BOTH], to_sq);  /* before move */
-    (void)from_sq;
-    if (is_pawn || is_capture)
-        state->halfmove_clock = 0;
-    else
-        state->halfmove_clock++;
-}
-
-/* ── Check no legal moves (checkmate / stalemate) ───────────────────────── */
-static void check_game_over(TUIState *state)
-{
-    if (state->game_over) return;
-
-    MoveList ml;
-    generate_moves(&state->pos, &ml);
-    int legal = 0;
-    for (int i = 0; i < ml.count; i++) {
-        Position tmp;
-        memcpy(&tmp, &state->pos, sizeof(Position));
-        if (make_move(&tmp, ml.moves[i])) { legal = 1; break; }
-    }
-
-    if (!legal) {
-        state->game_over = 1;
-        if (is_in_check(&state->pos, state->pos.side)) {
-            const char *w = state->pos.side == WHITE ? "Black" : "White";
-            snprintf(state->game_result, sizeof(state->game_result),
-                     "Checkmate — %s wins!", w);
-        } else {
-            snprintf(state->game_result, sizeof(state->game_result),
-                     "Stalemate — Draw!");
-        }
-        return;
-    }
-
-    check_draw_rules(state);
-}
+/* Declared ahead of the panels below, which are defined before Screen is
+ * but need to rebuild it when the terminal resizes under them. */
+typedef struct Screen Screen;
+static void screen_handle_resize(Screen *sc);
+static WINDOW *screen_board(const Screen *sc);
 
 /* ── Game-over popup ────────────────────────────────────────────────────── */
-static void show_game_over_popup(WINDOW *board_win, TUIState *state)
+/* Builds (or rebuilds) the game-over panel and its shadow at the current
+ * terminal size. Split out from the input loop so a resize can simply
+ * throw both windows away and call this again. */
+static void build_game_over_panel(WINDOW *board_win, const TUIState *state,
+                                  WINDOW **out_pop, WINDOW **out_shadow)
 {
     int bh, bw;
     getmaxyx(board_win, bh, bw);
 
     int pw = 46, ph = 9;
-    int pr = (bh - ph) / 2;
-    int pc_col = (bw - pw) / 2;
+    if (pw > bw) pw = bw;
+    if (ph > bh) ph = bh;
 
-    WINDOW *pop = newwin(ph, pw, pr, pc_col);
+    /* newwin() takes SCREEN coordinates while the centring below is
+     * relative to board_win, so the window's own origin has to be added
+     * -- without it the popup drifts left and sits over the info panel
+     * instead of over the board it belongs to. */
+    int bwr, bwc;
+    getbegyx(board_win, bwr, bwc);
+    int pr     = bwr + (bh - ph) / 2;
+    int pc_col = bwc + (bw - pw) / 2;
+
+    WINDOW *shadow = panel_shadow(ph, pw, pr, pc_col);
+    WINDOW *pop    = newwin(ph, pw, pr, pc_col);
     keypad(pop, TRUE);
 
     wattron(pop, COLOR_PAIR(CP_BORDER));
@@ -126,12 +65,12 @@ static void show_game_over_popup(WINDOW *board_win, TUIState *state)
     wattroff(pop, COLOR_PAIR(CP_TITLE)|A_BOLD);
 
     wattron(pop, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
-    int rlen = (int)strlen(state->game_result);
-    mvwprintw(pop, 2, (pw - rlen) / 2, "%s", state->game_result);
+    int rlen = (int)strlen(state->game.result);
+    mvwprintw(pop, 2, (pw - rlen) / 2, "%s", state->game.result);
     wattroff(pop, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
 
-    int total_moves = (state->move_count + 1) / 2;
-    int ws = state->white_clock, bs = state->black_clock;
+    int total_moves = (state->game.move_count + 1) / 2;
+    int ws = state->game.white_clock, bs = state->game.black_clock;
     wattron(pop, COLOR_PAIR(CP_HINT));
     mvwprintw(pop, 4, 4, "Moves  : %d", total_moves);
     mvwprintw(pop, 5, 4, "White  : %02d:%02d   Black : %02d:%02d",
@@ -145,58 +84,95 @@ static void show_game_over_popup(WINDOW *board_win, TUIState *state)
 
     wrefresh(pop);
 
+    *out_pop    = pop;
+    *out_shadow = shadow;
+}
+
+static void show_game_over_popup(Screen *sc, TUIState *state)
+{
+    WINDOW *pop, *shadow;
+    build_game_over_panel(screen_board(sc), state, &pop, &shadow);
+
     /* ── Save stats for this completed game ───────────────────────────── */
     {
         int result = 0; /* draw by default */
-        const char *r = state->game_result;
+        const char *r = state->game.result;
         /* Check if human won or lost */
         if (strstr(r, "White wins")) {
             result = (state->player_side == WHITE) ? 1 : -1;
         } else if (strstr(r, "Black wins")) {
             result = (state->player_side == BLACK) ? 1 : -1;
         }
-        int total_secs = state->white_clock + state->black_clock;
+        int total_secs = state->game.white_clock + state->game.black_clock;
         stats_record(&state->stats,
                      state->difficulty,
                      result,
                      state->player_side,
-                     state->move_count,
+                     state->game.move_count,
                      total_secs);
         stats_save(&state->stats);
     }
 
     while (1) {
         int ch = wgetch(pop);
-        if (ch == 'r' || ch == 'R') {
-            init_start_position(&state->pos);
-            state->move_count        = 0;
-            state->game_over         = 0;
-            state->game_result[0]    = '\0';
-            state->turn_start        = time(NULL);
-            clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
-            state->white_clock       = 0;
-            state->black_clock       = 0;
-            state->halfmove_clock    = 0;
-            state->pos_history_count = 0;
-            state->selected          = 0;
-            state->clock_started     = 0;
-            state->view_side         = WHITE;
-            memset(state->highlight, 0, sizeof(state->highlight));
 
-            const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
-                                   (state->difficulty == DIFF_HARD)   ? "Hard"   : "Medium";
-            const char *side_str = (state->player_side == WHITE) ? "White" : "Black";
-            snprintf(state->status, sizeof(state->status),
-                     "New game – You play %s | %s difficulty", side_str, diff_str);
+        if (ch == KEY_RESIZE) {
+            /* The popup can sit here indefinitely, so it has to follow
+             * the terminal -- and it must rebuild the board behind it
+             * too, since it swallowed the resize the main loop would
+             * otherwise have acted on. The stats above are recorded once
+             * outside this loop, so rebuilding cannot re-record them. */
+            delwin(pop);
+            panel_shadow_destroy(shadow);
+            screen_handle_resize(sc);
+            build_game_over_panel(screen_board(sc), state, &pop, &shadow);
+            continue;
+        }
+
+        if (ch == 'r' || ch == 'R') {
+            /* tui_new_game() also cancels any search still in flight.
+             * One can be: handle_command() kicks the engine off *before*
+             * tui_run() reaches game_update_status(), so a human move
+             * that ends the game by repetition or the 50-move rule
+             * leaves the engine thinking behind this popup. */
+            tui_new_game(state);
             break;
         }
         if (ch == 'q' || ch == 'Q') {
+            /* Same reason as the join in tui_run()'s quit path: the
+             * worker writes into TUIState, which lives in main()'s
+             * frame, so it must be stopped before exit() tears down. */
+            cancel_engine_search(state);
             delwin(pop);
+            panel_shadow_destroy(shadow);
             tui_cleanup();
             exit(0);
         }
     }
     delwin(pop);
+    panel_shadow_destroy(shadow);
+}
+
+/* ── Screen <-> board coordinate mapping ─────────────────────────────────
+ * The board is drawn from view_side's perspective, so row 0 is rank 8
+ * when viewing as White and rank 1 when viewing as Black. This pair of
+ * conversions used to be open-coded, with the flip ternaries written out
+ * by hand, at four separate sites. */
+
+static int screen_to_square(const TUIState *state, int row, int col)
+{
+    int flipped = (state->view_side == BLACK);
+    int rank = flipped ? row : (7 - row);
+    int file = flipped ? (7 - col) : col;
+    return rank * 8 + file;
+}
+
+static void square_to_screen(const TUIState *state, int sq, int *row, int *col)
+{
+    int flipped = (state->view_side == BLACK);
+    int rank = sq / 8, file = sq % 8;
+    *row = flipped ? rank : (7 - rank);
+    *col = flipped ? (7 - file) : file;
 }
 
 /* ── Legal move highlights ──────────────────────────────────────────────── */
@@ -205,177 +181,109 @@ static void build_highlights(TUIState *state)
     memset(state->highlight, 0, sizeof(state->highlight));
     if (!state->selected) return;
 
-    int flipped = (state->view_side == BLACK);
-    int from_rank = flipped ? state->sel_row : (7 - state->sel_row);
-    int from_file = flipped ? (7 - state->sel_col) : state->sel_col;
-    int from = from_rank * 8 + from_file;
+    int from = screen_to_square(state, state->sel_row, state->sel_col);
 
     MoveList ml;
-    generate_moves(&state->pos, &ml);
+    generate_moves(&state->game.pos, &ml);
 
     for (int i = 0; i < ml.count; i++) {
         Move m = ml.moves[i];
         if (FROM(m) != from) continue;
-        Position tmp;
-        memcpy(&tmp, &state->pos, sizeof(Position));
-        if (!make_move(&tmp, m)) continue;
-        int to = TO(m);
-        int to_rank = to / 8;
-        int to_file = to % 8;
-        /* Convert board square back to screen row/col */
-        int srow = flipped ? to_rank : (7 - to_rank);
-        int scol = flipped ? (7 - to_file) : to_file;
-        state->highlight[srow][scol] = 1;
+
+        Position tmp = state->game.pos;
+        if (!make_move(&tmp, m)) continue;   /* pseudo-legal: filter here */
+
+        int row, col;
+        square_to_screen(state, TO(m), &row, &col);
+        state->highlight[row][col] = 1;
     }
 }
 
-/* ── Commit a move: update clocks, halfmove, history ───────────────────── */
-static void commit_move(TUIState *state, Move m, int piece, const char *buf)
+/* ── Cursor selection ───────────────────────────────────────────────────── */
+
+static void clear_selection(TUIState *state)
 {
-    int to_sq = TO(m);
+    state->selected = 0;
+    memset(state->highlight, 0, sizeof(state->highlight));
+}
 
-    /* Clock: charge the side that just moved */
-    time_t now = time(NULL);
-    int elapsed = 0;
-    if (state->clock_started) {
-        elapsed = (int)(now - state->turn_start);
-        if (state->pos.side == WHITE)
-            state->white_clock += elapsed;
-        else
-            state->black_clock += elapsed;
+/* First Enter press: pick up a piece belonging to the side to move. */
+static void select_square(TUIState *state, int sq)
+{
+    int piece = game_piece_at(&state->game, sq);
+    int friendly = (piece >= 0) &&
+                   ((state->game.pos.side == WHITE && piece < 6) ||
+                    (state->game.pos.side == BLACK && piece >= 6));
+
+    if (!friendly) {
+        snprintf(state->status, sizeof(state->status),
+                 "No friendly piece on %c%d", 'a' + (sq % 8), (sq / 8) + 1);
+        return;
     }
-    state->clock_started = 1;
-    state->turn_start = now;
-    clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
 
-    /* Halfmove clock — check BEFORE moving */
-    int is_pawn    = (piece == 0 || piece == 6);
-    int is_capture = 0;
-    if (to_sq >= 0 && to_sq < 64)
-        is_capture = GET_BIT(state->pos.occupancies[BOTH], to_sq) ? 1 : 0;
-    if (is_pawn || is_capture) state->halfmove_clock = 0;
-    else                       state->halfmove_clock++;
+    state->selected = 1;
+    state->sel_row  = state->cursor_row;
+    state->sel_col  = state->cursor_col;
+    build_highlights(state);
+    snprintf(state->status, sizeof(state->status),
+             "Selected %c%d — move cursor to destination and press Enter",
+             'a' + (sq % 8), (sq / 8) + 1);
+}
 
-    /* Make the move */
-    make_move(&state->pos, m);
+/* Second Enter press: play the selected piece to the cursor square. */
+static void move_to_square(TUIState *state, int to_sq)
+{
+    int from_sq = screen_to_square(state, state->sel_row, state->sel_col);
 
-    /* Record position hash */
-    record_position(state);
+    Move m;
+    if (!game_find_move(&state->game, from_sq, to_sq, 0, &m)) {
+        if (!state->highlight[state->cursor_row][state->cursor_col])
+            snprintf(state->status, sizeof(state->status),
+                     "Not a legal move — select a highlighted square.");
+        clear_selection(state);
+        return;
+    }
 
-    /* Move history */
-    int idx = state->move_count;
-    if (idx < MAX_MOVE_HISTORY) {
-        strncpy(state->move_history[idx], buf, 7);
-        state->move_history[idx][7] = '\0';
-        state->move_piece[idx] = piece;
-        state->move_time[idx]  = elapsed;
-        state->move_count++;
+    char text[8];
+    move_to_str(m, text);
+    game_play(&state->game, m);
+    snprintf(state->status, sizeof(state->status), "Played: %s", text);
+
+    game_update_status(&state->game);
+    clear_selection(state);
+    if (state->game.game_over) return;
+
+    if (state->two_player) {
+        state->view_side  = state->game.pos.side;
+        state->cursor_row = 6;
+        state->cursor_col = 4;
+    } else if (state->engine_side == state->game.pos.side) {
+        /* "go" only kicks off a background search and returns right
+         * away, so there is nothing to sync or check here. The main
+         * loop's poll_engine_search() re-syncs and calls
+         * game_update_status() once the engine's move actually lands. */
+        handle_command(state, "go");
     }
 }
 
-/* ── Cursor Enter ───────────────────────────────────────────────────────── */
-static void cursor_enter(TUIState *state, WINDOW *board_win)
+static void cursor_enter(TUIState *state)
 {
-    int flipped = (state->view_side == BLACK);
-    int rank = flipped ? state->cursor_row : (7 - state->cursor_row);
-    int file = flipped ? (7 - state->cursor_col) : state->cursor_col;
-    int sq   = rank * 8 + file;
+    int sq = screen_to_square(state, state->cursor_row, state->cursor_col);
 
     if (!state->selected) {
-        int piece = -1;
-        for (int i = 0; i < 12; i++)
-            if (GET_BIT(state->pos.bitboards[i], sq)) { piece = i; break; }
-
-        int friendly = (piece >= 0) &&
-                       ((state->pos.side == WHITE && piece < 6) ||
-                        (state->pos.side == BLACK && piece >= 6));
-        if (!friendly) {
-            snprintf(state->status, sizeof(state->status),
-                     "No friendly piece on %c%d", 'a'+file, rank+1);
-            return;
-        }
-        state->selected = 1;
-        state->sel_row  = state->cursor_row;
-        state->sel_col  = state->cursor_col;
-        build_highlights(state);
-        snprintf(state->status, sizeof(state->status),
-                 "Selected %c%d — move cursor to destination and press Enter",
-                 'a'+file, rank+1);
-    } else {
-        if (state->cursor_row == state->sel_row &&
-            state->cursor_col == state->sel_col) {
-            state->selected = 0;
-            memset(state->highlight, 0, sizeof(state->highlight));
-            snprintf(state->status, sizeof(state->status), "Deselected.");
-            return;
-        }
-
-        int from_rank_s = flipped ? state->sel_row : (7 - state->sel_row);
-        int from_file_s = flipped ? (7 - state->sel_col) : state->sel_col;
-        int from_sq = from_rank_s * 8 + from_file_s;
-        int to_sq   = sq;
-
-        MoveList ml;
-        generate_moves(&state->pos, &ml);
-        int moved = 0;
-
-        for (int i = 0; i < ml.count; i++) {
-            Move mv = ml.moves[i];
-            if (FROM(mv) != from_sq || TO(mv) != to_sq) continue;
-            if ((FLAGS(mv) & FLAG_PROMOTION) && !(FLAGS(mv) & FLAG_PROMO_Q)) continue;
-
-            int piece = -1;
-            for (int j = 0; j < 12; j++)
-                if (GET_BIT(state->pos.bitboards[j], from_sq)) { piece = j; break; }
-
-            Position tmp;
-            memcpy(&tmp, &state->pos, sizeof(Position));
-            char buf[8];
-            move_to_str(mv, buf);
-
-            if (!make_move(&tmp, mv)) {
-                snprintf(state->status, sizeof(state->status),
-                         "Illegal: leaves king in check");
-                break;
-            }
-            commit_move(state, mv, piece, buf);
-            snprintf(state->status, sizeof(state->status), "Played: %s", buf);
-
-            check_game_over(state);
-            state->selected = 0;
-            memset(state->highlight, 0, sizeof(state->highlight));
-
-            if (state->game_over) {
-                return;
-            }
-            state->clock_side = state->pos.side;
-
-            if (state->two_player) {
-                state->view_side  = state->pos.side;
-                state->cursor_row = 6;
-                state->cursor_col = 4;
-            } else if (state->engine_side == state->pos.side) {
-                /* "go" just kicks off a background search and returns
-                 * immediately -- nothing has happened yet, so there's
-                 * nothing to sync or check here. The main loop's
-                 * poll_engine_search() re-syncs clock_side and calls
-                 * check_game_over() once the engine's move actually
-                 * lands (see tui_run()). */
-                handle_command(state, "go");
-            }
-
-            moved = 1;
-            break;
-        }
-
-        if (!moved) {
-            if (!state->highlight[state->cursor_row][state->cursor_col])
-                snprintf(state->status, sizeof(state->status),
-                         "Not a legal move — select a highlighted square.");
-            state->selected = 0;
-            memset(state->highlight, 0, sizeof(state->highlight));
-        }
+        select_square(state, sq);
+        return;
     }
+
+    /* Enter on the already-selected square means "put it back down". */
+    if (state->cursor_row == state->sel_row &&
+        state->cursor_col == state->sel_col) {
+        clear_selection(state);
+        snprintf(state->status, sizeof(state->status), "Deselected.");
+        return;
+    }
+
+    move_to_square(state, sq);
 }
 
 void tui_init(TUIState *state, const CliArgs *args)
@@ -399,82 +307,237 @@ void tui_init(TUIState *state, const CliArgs *args)
         (args->menu || (!args->any_gameplay_flag && !args->no_menu)) : 0;
     state->theme = args ? args->theme : 0;
 
-    /* Starting position: a custom FEN if one was given (and it's still
-     * valid -- cli_parse() already validated it, but a FEN chosen via
-     * the onboarding screen goes through this same path, so re-check
-     * defensively rather than assume), otherwise the standard setup. */
+    /* Starting position: a custom FEN if one was given (and it is still
+     * valid -- cli_parse() already validated it, but a FEN chosen via the
+     * onboarding screen comes through this same path, so re-check rather
+     * than assume), otherwise the standard setup. */
+    game_reset(&state->game);
     int fen_ok = 0;
-    if (args && args->fen[0]) {
-        int hm = 0, fm = 1;
-        fen_ok = parse_fen(args->fen, &state->pos, &hm, &fm);
-        if (fen_ok) {
-            state->halfmove_clock = hm;
-            /* move_count is half-moves played so far; FEN's fullmove
-             * number is only a 1-based per-side-pair counter, so this
-             * is an approximation used purely for display purposes. */
-            state->move_count = (fm - 1) * 2 + (state->pos.side == BLACK ? 1 : 0);
-        }
-    }
-    if (!fen_ok) init_start_position(&state->pos);
+    if (args && args->fen[0])
+        fen_ok = game_load_fen(&state->game, args->fen);
 
     /* Engine plays the opposite side of the human (disabled in two-player) */
-    state->engine_side  = state->two_player ? -1 :
-                          (state->player_side == WHITE) ? BLACK : WHITE;
+    state->engine_side = state->two_player ? -1 :
+                         (state->player_side == WHITE) ? BLACK : WHITE;
 
-    /* Board is always viewed from white's side initially */
-    state->view_side    = WHITE;
+    /* The board always opens from White's perspective */
+    state->view_side  = WHITE;
+    state->cursor_row = 6;
+    state->cursor_col = 4;
 
-    /* If player chose black, engine goes first – queue it */
-    state->cursor_row   = 6;
-    state->cursor_col   = 4;
-    state->turn_start   = time(NULL);
-    clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
-
-    /* Load persistent stats */
     stats_load(&state->stats);
-
-    record_position(state);   /* record starting position */
     snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
 
-    const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
-                           (state->difficulty == DIFF_HARD)   ? "Hard"   : "Medium";
-    const char *side_str = (state->player_side == WHITE) ? "White" : "Black";
+    char setup[128];
+    describe_setup(state, setup, sizeof(setup));
     if (args && args->fen[0] && !fen_ok) {
         snprintf(state->status, sizeof(state->status),
-                 "Invalid --fen, started standard game instead | You play %s | %s difficulty",
-                 side_str, diff_str);
+                 "Invalid --fen, started standard game instead | %s", setup);
     } else {
         snprintf(state->status, sizeof(state->status),
-                 "Ready – You play %s | %s difficulty | arrows/hjkl=move  enter=select",
-                 side_str, diff_str);
+                 "Ready – %s | arrows/hjkl=move  enter=select", setup);
     }
 }
 
 void tui_cleanup(void) { endwin(); }
 
-/* ── Forced repaint hook (see TUIState.request_redraw) ──────────────────── */
-typedef struct {
-    WINDOW   *board_win, *info_win, *eval_bar_win, *cmd_win;
+/* ── Screen ──────────────────────────────────────────────────────────────
+ * The four windows the game is drawn into, plus the paint routine that
+ * refreshes them. The paint sequence (erase, render, touch every window,
+ * refresh every window, doupdate) used to be written out inline three
+ * times -- in the redraw hook, before the game-over popup, and in the
+ * main loop -- each copy having to remember the NULL checks on the two
+ * optional windows. */
+struct Screen {
+    WINDOW   *board, *info, *eval_bar, *cmd;
     TUIState *state;
-} RedrawCtx;
+};
 
-static void do_redraw(void *ctx)
+/* Smallest terminal the layout can be built for at all. Below this the
+ * windows would come out zero-height or zero-width, newwin() would hand
+ * back NULL, and everything downstream would dereference it. */
+#define MIN_ROWS 10
+#define MIN_COLS 30
+
+/* Fill `sc`'s windows for the current terminal size. Windows are
+ * replaced in place rather than the Screen being returned by value, so
+ * that TUIState.redraw_ctx -- which points at the caller's Screen --
+ * stays valid across a resize. */
+static void screen_build(Screen *sc)
 {
-    RedrawCtx *r = (RedrawCtx*)ctx;
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+
+    const int cmd_h = 3;
+    int main_h = rows - cmd_h;
+
+    int info_w     = (cols >= 90) ? 32 : (cols >= 70) ? 26 : (cols >= 55) ? 20 : 0;
+    int eval_bar_w = (cols >= 55) ? 3 : 0;
+    int board_w    = cols - info_w - eval_bar_w;
+
+    sc->board    = newwin(main_h, board_w, 0, info_w + eval_bar_w);
+    sc->info     = info_w     ? newwin(main_h, info_w,     0, 0)      : NULL;
+    sc->eval_bar = eval_bar_w ? newwin(main_h, eval_bar_w, 0, info_w) : NULL;
+    sc->cmd      = newwin(cmd_h, cols, main_h, 0);
+
+    wbkgd(stdscr, COLOR_PAIR(CP_CANVAS));
+    werase(stdscr);
+    wrefresh(stdscr);
+
+    keypad(sc->board, TRUE);
+    keypad(sc->cmd,   TRUE);
+
+    /* Wake up every 100ms even without input, so the clocks tick live. */
+    wtimeout(sc->cmd, 100);
+}
+
+/* Lay out [INFO panel][EVAL BAR][BOARD] above a command line. The info
+ * panel and eval bar are dropped on terminals too narrow for them. */
+static Screen screen_create(TUIState *state)
+{
+    Screen sc;
+    memset(&sc, 0, sizeof(sc));
+    sc.state = state;
+    screen_build(&sc);
+    return sc;
+}
+
+static void screen_free_windows(Screen *sc)
+{
+    if (sc->board)    delwin(sc->board);
+    if (sc->eval_bar) delwin(sc->eval_bar);
+    if (sc->info)     delwin(sc->info);
+    if (sc->cmd)      delwin(sc->cmd);
+    sc->board = sc->info = sc->eval_bar = sc->cmd = NULL;
+}
+
+static void screen_destroy(Screen *sc)
+{
+    screen_free_windows(sc);
+}
+
+/* Is the terminal currently big enough to lay the game out? */
+static int screen_too_small(void)
+{
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    return rows < MIN_ROWS || cols < MIN_COLS;
+}
+
+/* Tell the player to make the window bigger, since there is no layout we
+ * could draw instead. stdscr is used directly: the game's own windows do
+ * not exist at this point. */
+static void screen_draw_too_small(void)
+{
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+
+    werase(stdscr);
+    const char *msg = "Terminal too small";
+    char detail[64];
+    snprintf(detail, sizeof(detail), "need %dx%d, have %dx%d",
+             MIN_COLS, MIN_ROWS, cols, rows);
+
+    if (rows > 0 && cols > (int)strlen(msg))
+        mvwprintw(stdscr, rows / 2, (cols - (int)strlen(msg)) / 2, "%s", msg);
+    if (rows > 2 && cols > (int)strlen(detail))
+        mvwprintw(stdscr, rows / 2 + 1, (cols - (int)strlen(detail)) / 2, "%s", detail);
+    wrefresh(stdscr);
+}
+
+static void screen_paint(const Screen *sc)
+{
+    WINDOW *wins[] = { stdscr, sc->board, sc->info, sc->eval_bar, sc->cmd };
+    const int n = (int)(sizeof(wins) / sizeof(wins[0]));
+
     werase(stdscr);
     wnoutrefresh(stdscr);
-    render_all(r->board_win, r->info_win, r->eval_bar_win, r->cmd_win, r->state);
-    touchwin(stdscr);
-    touchwin(r->board_win);
-    if (r->info_win)     touchwin(r->info_win);
-    if (r->eval_bar_win) touchwin(r->eval_bar_win);
-    touchwin(r->cmd_win);
-    wnoutrefresh(stdscr);
-    wnoutrefresh(r->board_win);
-    if (r->info_win)     wnoutrefresh(r->info_win);
-    if (r->eval_bar_win) wnoutrefresh(r->eval_bar_win);
-    wnoutrefresh(r->cmd_win);
+    render_all(sc->board, sc->info, sc->eval_bar, sc->cmd, sc->state);
+
+    for (int i = 0; i < n; i++) if (wins[i]) touchwin(wins[i]);
+    for (int i = 0; i < n; i++) if (wins[i]) wnoutrefresh(wins[i]);
     doupdate();
+}
+
+/* Adapter for TUIState.request_redraw, which cannot know about Screen. */
+static void screen_paint_hook(void *ctx) { screen_paint((const Screen *)ctx); }
+
+static WINDOW *screen_board(const Screen *sc) { return sc->board; }
+
+/* ── Key handling ───────────────────────────────────────────────────────── */
+
+/* Rebuild every window for the terminal's new size and repaint. Blocks
+ * while the terminal is too small to lay out at all, because there is no
+ * smaller layout to fall back to -- the windows would be degenerate and
+ * newwin() would start returning NULL. */
+static void screen_handle_resize(Screen *sc)
+{
+    screen_free_windows(sc);
+
+    while (screen_too_small()) {
+        screen_draw_too_small();
+        /* stdscr has no timeout set, so this blocks until a key or the
+         * next resize -- exactly the two things worth waking for. The
+         * game is paused meanwhile: there is no usable layout to play
+         * on, so neither the clocks nor a finished search are polled. */
+        wgetch(stdscr);
+    }
+
+    screen_build(sc);
+    screen_paint(sc);
+}
+
+/* Returns 0 when the player asked to quit, 1 to keep going. */
+static int handle_key(Screen *sc, int ch, const char *cmd_buf)
+{
+    TUIState *state = sc->state;
+
+    switch (ch) {
+        case KEY_UP:    case 'k':
+            if (state->cursor_row > 0) state->cursor_row--;
+            break;
+        case KEY_DOWN:  case 'j':
+            if (state->cursor_row < 7) state->cursor_row++;
+            break;
+        case KEY_LEFT:  case 'h':
+            if (state->cursor_col > 0) state->cursor_col--;
+            break;
+        case KEY_RIGHT: case 'l':
+            if (state->cursor_col < 7) state->cursor_col++;
+            break;
+
+        case '\n': case '\r': case KEY_ENTER:
+            /* Mirror handle_command()'s rejection of moves while the
+             * engine thinks. Without it this path would happily move the
+             * *engine's* pieces (it is the engine's turn, so they read as
+             * "friendly"), mutating the position under the search and
+             * leaving its result to be played onto a board that no
+             * longer matches it. */
+            if (state->search_running) {
+                snprintf(state->status, sizeof(state->status),
+                         "Engine is thinking — please wait, or use 'stop'");
+            } else if (!state->game.game_over) {
+                cursor_enter(state);
+            }
+            break;
+
+        case 27: /* Esc */
+            clear_selection(state);
+            snprintf(state->status, sizeof(state->status), "Deselected.");
+            break;
+
+        case -2: /* read_key() signals a completed command line this way */
+            if (cmd_buf[0]) {
+                if (handle_command(state, cmd_buf) == -1) return 0;
+                /* game_over is picked up at the top of the next loop */
+                game_update_status(&state->game);
+            }
+            break;
+
+        default:
+            break;
+    }
+    return 1;
 }
 
 void tui_run(TUIState *state)
@@ -487,167 +550,74 @@ void tui_run(TUIState *state)
 
     init_colors(state->theme);
 
-    if (state->show_onboarding) {
-        if (!tui_onboarding(state)) {
-            endwin();
-            return; /* user chose to quit from the onboarding screen */
-        }
+    if (state->show_onboarding && !tui_onboarding(state)) {
+        endwin();
+        return; /* the player quit from the onboarding screen */
     }
-    init_colors(state->theme); /* re-apply the theme actually chosen/confirmed */
+    init_colors(state->theme); /* re-apply the theme actually confirmed */
 
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
+    keypad(stdscr, TRUE);
+    while (screen_too_small()) {
+        screen_draw_too_small();
+        wgetch(stdscr);
+    }
 
-    int cmd_h   = 3;
-    int main_h  = rows - cmd_h;
-    /* Layout: [INFO panel] [EVAL BAR] [BOARD]
-     * eval_bar is 3 cols wide — narrow vertical strip beside the board */
-    int info_w    = (cols >= 90) ? 32 : (cols >= 70 ? 26 : (cols >= 55 ? 20 : 0));
-    int eval_bar_w = (cols >= 55) ? 3 : 0;
-    int board_w   = cols - info_w - eval_bar_w;
+    Screen sc = screen_create(state);
 
-    WINDOW *info_win     = info_w      ? newwin(main_h, info_w,      0, 0)                   : NULL;
-    WINDOW *eval_bar_win = eval_bar_w  ? newwin(main_h, eval_bar_w,  0, info_w)              : NULL;
-    WINDOW *board_win    =               newwin(main_h, board_w,     0, info_w + eval_bar_w);
-    WINDOW *cmd_win      =               newwin(cmd_h,  cols,    main_h, 0);
+    /* Let start_engine_search() force a repaint right after it sets the
+     * "Engine thinking..." status, so that status appears immediately
+     * instead of waiting for the next 100ms tick. */
+    state->request_redraw = screen_paint_hook;
+    state->redraw_ctx     = &sc;
 
-    /* Stats overlay window removed — draw_stats_mini creates its own popup */
-
-    wbkgd(stdscr, COLOR_PAIR(CP_CANVAS));
-    werase(stdscr);
-    wrefresh(stdscr);
-
-    keypad(board_win, TRUE);
-    keypad(cmd_win,   TRUE);
-
-    /* Redraw every 100 ms so clocks tick live without waiting for input */
-    wtimeout(cmd_win, 100);
-
-    /* Let start_engine_search() (in commands.c) force a repaint right
-     * after it sets the "Engine thinking..." status and before the
-     * background search thread starts, so that status is visible
-     * immediately instead of waiting for the next 100ms redraw tick. */
-    RedrawCtx redraw_ctx = { board_win, info_win, eval_bar_win, cmd_win, state };
-    state->request_redraw = do_redraw;
-    state->redraw_ctx     = &redraw_ctx;
+    /* The engine moves first if it already has the move -- the player
+     * chose Black, or a custom FEN starts on the engine's side. */
+    if (!state->two_player && state->engine_side == state->game.pos.side)
+        handle_command(state, "go");
 
     char cmd_buf[256];
 
-    /* Engine moves first if it's already engine's turn in the starting
-     * position -- true for "player chose Black" in a standard game, but
-     * also needs checking explicitly for a custom FEN that starts with
-     * the engine's side to move (e.g. loaded from --fen or onboarding). */
-    if (!state->two_player && state->engine_side == state->pos.side) {
-        handle_command(state, "go");
-    }
+    for (;;) {
+        /* If the background search just finished, apply its move before
+         * anything else this iteration. */
+        if (poll_engine_search(state))
+            game_update_status(&state->game);
 
-    /* clock_side tracks whose clock is ticking; starts as the side to move */
-    state->clock_side = state->pos.side;
-
-    while (1) {
-
-        /* -- If the engine's background search (see poll_engine_search())
-         *    just finished, apply its move and re-sync clock/game-over
-         *    state before anything else this iteration -- */
-        if (poll_engine_search(state)) {
-            state->clock_side = state->pos.side;
-            check_game_over(state);
+        if (state->game.game_over && state->game.result[0]) {
+            screen_paint(&sc);   /* show the final position behind the popup */
+            show_game_over_popup(&sc, state);
+            state->game.result[0] = '\0';
         }
 
-        /* -- If game just ended (e.g. engine delivered checkmate),
-         *    show the popup immediately before the next render -- */
-        if (state->game_over && state->game_result[0]) {
-            /* Render the final board state first so it's visible behind popup */
-            werase(stdscr); wnoutrefresh(stdscr);
-            render_all(board_win, info_win, eval_bar_win, cmd_win, state);
-            touchwin(stdscr); touchwin(board_win);
-            if (info_win)     touchwin(info_win);
-            if (eval_bar_win) touchwin(eval_bar_win);
-            touchwin(cmd_win);
-            wnoutrefresh(stdscr); wnoutrefresh(board_win);
-            if (info_win)     wnoutrefresh(info_win);
-            if (eval_bar_win) wnoutrefresh(eval_bar_win);
-            wnoutrefresh(cmd_win);
-            doupdate();
-            show_game_over_popup(board_win, state);
-            /* game_result is cleared by popup on new game; clear flag too */
-            state->game_result[0] = '\0';
-            state->clock_side = state->pos.side;
-        }
+        screen_paint(&sc);
 
-        /* ── Normal game rendering ──────────────────────────────────── */
-        werase(stdscr);
-        wnoutrefresh(stdscr);
-        render_all(board_win, info_win, eval_bar_win, cmd_win, state);
-        touchwin(stdscr);
-        touchwin(board_win);
-        if (info_win)     touchwin(info_win);
-        if (eval_bar_win) touchwin(eval_bar_win);
-        touchwin(cmd_win);
-        wnoutrefresh(stdscr);
-        wnoutrefresh(board_win);
-        if (info_win)     wnoutrefresh(info_win);
-        if (eval_bar_win) wnoutrefresh(eval_bar_win);
-        wnoutrefresh(cmd_win);
-        doupdate();
+        int ch = read_key(sc.cmd, cmd_buf, sizeof(cmd_buf), &state->insert_mode);
 
-        int ch = read_key(cmd_win, cmd_buf, sizeof(cmd_buf), &state->insert_mode);
-
-        /* Tab key → show small stats popup centered over the board */
-        if (ch == '\t') {
-            stats_load(&state->stats);
-            draw_stats_mini(board_win, &state->stats);
-            /* Repaint normal game underneath before looping */
-            werase(stdscr);
-            wnoutrefresh(stdscr);
-            touchwin(board_win);
-            if (info_win)     touchwin(info_win);
-            if (eval_bar_win) touchwin(eval_bar_win);
-            touchwin(cmd_win);
+        if (ch == KEY_RESIZE) {
+            screen_handle_resize(&sc);
             continue;
         }
 
-        switch (ch) {
-            case KEY_UP:    case 'k':
-                if (state->cursor_row > 0) state->cursor_row--; break;
-            case KEY_DOWN:  case 'j':
-                if (state->cursor_row < 7) state->cursor_row++; break;
-            case KEY_LEFT:  case 'h':
-                if (state->cursor_col > 0) state->cursor_col--; break;
-            case KEY_RIGHT: case 'l':
-                if (state->cursor_col < 7) state->cursor_col++; break;
-            case '\n': case '\r': case KEY_ENTER:
-                if (!state->game_over) cursor_enter(state, board_win);
-                break;
-            case 27:
-                state->selected = 0;
-                memset(state->highlight, 0, sizeof(state->highlight));
-                snprintf(state->status, sizeof(state->status), "Deselected.");
-                break;
-            case -2:
-                if (cmd_buf[0]) {
-                    int ret = handle_command(state, cmd_buf);
-                    if (ret == -1) goto quit;
-                    state->clock_side = state->pos.side;
-                    check_game_over(state);
-                    /* game_over is caught at top of next loop iteration */
-                }
-                break;
-            default: break;
+        if (ch == '\t') {   /* stats popup over the board */
+            stats_load(&state->stats);
+            draw_stats_mini(sc.board, &state->stats);
+            continue;        /* the next screen_paint() repaints underneath */
         }
+
+        if (!handle_key(&sc, ch, cmd_buf)) break;
     }
-quit:
-    /* Deliberately not joining state->search_thread here even if a
-     * background search is still running: main() returns right after
-     * this function does, which ends the whole process (and every
-     * thread in it) immediately. Waiting for pthread_join() instead
-     * would make "quit" block for however much of the time budget the
-     * search has left (up to a few seconds) -- a real regression versus
-     * quitting being instant, for no benefit, since the search thread
-     * holds no resources (files, locks) that need an orderly release. */
-    delwin(board_win);
-    if (eval_bar_win) delwin(eval_bar_win);
-    if (info_win) delwin(info_win);
-    delwin(cmd_win);
+
+    /* Cancel and join any in-flight search before returning. This stays
+     * effectively instant -- cancellation is checked every ~512 nodes, so
+     * the worker stops almost immediately rather than running out its
+     * remaining time budget.
+     *
+     * Joining is not optional: the worker writes state->search_result and
+     * state->search_ready when it finishes, and TUIState lives in main()'s
+     * stack frame. Returning while it is still running leaves it writing
+     * into a frame that process teardown is already reusing. */
+    cancel_engine_search(state);
+
+    screen_destroy(&sc);
     tui_cleanup();
 }

@@ -1,48 +1,18 @@
 /* stats_tui.c — ncurses statistics overlay for dchess
  *
  * draw_stats_overlay()  — full stats screen with rolling win-rate graph
- * draw_stats_compact()  — compact bars-only view for in-game Tab overlay
  * show_stats_overlay()  — blocking wrapper used by the standalone --stats TUI
  */
 
 #include "tui/stats_tui.h"
+#include "tui/colors.h"
+#include "tui/panel.h"
 #include "utils/stats.h"
 #include <ncurses.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-
-/* ── Color pairs (start at 40 to avoid collision with render.c's 1-35) ── */
-#define SCP_BORDER   40
-#define SCP_TITLE    41
-#define SCP_HEAD     42
-#define SCP_BAR_WIN  43
-#define SCP_BAR_LOSS 44
-#define SCP_BAR_DRAW 45
-#define SCP_BAR_BG   46
-#define SCP_VAL      47
-#define SCP_HINT     48
-#define SCP_LABEL    49
-#define SCP_GOOD     50
-#define SCP_BAD      51
-#define SCP_NEUT     52
-#define SCP_GRAPH_AX 53
-#define SCP_GRAPH_W  54
-#define SCP_GRAPH_L  55
-#define SCP_GRAPH_D  56
-#define SCP_GRAPH_BG 57
-
-/* Custom color slots (>= 21 to not clash with render.c) */
-#define SCOL_TEAL    60
-#define SCOL_GOLD    61
-#define SCOL_RUST    62
-#define SCOL_SLATE   63
-#define SCOL_MIST    64
-#define SCOL_BARK    65
-#define SCOL_LIME    66
-#define SCOL_CORAL   67
-#define SCOL_SKY     68
 
 static int colors_inited = 0;
 
@@ -318,222 +288,6 @@ static void draw_history_graph(WINDOW *win, int row_top, int col_l,
 }
 
 /* ══════════════════════════════════════════════════════════════════════
- * draw_stats_compact()
- * Compact bars-only view for the in-game Tab overlay — no graph.
- * ══════════════════════════════════════════════════════════════════════ */
-
-void draw_stats_compact(WINDOW *win, const DchessStats *s)
-{
-    init_stats_colors();
-    wclear(win);
-
-    int wh, ww;
-    getmaxyx(win, wh, ww);
-
-    wattron(win, COLOR_PAIR(SCP_BORDER));
-    box(win, ACS_VLINE, ACS_HLINE);
-    wattroff(win, COLOR_PAIR(SCP_BORDER));
-
-    wattron(win, COLOR_PAIR(SCP_TITLE) | A_BOLD);
-    const char *title = " dchess — Statistics ";
-    mvwprintw(win, 0, (ww - (int)strlen(title)) / 2, "%s", title);
-    wattroff(win, COLOR_PAIR(SCP_TITLE) | A_BOLD);
-
-    wattron(win, COLOR_PAIR(SCP_HINT));
-    const char *hint = " press any key to resume game ";
-    mvwprintw(win, wh - 1, (ww - (int)strlen(hint)) / 2, "%s", hint);
-    wattroff(win, COLOR_PAIR(SCP_HINT));
-
-    int lm  = 3;
-    int cw  = ww - lm * 2;
-    int bar = (cw > 50) ? 28 : (cw > 36) ? 20 : 14;
-    int row = 2;
-
-    int total_g = s->games_played[0] + s->games_played[1] + s->games_played[2];
-    int total_w = s->wins[0]   + s->wins[1]   + s->wins[2];
-    int total_l = s->losses[0] + s->losses[1] + s->losses[2];
-    int total_d = s->draws[0]  + s->draws[1]  + s->draws[2];
-
-    /* WIN RATE BY DIFFICULTY */
-    draw_section_head(win, row++, lm, cw, "WIN RATE BY DIFFICULTY");
-    row++;
-    static const char *dname[3] = { "Easy  ", "Medium", "Hard  " };
-    for (int d = 0; d < 3; d++) {
-        int   g   = s->games_played[d];
-        int   w   = s->wins[d];
-        int   l   = s->losses[d];
-        int   dr  = s->draws[d];
-        float pct = g ? 100.0f * w / g : 0.0f;
-        int   filled = g ? (int)(bar * w / g) : 0;
-
-        wattron(win, COLOR_PAIR(SCP_LABEL) | A_BOLD);
-        mvwprintw(win, row, lm, "%s", dname[d]);
-        wattroff(win, COLOR_PAIR(SCP_LABEL) | A_BOLD);
-        int bc = lm + 8;
-        draw_bar(win, row, bc, filled, bar,
-                 COLOR_PAIR(SCP_BAR_WIN) | A_BOLD, COLOR_PAIR(SCP_BAR_BG));
-        attr_t va = (pct >= 50) ? COLOR_PAIR(SCP_GOOD) | A_BOLD :
-                    (pct >= 30) ? COLOR_PAIR(SCP_NEUT) | A_BOLD :
-                                  COLOR_PAIR(SCP_BAD)  | A_BOLD;
-        wattron(win, va);
-        mvwprintw(win, row, bc + bar + 2, "%5.1f%%", pct);
-        wattroff(win, va);
-        wattron(win, COLOR_PAIR(SCP_VAL));
-        mvwprintw(win, row, bc + bar + 10, "%dW %dL %dD", w, l, dr);
-        wattroff(win, COLOR_PAIR(SCP_VAL));
-        row++;
-    }
-    row++;
-
-    /* COLOR PERFORMANCE */
-    if (row + 7 < wh - 2) {
-        draw_section_head(win, row++, lm, cw, "COLOR PERFORMANCE");
-        row++;
-        struct { const char *label; int played; int won; } sides[2] = {
-            { "White", s->played_as_white, s->wins_as_white },
-            { "Black", s->played_as_black, s->wins_as_black },
-        };
-        int max_played = 1;
-        for (int i = 0; i < 2; i++)
-            if (sides[i].played > max_played) max_played = sides[i].played;
-
-        for (int i = 0; i < 2; i++) {
-            int   pl  = sides[i].played;
-            int   wn  = sides[i].won;
-            float pct = pl ? 100.0f * wn / pl : 0.0f;
-            int   filled_pl = (int)((float)bar * pl / max_played);
-            int   filled_wn = pl ? (int)(bar * wn / pl) : 0;
-
-            int bc = lm + 14;
-            wattron(win, COLOR_PAIR(SCP_LABEL) | A_BOLD);
-            mvwprintw(win, row, lm, "%-6s played", sides[i].label);
-            wattroff(win, COLOR_PAIR(SCP_LABEL) | A_BOLD);
-            draw_bar(win, row, bc, filled_pl, bar,
-                     COLOR_PAIR(SCP_NEUT), COLOR_PAIR(SCP_BAR_BG));
-            wattron(win, COLOR_PAIR(SCP_VAL));
-            mvwprintw(win, row, bc + bar + 2, "%d games", pl);
-            wattroff(win, COLOR_PAIR(SCP_VAL));
-            row++;
-
-            wattron(win, COLOR_PAIR(SCP_LABEL));
-            mvwprintw(win, row, lm, "%-6s won   ", sides[i].label);
-            wattroff(win, COLOR_PAIR(SCP_LABEL));
-            draw_bar(win, row, bc, filled_wn, bar,
-                     COLOR_PAIR(SCP_GOOD) | A_BOLD, COLOR_PAIR(SCP_BAR_BG));
-            attr_t va = (pct >= 50) ? COLOR_PAIR(SCP_GOOD) | A_BOLD :
-                        (pct >= 30) ? COLOR_PAIR(SCP_NEUT) | A_BOLD :
-                                      COLOR_PAIR(SCP_BAD)  | A_BOLD;
-            wattron(win, va);
-            mvwprintw(win, row, bc + bar + 2, "%d wins (%.0f%%)", wn, pct);
-            wattroff(win, va);
-            row++;
-            if (i == 0) row++;
-        }
-        row++;
-    }
-
-    /* PERFORMANCE */
-    if (row + 5 < wh - 2) {
-        draw_section_head(win, row++, lm, cw, "PERFORMANCE");
-        row++;
-        int avg_m  = total_g ? s->total_moves / total_g : 0;
-        int avg_t  = total_g ? s->total_time_secs / total_g : 0;
-        int long_g = s->longest_game_moves;
-        int max_m  = (long_g > 0) ? long_g : 1;
-        int bar_m  = (int)((float)bar * avg_m / max_m);
-        if (bar_m > bar) bar_m = bar;
-        int max_t  = avg_t * 3; if (max_t < 1) max_t = 1;
-        int bar_t  = (int)((float)bar * avg_t / max_t);
-        if (bar_t > bar) bar_t = bar;
-        if (bar_t < 0)   bar_t = 0;
-
-        int bc = lm + 16;
-        wattron(win, COLOR_PAIR(SCP_LABEL));
-        mvwprintw(win, row, lm, "Avg moves/game");
-        wattroff(win, COLOR_PAIR(SCP_LABEL));
-        draw_bar(win, row, bc, bar_m, bar,
-                 COLOR_PAIR(SCP_NEUT) | A_BOLD, COLOR_PAIR(SCP_BAR_BG));
-        wattron(win, COLOR_PAIR(SCP_VAL));
-        mvwprintw(win, row, bc + bar + 2, "avg %d  longest %d", avg_m, long_g);
-        wattroff(win, COLOR_PAIR(SCP_VAL));
-        row++;
-
-        wattron(win, COLOR_PAIR(SCP_LABEL));
-        mvwprintw(win, row, lm, "Avg time/game ");
-        wattroff(win, COLOR_PAIR(SCP_LABEL));
-        draw_bar(win, row, bc, bar_t, bar,
-                 COLOR_PAIR(SCP_NEUT) | A_BOLD, COLOR_PAIR(SCP_BAR_BG));
-        wattron(win, COLOR_PAIR(SCP_VAL));
-        mvwprintw(win, row, bc + bar + 2, "avg %02d:%02d  total %dh %02dm",
-                  avg_t / 60, avg_t % 60,
-                  s->total_time_secs / 3600,
-                  (s->total_time_secs % 3600) / 60);
-        wattroff(win, COLOR_PAIR(SCP_VAL));
-        row++;
-        row++;
-    }
-
-    /* OVERALL SCORE */
-    if (row + 4 < wh - 2 && total_g > 0) {
-        draw_section_head(win, row++, lm, cw, "OVERALL SCORE");
-        row++;
-        int bw_score = (cw > 50) ? 40 : (cw > 28) ? cw - 12 : 16;
-        int filled_w = (int)((float)bw_score * total_w / total_g);
-        int filled_l = (int)((float)bw_score * total_l / total_g);
-        int filled_d = bw_score - filled_w - filled_l;
-        if (filled_d < 0) filled_d = 0;
-
-        wattron(win, COLOR_PAIR(SCP_LABEL));
-        mvwprintw(win, row, lm, "W");
-        wattroff(win, COLOR_PAIR(SCP_LABEL));
-        for (int i = 0; i < filled_w; i++) {
-            wattron(win, COLOR_PAIR(SCP_BAR_WIN) | A_BOLD);
-            mvwaddch(win, row, lm + 2 + i, ACS_BLOCK);
-            wattroff(win, COLOR_PAIR(SCP_BAR_WIN) | A_BOLD);
-        }
-        for (int i = 0; i < filled_l; i++) {
-            wattron(win, COLOR_PAIR(SCP_BAR_LOSS) | A_BOLD);
-            mvwaddch(win, row, lm + 2 + filled_w + i, ACS_BLOCK);
-            wattroff(win, COLOR_PAIR(SCP_BAR_LOSS) | A_BOLD);
-        }
-        for (int i = 0; i < filled_d; i++) {
-            wattron(win, COLOR_PAIR(SCP_BAR_DRAW) | A_BOLD);
-            mvwaddch(win, row, lm + 2 + filled_w + filled_l + i, ACS_BLOCK);
-            wattroff(win, COLOR_PAIR(SCP_BAR_DRAW) | A_BOLD);
-        }
-        int lx = lm + 2 + bw_score + 2;
-        wattron(win, COLOR_PAIR(SCP_GOOD) | A_BOLD);
-        mvwprintw(win, row, lx,      "%dW", total_w);
-        wattroff(win, COLOR_PAIR(SCP_GOOD) | A_BOLD);
-        wattron(win, COLOR_PAIR(SCP_BAD) | A_BOLD);
-        mvwprintw(win, row, lx + 5,  "%dL", total_l);
-        wattroff(win, COLOR_PAIR(SCP_BAD) | A_BOLD);
-        wattron(win, COLOR_PAIR(SCP_NEUT) | A_BOLD);
-        mvwprintw(win, row, lx + 10, "%dD", total_d);
-        wattroff(win, COLOR_PAIR(SCP_NEUT) | A_BOLD);
-        row += 2;
-
-        float ovr = total_g ? 100.0f * total_w / total_g : 0.0f;
-        attr_t oa = (ovr >= 50) ? COLOR_PAIR(SCP_GOOD) | A_BOLD :
-                    (ovr >= 30) ? COLOR_PAIR(SCP_NEUT) | A_BOLD :
-                                  COLOR_PAIR(SCP_BAD)  | A_BOLD;
-        wattron(win, oa);
-        mvwprintw(win, row, lm, "Overall win rate: %.1f%%  (%d games played)",
-                  ovr, total_g);
-        wattroff(win, oa);
-    }
-
-    if (total_g == 0) {
-        wattron(win, COLOR_PAIR(SCP_HINT) | A_BOLD);
-        mvwprintw(win, row + 1, lm,
-                  "No games recorded yet. Play a game to see stats here!");
-        wattroff(win, COLOR_PAIR(SCP_HINT) | A_BOLD);
-    }
-
-    wnoutrefresh(win);
-}
-
-/* ══════════════════════════════════════════════════════════════════════
  * draw_stats_overlay()
  * Full stats screen: all numeric sections PLUS the win-rate history
  * graph drawn in the empty space below the numeric data.
@@ -803,10 +557,17 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
     int pop_h = 18;
     if (pop_w > pw - 4) pop_w = pw - 4;
     if (pop_h > ph - 4) pop_h = ph - 4;
-    int pop_r = (ph - pop_h) / 2;
-    int pop_c = (pw - pop_w) / 2;
+    /* newwin() takes SCREEN coordinates, but the centring above is
+     * relative to `parent`. Without adding the parent's own origin the
+     * popup lands too far left and sits on top of the info panel
+     * instead of over the board. */
+    int par_r, par_c;
+    getbegyx(parent, par_r, par_c);
+    int pop_r = par_r + (ph - pop_h) / 2;
+    int pop_c = par_c + (pw - pop_w) / 2;
 
-    WINDOW *pop = newwin(pop_h, pop_w, pop_r, pop_c);
+    WINDOW *shadow = panel_shadow(pop_h, pop_w, pop_r, pop_c);
+    WINDOW *pop    = newwin(pop_h, pop_w, pop_r, pop_c);
     keypad(pop, TRUE);
 
     wattron(pop, COLOR_PAIR(SCP_BORDER));
@@ -938,4 +699,5 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
     wrefresh(pop);
     wgetch(pop);
     delwin(pop);
+    panel_shadow_destroy(shadow);
 }

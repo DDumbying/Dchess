@@ -1,7 +1,9 @@
 #include "engine/movegen.h"
 #include "engine/board.h"
+#include "engine/make.h"
 #include "utils/bitboard.h"
 #include "utils/constants.h"
+#include <string.h>
 
 int is_attacked(const Position *pos, int sq, int side) {
     /* pawns */
@@ -186,4 +188,16 @@ void generate_moves(const Position *pos, MoveList *ml) {
             add_move(ml, sq, to, king_piece, flags);
         }
     }
+}
+
+int has_legal_moves(const Position *pos)
+{
+    MoveList ml;
+    generate_moves(pos, &ml);
+    for (int i = 0; i < ml.count; i++) {
+        Position tmp;
+        memcpy(&tmp, pos, sizeof(Position));
+        if (make_move(&tmp, ml.moves[i])) return 1;
+    }
+    return 0;
 }

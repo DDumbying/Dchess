@@ -25,6 +25,5 @@ typedef struct {
 void clear_position(Position* pos);
 void update_occupancies(Position* pos);
 void init_start_position(Position* pos);
-void print_board(Position* pos);
 
 #endif

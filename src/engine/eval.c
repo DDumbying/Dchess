@@ -8,7 +8,14 @@ static const int piece_value[12] = {
     100, 320, 330, 500, 900, 20000    /* black */
 };
 
-/* Piece-square tables (white perspective, a1=0) */
+/* Piece-square tables.
+ *
+ * CAREFUL: these are written out rank 8 FIRST (the way you'd read a
+ * board or a FEN), so index 0 is a8 and index 63 is h1. That is the
+ * opposite of the engine's square numbering, where a1 = 0 (see
+ * fen.c/move.c: square = rank*8 + file). The mirror() at the lookup
+ * site is what reconciles the two, and it therefore belongs on WHITE,
+ * not Black -- see the NOTE there before changing any of this. */
 static const int pawn_pst[64] = {
      0,  0,  0,  0,  0,  0,  0,  0,
     50, 50, 50, 50, 50, 50, 50, 50,

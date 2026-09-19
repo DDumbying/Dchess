@@ -17,91 +17,68 @@
 #include <time.h>
 #include <pthread.h>
 
-/* Record a move + clock + halfmove into state (shared by try_move and apply_engine_result) */
-static void record_move(TUIState *state, Move m, int piece, const char *buf)
+/* ── Shared game-lifecycle helpers ──────────────────────────────────────── */
+
+const char *difficulty_label(int difficulty)
 {
-    int to_sq = TO(m);
-
-    /* Clock */
-    time_t now = time(NULL);
-    int elapsed = 0;
-    if (state->clock_started) {
-        elapsed = (int)(now - state->turn_start);
-        if (state->pos.side == WHITE) state->white_clock += elapsed;
-        else                          state->black_clock += elapsed;
-    }
-    state->clock_started = 1;
-    state->turn_start = now;
-    clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
-
-    /* Halfmove clock */
-    int is_pawn    = (piece == 0 || piece == 6);
-    int is_capture = (to_sq >= 0 && to_sq < 64 &&
-                      GET_BIT(state->pos.occupancies[BOTH], to_sq)) ? 1 : 0;
-    if (is_pawn || is_capture) state->halfmove_clock = 0;
-    else                       state->halfmove_clock++;
-
-    /* Make the move */
-    make_move(&state->pos, m);
-
-    /* Position history for repetition */
-    if (state->pos_history_count < MAX_MOVE_HISTORY)
-        state->pos_history[state->pos_history_count++] = hash_position(&state->pos);
-
-    /* Move history */
-    int idx = state->move_count;
-    if (idx < MAX_MOVE_HISTORY) {
-        strncpy(state->move_history[idx], buf, 7);
-        state->move_history[idx][7] = '\0';
-        state->move_piece[idx] = piece;
-        state->move_time[idx]  = elapsed;
-        state->move_count++;
-    }
+    return (difficulty == DIFF_EASY) ? "Easy" :
+           (difficulty == DIFF_HARD) ? "Hard" : "Medium";
 }
 
-static int try_move(TUIState *state, const char *movestr) {
+/* The "You play White | Medium difficulty" blurb, which three separate
+ * places used to format by hand off two ternary chains each. */
+void describe_setup(const TUIState *state, char *buf, size_t n)
+{
+    snprintf(buf, n, "You play %s | %s difficulty",
+             (state->player_side == WHITE) ? "White" : "Black",
+             difficulty_label(state->difficulty));
+}
+
+void tui_new_game(TUIState *state)
+{
+    /* Any search still running belongs to the game being thrown away;
+     * its result must never land on the new board. */
+    cancel_engine_search(state);
+
+    game_reset(&state->game);
+
+    state->selected  = 0;
+    state->view_side = WHITE;
+    memset(state->highlight, 0, sizeof(state->highlight));
+    snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
+
+    char setup[128];
+    describe_setup(state, setup, sizeof(setup));
+    snprintf(state->status, sizeof(state->status), "New game – %s", setup);
+}
+
+static int try_move(TUIState *state, const char *movestr)
+{
     int from, to, promo;
     if (!parse_move_str(movestr, &from, &to, &promo)) {
         snprintf(state->status, sizeof(state->status), "Bad move format: %s", movestr);
         return 0;
     }
 
-    MoveList ml;
-    generate_moves(&state->pos, &ml);
-
-    for (int i = 0; i < ml.count; i++) {
-        Move m = ml.moves[i];
-        if (FROM(m) != from || TO(m) != to) continue;
-        if (promo) { if (!(FLAGS(m) & promo)) continue; }
-        else if (FLAGS(m) & FLAG_PROMOTION) { if (!(FLAGS(m) & FLAG_PROMO_Q)) continue; }
-
-        int piece = -1;
-        for (int j = 0; j < 12; j++)
-            if (GET_BIT(state->pos.bitboards[j], from)) { piece = j; break; }
-
-        Position saved;
-        memcpy(&saved, &state->pos, sizeof(Position));
-        Position test = saved;
-        if (!make_move(&test, m)) {
-            snprintf(state->status, sizeof(state->status), "Illegal: leaves king in check");
-            return 0;
-        }
-
-        char buf[8];
-        move_to_str(m, buf);
-        record_move(state, m, piece, buf);
-        snprintf(state->status, sizeof(state->status), "Played: %s", buf);
-        return 1;
+    Move m;
+    if (!game_find_move(&state->game, from, to, promo, &m)) {
+        snprintf(state->status, sizeof(state->status), "Illegal move: %s", movestr);
+        return 0;
     }
 
-    snprintf(state->status, sizeof(state->status), "Illegal move: %s", movestr);
-    return 0;
+    char text[8];
+    move_to_str(m, text);
+    game_play(&state->game, m);
+    snprintf(state->status, sizeof(state->status), "Played: %s", text);
+    return 1;
 }
+
+static void apply_engine_result(TUIState *state, SearchResult res);
 
 /* Runs on a separate thread (see start_engine_search()). Searches only
  * state->search_snapshot -- a private copy taken at kickoff time -- so
- * this never touches state->pos, and the main thread can keep safely
- * reading/rendering state->pos the whole time this runs. */
+ * this never touches state->game.pos, and the main thread can keep safely
+ * reading/rendering state->game.pos the whole time this runs. */
 static void *engine_search_worker(void *arg) {
     TUIState *state = (TUIState *)arg;
     SearchResult res = search(&state->search_snapshot,
@@ -126,7 +103,8 @@ static void start_engine_search(TUIState *state) {
      * arguments inside the worker below; search_snapshot is captured
      * here, before the thread starts, so nothing the worker reads can
      * change out from under it once it's running. */
-    state->search_snapshot      = state->pos;
+    state->search_snapshot      = state->game.pos;
+    state->search_snapshot_hash = game_hash(&state->game);
     state->search_depth_arg     = state->engine_depth;
     state->search_time_limit_arg = state->time_limit_ms;
     state->search_ready         = 0;
@@ -139,11 +117,16 @@ static void start_engine_search(TUIState *state) {
         /* Thread creation failing is rare (resource exhaustion) but not
          * impossible -- fall back to a synchronous search rather than
          * leaving search_running stuck true forever with nothing ever
-         * going to clear it. */
+         * going to clear it.
+         *
+         * This path must apply the result itself: with search_running
+         * back to 0, poll_engine_search() bails out at its first line
+         * and would never look at search_ready, so leaving the result
+         * sitting in the struct means the engine simply never moves. */
         state->search_running = 0;
-        SearchResult res = search(&state->pos, state->engine_depth, state->time_limit_ms);
-        state->search_result = res;
-        state->search_ready  = 1;
+        state->search_ready   = 0;
+        SearchResult res = search(&state->game.pos, state->engine_depth, state->time_limit_ms);
+        apply_engine_result(state, res);
     }
 }
 
@@ -151,43 +134,46 @@ static void start_engine_search(TUIState *state) {
  * updates eval history and the status line. Shared by poll_engine_search()
  * (the normal, threaded path) and start_engine_search()'s same-thread
  * fallback above. */
-static void apply_engine_result(TUIState *state, SearchResult res) {
+static void apply_engine_result(TUIState *state, SearchResult res)
+{
     if (!res.best_move) {
-        state->game_over = 1;
-        if (is_in_check(&state->pos, state->pos.side)) {
-            const char *w = state->pos.side == WHITE ? "Black" : "White";
-            snprintf(state->game_result, sizeof(state->game_result),
-                     "Checkmate — %s wins!", w);
-        } else {
-            snprintf(state->game_result, sizeof(state->game_result), "Stalemate — Draw!");
+        /* An empty result means the search found nothing to play -- which
+         * is only "game over" if the position genuinely has no legal
+         * move. A search cancelled during depth 1 also comes back empty
+         * (see search.h), and calling that checkmate would end a live
+         * game on a bogus result. Ask the board, not the search. */
+        if (has_legal_moves(&state->game.pos)) {
+            snprintf(state->status, sizeof(state->status),
+                     "Search stopped — no move played");
+            return;
         }
-        snprintf(state->status, sizeof(state->status), "%s", state->game_result);
+        game_update_status(&state->game);
+        snprintf(state->status, sizeof(state->status), "%s", state->game.result);
         return;
     }
 
-    int from_sq = FROM(res.best_move);
-    int piece = -1;
-    for (int j = 0; j < 12; j++)
-        if (GET_BIT(state->pos.bitboards[j], from_sq)) { piece = j; break; }
-
-    char buf[8];
-    move_to_str(res.best_move, buf);
-
-    /* Normalize score to White's perspective:
-     * negamax returns score for the side that just moved.
-     * If engine plays Black, a positive score means Black is ahead —
-     * flip sign so last_eval is always from White's point of view. */
-    int score_white = (state->pos.side == BLACK) ? res.best_score : -res.best_score;
+    /* Normalize the score to White's perspective: negamax reports it for
+     * the side that just moved, so if the engine is Black a positive
+     * score means Black is ahead -- flip it so last_eval always reads
+     * from White's point of view. */
+    int score_white = (state->game.pos.side == BLACK) ? res.best_score : -res.best_score;
     float eval_f = score_white / 100.0f;
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
+    game_record_eval(&state->game, res.best_score);
 
-    /* Record eval history */
-    if (state->eval_count < MAX_MOVE_HISTORY)
-        state->eval_history[state->eval_count++] = res.best_score;
+    char text[8];
+    move_to_str(res.best_move, text);
+    game_play(&state->game, res.best_move);
 
-    record_move(state, res.best_move, piece, buf);
     snprintf(state->status, sizeof(state->status), "Engine: %s (eval %+.2f, depth %d)",
-             buf, eval_f, res.depth_reached);
+             text, eval_f, res.depth_reached);
+}
+
+/* Is a just-finished search still about the position on screen? */
+static int engine_result_is_current(const TUIState *state)
+{
+    if (state->game.game_over) return 0;
+    return game_hash(&state->game) == state->search_snapshot_hash;
 }
 
 int poll_engine_search(TUIState *state) {
@@ -202,18 +188,31 @@ int poll_engine_search(TUIState *state) {
 
     pthread_join(state->search_thread, NULL);
     state->search_running = 0;
+    state->search_ready   = 0;
+
+    /* Only play the move if the board is still the one it was computed
+     * for. Anything that changed `pos` while the search was in flight
+     * (a piece moved via the board cursor, a new game started from the
+     * game-over popup) invalidates the result -- applying it anyway
+     * would move a piece that has since left its square. */
+    if (!engine_result_is_current(state)) {
+        /* Discarding a result must not leave the engine owing a move it
+         * will never play, so re-search the position that is actually on
+         * the board. The fresh snapshot matches it by construction, so
+         * this cannot loop. */
+        if (!state->game.game_over && !state->two_player &&
+            state->engine_side == state->game.pos.side)
+            start_engine_search(state);
+        return 0;
+    }
+
     apply_engine_result(state, res);
     return 1;
 }
 
-/* Cancels an in-flight search and waits for the worker thread to actually
- * stop -- near-instant in practice (the cancellation check runs every
- * ~512 nodes; see search.c). Whatever the search had come up with is
- * discarded, not applied, since the caller is about to replace the game
- * state entirely (new game, a loaded position, a side swap) rather than
- * continue the game the search was computing a move for. Use this, not
- * a "please wait" rejection, for commands that mean "start over." */
-static void cancel_running_search(TUIState *state) {
+/* See commands.h. Use this, not a "please wait" rejection, for anything
+ * that means "start over." */
+void cancel_engine_search(TUIState *state) {
     if (!state->search_running) return;
     search_cancel();
     pthread_join(state->search_thread, NULL);
@@ -244,7 +243,7 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
 
-    /* Commands that don't touch state->pos and wouldn't call search()
+    /* Commands that don't touch state->game.pos and wouldn't call search()
      * again concurrently (fen, theme, help, stats, quit) are always
      * safe to run immediately, search or no search.
      *
@@ -266,21 +265,21 @@ int handle_command(TUIState *state, const char *cmd) {
     /* "new"/"loadfen"/"flip" all mean "replace the current game state,"
      * so a stale in-flight search for the position being replaced isn't
      * worth waiting for -- cancel it (discarding whatever it had found;
-     * see cancel_running_search()) and proceed immediately instead of
+     * see cancel_engine_search()) and proceed immediately instead of
      * making the player wait or rejecting the command outright. */
     if (strcmp(cmd, "new") == 0 || strcmp(cmd, "flip") == 0 ||
         strncmp(cmd, "loadfen ", 8) == 0) {
-        cancel_running_search(state);
+        cancel_engine_search(state);
     }
 
     if (is_move) {
-        if (!state->game_over && try_move(state, cmd))
-            if (state->engine_side == state->pos.side && !state->game_over)
+        if (!state->game.game_over && try_move(state, cmd))
+            if (state->engine_side == state->game.pos.side && !state->game.game_over)
                 start_engine_search(state);
         return 1;
     }
     if (strcmp(cmd, "go") == 0) {
-        if (!state->game_over) start_engine_search(state);
+        if (!state->game.game_over) start_engine_search(state);
         return 1;
     }
     if (strncmp(cmd, "depth ", 6) == 0) {
@@ -294,60 +293,32 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "new") == 0) {
-        init_start_position(&state->pos);
-        state->move_count        = 0;
-        state->game_over         = 0;
-        state->game_result[0]    = '\0';
-        state->turn_start        = time(NULL);
-        clock_gettime(CLOCK_MONOTONIC, &state->turn_start_mono);
-        state->white_clock       = 0;
-        state->black_clock       = 0;
-        state->halfmove_clock    = 0;
-        state->pos_history_count = 0;
-        state->selected          = 0;
-        state->clock_started     = 0;
-        memset(state->highlight, 0, sizeof(state->highlight));
-        state->view_side = WHITE;
+        tui_new_game(state);
 
-        const char *diff_str = (state->difficulty == DIFF_EASY)   ? "Easy"   :
-                               (state->difficulty == DIFF_HARD)   ? "Hard"   : "Medium";
-        const char *side_str = (state->player_side == WHITE) ? "White" : "Black";
-        snprintf(state->status, sizeof(state->status),
-                 "New game – You play %s | %s difficulty", side_str, diff_str);
-
-        /* If it's already engine's turn (player is Black in a standard
-         * start), engine moves first */
-        if (!state->two_player && state->engine_side == state->pos.side)
+        /* If it is already the engine's turn (the player chose Black),
+         * it moves first. */
+        if (!state->two_player && state->engine_side == state->game.pos.side)
             start_engine_search(state);
         return 1;
     }
     if (strcmp(cmd, "fen") == 0) {
         char buf[FEN_BUFSIZE];
-        int fullmove = state->move_count / 2 + 1;
-        position_to_fen(&state->pos, state->halfmove_clock, fullmove, buf, sizeof(buf));
+        int fullmove = state->game.move_count / 2 + 1;
+        position_to_fen(&state->game.pos, state->game.halfmove_clock, fullmove, buf, sizeof(buf));
         snprintf(state->status, sizeof(state->status), "FEN: %s", buf);
         return 1;
     }
     if (strncmp(cmd, "loadfen ", 8) == 0) {
-        Position pos;
-        int hm = 0, fm = 1;
-        if (!parse_fen(cmd + 8, &pos, &hm, &fm)) {
-            snprintf(state->status, sizeof(state->status), "Invalid FEN, position unchanged");
+        if (!game_load_fen(&state->game, cmd + 8)) {
+            snprintf(state->status, sizeof(state->status),
+                     "Invalid FEN, position unchanged");
             return 1;
         }
-        state->pos               = pos;
-        state->halfmove_clock    = hm;
-        state->move_count        = (fm - 1) * 2 + (pos.side == BLACK ? 1 : 0);
-        state->game_over         = 0;
-        state->game_result[0]    = '\0';
-        state->pos_history_count = 0;
-        state->selected          = 0;
+        state->selected = 0;
         memset(state->highlight, 0, sizeof(state->highlight));
-        if (state->pos_history_count < MAX_MOVE_HISTORY)
-            state->pos_history[state->pos_history_count++] = hash_position(&state->pos);
         snprintf(state->status, sizeof(state->status), "Position loaded from FEN");
 
-        if (!state->two_player && state->engine_side == state->pos.side)
+        if (!state->two_player && state->engine_side == state->game.pos.side)
             start_engine_search(state);
         return 1;
     }
@@ -375,7 +346,7 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "eval") == 0) {
-        SearchResult res = search(&state->pos, 1, 0);
+        SearchResult res = search(&state->game.pos, 1, 0);
         snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", res.best_score/100.0f);
         snprintf(state->status, sizeof(state->status), "Eval: %s", state->last_eval);
         return 1;
