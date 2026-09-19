@@ -2,6 +2,7 @@
 #include "engine/movegen.h"
 #include "engine/make.h"
 #include "engine/move.h"
+#include "game/san.h"
 #include "engine/hash.h"
 #include "engine/fen.h"
 #include "utils/bitboard.h"
@@ -69,12 +70,14 @@ static void update_halfmove_clock(GameState *g, Move m, int piece)
     else                       g->halfmove_clock++;
 }
 
+/* Called before make_move(), which is what san_write() needs. */
 static void append_to_log(GameState *g, Move m, int piece, int elapsed)
 {
     int i = g->move_count;
     if (i >= MAX_MOVE_HISTORY) return;
 
-    move_to_str(m, g->move_history[i]);
+    san_write(&g->pos, m, g->move_history[i]);
+    g->move_made[i]  = m;
     g->move_piece[i] = piece;
     g->move_time[i]  = elapsed;
     g->move_count++;
@@ -106,6 +109,7 @@ void game_reset(GameState *g)
 {
     init_start_position(&g->pos);
     clear_progress(g, 0);
+    g->start_fen[0] = '\0';
     g->clock_side = g->pos.side;
     record_position(g);
 }
@@ -121,6 +125,7 @@ int game_load_fen(GameState *g, const char *fen)
     g->pos = parsed;
     clear_progress(g, 1);
     g->halfmove_clock = hm;
+    snprintf(g->start_fen, sizeof(g->start_fen), "%s", fen);
 
     /* The FEN fullmove number counts move *pairs* from 1, so this is an
      * approximation of half-moves played, used only for display. */

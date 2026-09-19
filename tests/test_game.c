@@ -77,14 +77,16 @@ static void test_move_log(void)
 
     check("e2e4 is legal", play(&g, "e2e4") == 1);
     check("move_count advanced", g.move_count == 1);
-    check("move text recorded", strcmp(g.move_history[0], "e2e4") == 0);
+    check("move logged in SAN", strcmp(g.move_history[0], "e4") == 0);
+    check("the move itself is kept for the last-move highlight",
+          FROM(g.move_made[0]) == e2 && TO(g.move_made[0]) == e4);
     check("moving piece recorded as a white pawn", g.move_piece[0] == P);
     check("position recorded for repetition", g.position_count == 2);
     check("side to move flipped to Black", g.pos.side == BLACK);
 
     check("e7e5 is legal", play(&g, "e7e5") == 1);
     check("second move logged", g.move_count == 2 &&
-                                strcmp(g.move_history[1], "e7e5") == 0);
+                                strcmp(g.move_history[1], "e5") == 0);
     check("black pawn recorded", g.move_piece[1] == p);
 }
 
@@ -534,8 +536,7 @@ static void test_load_fen(void)
     check("halfmove clock comes from the FEN", g.halfmove_clock == 5);
     check("the loaded position is recorded for repetition",
           g.position_count == 1);
-    check("the move log is cleared of the old game",
-          strcmp(g.move_history[0], "e2e4") != 0 || g.move_count != 1);
+    check("the move log is cleared of the old game", g.move_count != 1);
     check("loading clears a previous game-over verdict",
           g.game_over == 0 && g.result[0] == '\0');
 }

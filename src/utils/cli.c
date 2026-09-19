@@ -110,6 +110,8 @@ void cli_help(void)
         "    depth N     Change search depth (1–8) mid-game\n"
         "    eval        Show the current position evaluation\n"
         "    fen         Show the current position as a FEN string\n"
+        "    pgn [path]  Save the game as PGN. Defaults to\n"
+        "                ~/.local/share/dchess/games/<date>-<time>.pgn\n"
         "    loadfen <FEN>\n"
         "                Load a custom position mid-game\n"
         "    theme <name>\n"
