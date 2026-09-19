@@ -2,10 +2,8 @@
 #include "tui/colors.h"
 #include <ncurses.h>
 
-/* Half-tone block. A solid block would read as a hole punched in the
- * screen rather than as shade, because every theme's canvas is already
- * close to black -- there is nothing for a black shadow to be darker
- * than. Stippling it keeps the shadow legible on a dark backdrop. */
+/* Half-tone: every theme's canvas is already near-black, so a solid
+ * shadow would read as a hole rather than as shade. */
 #define SHADOW_CELL ACS_CKBOARD
 
 WINDOW *panel_shadow(int panel_h, int panel_w, int panel_row, int panel_col)
@@ -16,9 +14,7 @@ WINDOW *panel_shadow(int panel_h, int panel_w, int panel_row, int panel_col)
     int screen_h, screen_w;
     getmaxyx(stdscr, screen_h, screen_w);
 
-    /* Clip to the screen rather than refusing outright: a panel flush
-     * against the bottom-right corner should still cast whatever part of
-     * its shadow fits. */
+    /* Clip rather than refuse, so a corner panel still casts what fits. */
     int h = panel_h, w = panel_w;
     if (row + h > screen_h) h = screen_h - row;
     if (col + w > screen_w) w = screen_w - col;
@@ -41,9 +37,7 @@ void panel_shadow_destroy(WINDOW *shadow)
 {
     if (!shadow) return;
 
-    /* Erase before deleting: delwin() alone leaves the painted cells on
-     * screen until something else happens to redraw that region, which
-     * for the game-over popup is not guaranteed. */
+    /* delwin() alone leaves the painted cells on screen. */
     werase(shadow);
     wrefresh(shadow);
     delwin(shadow);

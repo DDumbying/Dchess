@@ -1,5 +1,4 @@
 /* render.c — Dchess TUI rendering
- *
  * Rendering contract (per the spec):
  *   • Each square: SQ_W=5 cols × SQ_H=2 rows, fixed.
  *   • Row 0 of square: blank background fill
@@ -19,10 +18,11 @@
 #include "utils/theme.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <wchar.h>
 #include <time.h>
 
-/* ── Unicode pieces ────────────────────────────────────────────────────── */
+/* Unicode pieces  */
 static const wchar_t PIECE_GLYPH[12] = {
     0x2659, 0x2658, 0x2657, 0x2656, 0x2655, 0x2654,  /* ♙♘♗♖♕♔ white */
     0x265F, 0x265E, 0x265D, 0x265C, 0x265B, 0x265A   /* ♟♞♝♜♛♚ black */
@@ -39,42 +39,33 @@ static void init_glyph_width(void)
     GLYPH_W = (w == 2) ? 2 : 1;
 }
 
-/* ── Square dimensions — computed at render time to fill available space ── */
+/* Square dimensions — computed at render time to fill available space ── */
 #define SQ_W_MIN 5
 #define SQ_H_MIN 2
 
 
 
-/* ── 8-color fallback contrast helpers ───────────────────────────────────
- * In the fallback path the highlight backgrounds come from the theme
- * (t->fb_*), but the foregrounds used to be hard-coded. Any theme that
- * picked a background equal to one of those foregrounds rendered that
- * cell invisible -- e.g. "contrast" sets fb_sel_bg = FB_WHITE, and the
- * selected piece was drawn COLOR_WHITE on it. Deriving the foreground
- * from the background instead makes every theme legible by construction,
- * and keeps a new theme from reintroducing the same bug. */
+/* Foregrounds are derived from the theme's background rather than
+ * hard-coded, so no theme can pick a background that renders its own
+ * foreground invisible. */
 
-/* Of the 8 ANSI colors, which read as light backgrounds? */
+/* Which of the 8 ANSI colors read as light backgrounds? */
 static int fb_is_light(int bg)
 {
     return bg == COLOR_WHITE || bg == COLOR_YELLOW || bg == COLOR_CYAN;
 }
 
-/* Foreground for an empty highlighted square. */
 static int fb_plain_fg(int bg)
 {
     return fb_is_light(bg) ? COLOR_BLACK : COLOR_WHITE;
 }
 
-/* Foreground for a WHITE piece sitting on `bg`. */
 static int fb_white_pc_fg(int bg)
 {
     return fb_is_light(bg) ? COLOR_BLUE : COLOR_WHITE;
 }
 
-/* Foreground for a BLACK piece sitting on `bg`. Red reads as "black
- * piece" everywhere else in this file, so keep it unless the background
- * is itself red. */
+/* Red reads as "black piece" elsewhere in this file. */
 static int fb_black_pc_fg(int bg)
 {
     return (bg == COLOR_RED || bg == COLOR_MAGENTA) ? COLOR_BLACK : COLOR_RED;
@@ -90,7 +81,7 @@ void init_colors(int theme)
     const Theme *t = theme_get(theme);
 
     if (can_change_color()) {
-        /* ── Define palette ── */
+        /* Define palette ── */
         init_color(COL_LIGHT,  t->light[0],  t->light[1],  t->light[2]);
         init_color(COL_DARK,   t->dark[0],   t->dark[1],   t->dark[2]);
         /* COL_WPFG slot unused — white pieces use COLOR_YELLOW directly */
@@ -106,33 +97,33 @@ void init_colors(int theme)
         init_color(COL_CHROME, t->chrome[0], t->chrome[1], t->chrome[2]);
         init_color(COL_SHADOW, t->shadow[0], t->shadow[1], t->shadow[2]);
 
-        /* ── Board squares (fg = bg = same, invisible on empty cells) ── */
+        /* Board squares (fg = bg = same, invisible on empty cells) ── */
         init_pair(CP_LIGHT,      COL_LIGHT,  COL_LIGHT);
         init_pair(CP_DARK,       COL_DARK,   COL_DARK);
 
-        /* ── Normal piece pairs ── */
+        /* Normal piece pairs ── */
         init_pair(CP_W_LIGHT,    COLOR_YELLOW, COL_LIGHT);
         init_pair(CP_W_DARK,     COLOR_YELLOW, COL_DARK);
         init_pair(CP_B_LIGHT,    COL_BPFG,   COL_LIGHT);
         init_pair(CP_B_DARK,     COL_BPFG,   COL_DARK);
 
-        /* ── Cursor (arrow-key highlight) ── */
+        /* Cursor (arrow-key highlight) ── */
         init_pair(CP_CURSOR,     COL_CANVAS, COL_CURSOR);
         init_pair(CP_CURSOR_PC,  COLOR_YELLOW, COL_CURSOR);
 
-        /* ── Selection ── */
+        /* Selection ── */
         init_pair(CP_SEL,        COL_CANVAS, COL_SEL);
         init_pair(CP_SEL_PC,     COLOR_YELLOW, COL_SEL);
 
-        /* ── Legal move destination highlight ── */
+        /* Legal move destination highlight ── */
         init_pair(CP_MOVE_HI,    COL_CANVAS, COL_MOVEHI);
         init_pair(CP_MOVE_HI_PC, COLOR_YELLOW, COL_MOVEHI);
 
-        /* ── Check ── */
+        /* Check ── */
         init_pair(CP_CHECK_SQ,   COL_GOLD,   COL_CHECK);
         init_pair(CP_CHECK_PC,   COL_GOLD,   COL_CHECK);
 
-        /* ── Last-move ── */
+        /* Last-move ── */
         init_pair(CP_LMVL,       COL_LIGHT,  COL_LMVL);
         init_pair(CP_LMVD,       COL_DARK,   COL_LMVD);
         init_pair(CP_W_LMVL,     COLOR_YELLOW, COL_LMVL);
@@ -140,7 +131,7 @@ void init_colors(int theme)
         init_pair(CP_B_LMVL,     COL_BPFG,   COL_LMVL);
         init_pair(CP_B_LMVD,     COL_BPFG,   COL_LMVD);
 
-        /* ── UI chrome ── */
+        /* UI chrome ── */
         init_pair(CP_BORDER,     COL_CHROME,  -1);
         init_pair(CP_TITLE,      COL_CHROME,  -1);
         init_pair(CP_LINK,       COLOR_WHITE, -1);
@@ -160,7 +151,7 @@ void init_colors(int theme)
         init_pair(CP_FRAME,      COL_CHROME,  -1);
 
     } else {
-        /* ── 8-color fallback ──────────────────────────────────────────
+        /* 8-color fallback
          * No custom RGB on this terminal, only the 8 standard ANSI
          * colors -- board squares stay a fixed black/white regardless
          * of theme (safest for piece readability); the accent colors
@@ -207,12 +198,30 @@ void init_colors(int theme)
     }
 }
 
-/* ── Internal helpers ───────────────────────────────────────────────────── */
+/* Internal helpers  */
 static int piece_at(const Position *pos, int sq)
 {
     for (int i = 0; i < 12; i++)
         if (GET_BIT(pos->bitboards[i], sq)) return i;
     return -1;
+}
+
+/* printf truncated at the right border. Plain mvwprintw() does not clip:
+ * ncurses wraps an over-long string onto the next line of the same
+ * window, silently overwriting it. */
+static void mvw_clip(WINDOW *win, int row, int col, const char *fmt, ...)
+{
+    int wh, ww;
+    getmaxyx(win, wh, ww);
+    if (row < 0 || row >= wh || col < 0 || col >= ww - 1) return;
+
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    mvwprintw(win, row, col, "%.*s", ww - col - 1, buf);
 }
 
 static void hfill(WINDOW *w, int r, int c, int len, chtype ch)
@@ -270,24 +279,19 @@ static void put_glyph(WINDOW *win, int r, int c, int piece, attr_t attr)
     wattroff(win, attr);
 }
 
-/* ── draw_square ─────────────────────────────────────────────────────────
- *
+/* draw_square
  * Draws one SQ_W × SQ_H square at window coordinates (row, col).
- *
  * Layout (SQ_W=5, SQ_H=2):
  *   row+0:  "     "    ← sq_attr (background fill)
  *   row+1:  " ♙♙ "    ← sq_attr padding + pc_attr glyph (2 cells) + sq_attr padding
  *                         piece centered at col+1 (lpad=1, glyph=2, rpad=2)
- *
  * sq_attr : color pair for background cells  (fg == bg on empty squares)
  * pc_attr : color pair for the glyph         (proper fg on same bg)
  * piece   : 0-11 index, or -1 for empty
  * dot     : draw a subtle "•" indicator for legal-move destinations
- * ──────────────────────────────────────────────────────────────────────── */
-/* Draw a piece as multi-row art, centred in the square. The square's
- * background has already been laid down by the caller; this only paints
- * the silhouette cells, leaving the gaps showing that background so
- * highlights and the cursor still read through. */
+ */
+/* Paints only the silhouette cells, so the square background shows
+ * through the gaps and highlights still read. */
 static void draw_piece_art(WINDOW *win, int row, int col,
                            int sq_h, int sq_w,
                            const PieceArtTier *tier, int piece,
@@ -320,14 +324,11 @@ static void draw_square(WINDOW *win,
                         attr_t sq_attr, attr_t pc_attr,
                         int dot)
 {
-    /* Art needs room; below that the square falls back to the single
-     * centred glyph this board has always drawn. */
+    /* NULL below the smallest tier: fall back to the single glyph. */
     const PieceArtTier *tier = piece_art_for_square(sq_h, sq_w);
 
     if (piece >= 0 && tier) {
-        /* Lay the whole square down as background first, then paint the
-         * silhouette over it -- simpler than the row-by-row padding the
-         * glyph path needs, and it keeps the layering contract. */
+        /* Background first, silhouette over it. */
         wattron(win, sq_attr);
         for (int roff = 0; roff < sq_h; roff++)
             hfill(win, row + roff, col, sq_w, ' ');
@@ -373,9 +374,7 @@ static void draw_square(WINDOW *win,
     wattroff(win, sq_attr);
 }
 
-/* A single-line frame hugging the 8x8 grid. Drawn before the squares so
- * that nothing can paint over a square, and offset one cell outside the
- * grid on every side. */
+/* Drawn before the squares, one cell outside the grid. */
 static void draw_board_frame(WINDOW *win, int start_row, int start_col,
                              int sq_h, int sq_w)
 {
@@ -478,8 +477,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
         }
     }
 
-    /* File labels — a-h left-to-right when normal, h-a when flipped.
-     * One row below the frame's bottom edge so they never collide. */
+    /* a-h left-to-right, h-a when flipped. */
     int lr = start_row + 8 * sq_h + (framed ? 1 : 0);
     wattron(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
     for (int f = 0; f < 8; f++) {
@@ -489,17 +487,13 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
     wattroff(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
 }
 
-/* ── draw_board ──────────────────────────────────────────────────────────
- *
+/* draw_board
  * Scales square size to fill available space, then centers.
  * Keeps aspect: sq_w = sq_h * 2 + 1  (so pieces look square).
- * ─────────────────────────────────────────────────────────────────────── */
-/* Largest square size whose whole board fits in the given area.
- *
- * Squares keep the aspect sq_w = sq_h * 2 + 1, which reads as square
- * because terminal cells are about twice as tall as they are wide.
- * Returns 0 if not even a 1-row square fits, leaving *out_h / *out_w
- * untouched. */
+ */
+/* Largest square whose whole board fits. sq_w = sq_h * 2 + 1 reads as
+ * square because cells are about twice as tall as wide. Returns 0 if
+ * even a 1-row square does not fit. */
 static int fit_board(int avail_h, int avail_w, int framed,
                      int *out_h, int *out_w)
 {
@@ -527,17 +521,12 @@ static void draw_board(WINDOW *win, const TUIState *state)
     getmaxyx(win, wh, ww);
 
     /* Available area (inside border, above status section) */
-    /* Row 0 is the window border and row 1 holds the clocks, so the board
-     * starts at row 2 -- the clock row used to be unaccounted for, which
-     * is why a short terminal drew rank 8 straight over the clocks. */
+    /* Row 0 is the border and row 1 the clocks, so the board starts at 2. */
     int avail_h = wh - 8;   /* border + clock row + 5 status rows + border */
     int avail_w = ww - 6;   /* 2 borders + rank-label col + margins        */
 
-    /* Pick the largest square size that actually fits. A framed board
-     * costs 2 extra rows and 2 extra columns, so on a short terminal it
-     * is dropped rather than allowed to push the bottom ranks off the
-     * window -- which is what used to happen: at 80x24 rank 1 was simply
-     * cut off and the overflow corrupted the status lines below. */
+    /* A frame costs 2 rows and 2 columns, so it is dropped rather than
+     * allowed to push the bottom ranks off the window. */
     int sq_h, sq_w;
     int framed = 1;
     if (!fit_board(avail_h, avail_w, 1, &sq_h, &sq_w)) {
@@ -554,9 +543,7 @@ static void draw_board(WINDOW *win, const TUIState *state)
     int board_h = 8 * sq_h + chrome_h;
     int board_w = 8 * sq_w + chrome_w;
 
-    /* Centre inside the available area. The minimums keep the frame and
-     * the rank labels inside the window's own border: the frame sits one
-     * cell outside the grid, the rank label one cell outside that. */
+    /* Minimums keep the frame and rank labels inside the border. */
     int sr = 2 + (avail_h - board_h) / 2;
     int sc = 2 + (avail_w - board_w) / 2 + 2;
     int min_r = framed ? 3 : 2;
@@ -567,7 +554,7 @@ static void draw_board(WINDOW *win, const TUIState *state)
     draw_board_grid(win, state, sr, sc, sq_h, sq_w, framed);
 }
 
-/* ── Status bar (inside board window) ──────────────────────────────────── */
+/* Status bar (inside board window)  */
 static void draw_status(WINDOW *win, const TUIState *state)
 {
     int wh, ww;
@@ -590,50 +577,54 @@ static void draw_status(WINDOW *win, const TUIState *state)
     mvwprintw(win, wh-5, 2, "%-*.*s", ww-4, ww-4, state->status);
     wattroff(win, st);
 
-    /* Check callout */
-    if (is_in_check(&state->game.pos, state->game.pos.side)) {
+    /* Right-anchored overlays are skipped on a narrow window, where they
+     * would land on the text they are meant to sit beside. */
+    if (ww >= 34 && is_in_check(&state->game.pos, state->game.pos.side)) {
         wattron(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
-        mvwprintw(win, wh-5, ww-14, " !! CHECK !! ");
+        mvw_clip(win, wh-5, ww-14, " !! CHECK !! ");
         wattroff(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
     }
 
     /* Hint line */
     wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, wh-4, 2, "move:e2e4  go  new  flip  depth N  quit  [Tab]=stats");
+    mvw_clip(win, wh-4, 2, "move:e2e4  go  u=undo  new  flip  depth N  quit  [Tab]=stats");
     wattroff(win, COLOR_PAIR(CP_HINT));
 
     /* Cursor position hint */
     {
         int cr = 7 - state->cursor_row;   /* rank number */
         int cf = state->cursor_col;        /* file index  */
-        wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, wh-4, ww-10, "[%c%d]    ", 'a'+cf, cr+1);
-        wattroff(win, COLOR_PAIR(CP_HINT));
+        /* The hint beside it is a fixed 52 columns. */
+        if (ww - 10 > 56) {
+            wattron(win, COLOR_PAIR(CP_HINT));
+            mvw_clip(win, wh-4, ww-10, "[%c%d]", 'a'+cf, cr+1);
+            wattroff(win, COLOR_PAIR(CP_HINT));
+        }
     }
 
     /* Game info */
     const char *side = state->game.pos.side == WHITE ? "White" : "Black";
     wattron(win, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
-    mvwprintw(win, wh-3, 2, "[ %s to move ]  depth:%d  eval:%s",
-              side, state->engine_depth, state->last_eval);
+    mvw_clip(win, wh-3, 2, "[ %s to move ]  depth:%d  eval:%s",
+             side, state->engine_depth, state->last_eval);
     wattroff(win, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
 
     /* Selection hint */
-    if (state->selected) {
+    if (state->selected && ww - 16 > 40) {
         int sr = 7 - state->sel_row;
         int sf = state->sel_col;
         wattron(win, COLOR_PAIR(CP_SEL_PC)|A_BOLD);
-        mvwprintw(win, wh-3, ww-16, " selected:%c%d  ", 'a'+sf, sr+1);
+        mvw_clip(win, wh-3, ww-16, " selected:%c%d ", 'a'+sf, sr+1);
         wattroff(win, COLOR_PAIR(CP_SEL_PC)|A_BOLD);
     }
 
     /* Navigation hint */
     wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, wh-2, 2, "arrows/hjkl=cursor   enter=select/move   esc=deselect");
+    mvw_clip(win, wh-2, 2, "arrows/hjkl=cursor   enter=select/move   esc=deselect");
     wattroff(win, COLOR_PAIR(CP_HINT));
 }
 
-/* ── Info panel ──────────────────────────────────────────────────────────  */
+/* Info panel   */
 static void draw_captured_row(WINDOW *win, int row, int col,
                                const int cap[6], int white_sym, int maxcol)
 {
@@ -672,28 +663,28 @@ static void draw_info(WINDOW *win, const TUIState *state)
 
     /* Title in border */
     wattron(win, COLOR_PAIR(CP_TITLE)|A_BOLD);
-    mvwprintw(win, 0, (ww-6)/2, " INFO ");
+    mvw_clip(win, 0, (ww-6)/2, " INFO ");
     wattroff(win, COLOR_PAIR(CP_TITLE)|A_BOLD);
 
     int row = 2;
 
     /* GAME section */
     wattron(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
-    mvwprintw(win, row++, 2, "GAME");
+    mvw_clip(win, row++, 2, "GAME");
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
     const char *eng = state->engine_side == WHITE ? "White" :
                       state->engine_side == BLACK ? "Black" : "None";
     wattron(win, COLOR_PAIR(CP_INFO_VAL));
-    mvwprintw(win, row++, 2, "depth : %d",  state->engine_depth);
-    mvwprintw(win, row++, 2, "eval  : %s",  state->last_eval);
-    mvwprintw(win, row++, 2, "side  : %s",  state->game.pos.side == WHITE ? "White" : "Black");
-    mvwprintw(win, row++, 2, "engine: %s",  eng);
+    mvw_clip(win, row++, 2, "depth : %d",  state->engine_depth);
+    mvw_clip(win, row++, 2, "eval  : %s",  state->last_eval);
+    mvw_clip(win, row++, 2, "side  : %s",  state->game.pos.side == WHITE ? "White" : "Black");
+    mvw_clip(win, row++, 2, "engine: %s",  eng);
     wattroff(win, COLOR_PAIR(CP_INFO_VAL));
 
     if (is_in_check(&state->game.pos, state->game.pos.side)) {
         wattron(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
-        mvwprintw(win, row++, 2, "** CHECK **");
+        mvw_clip(win, row++, 2, "** CHECK **");
         wattroff(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
     } else {
         row++;
@@ -701,28 +692,62 @@ static void draw_info(WINDOW *win, const TUIState *state)
 
     /* MOVES section */
     wattron(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
-    mvwprintw(win, row++, 2, "MOVES");
+    mvw_clip(win, row++, 2, "MOVES");
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
-    wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, row++, 1, "  # pc  mv   t  pc  mv   t");
-    wattroff(win, COLOR_PAIR(CP_HINT));
+    /* The two-column table needs ~30 columns, but the panel is 20 or 26
+     * wide until the terminal reaches 90. Below that, a compact form. */
+    int wide = (ww >= 30);
 
-    int cap_h     = 11;
-    int hist_rows = wh - row - cap_h;
+    if (wide) {
+        wattron(win, COLOR_PAIR(CP_HINT));
+        mvw_clip(win, row++, 1, "  # pc  mv   t  pc  mv   t");
+        wattroff(win, COLOR_PAIR(CP_HINT));
+    }
+
+    /* CAPTURED is drawn from a fixed offset off the bottom while the move
+     * list grows down, so the split has to come from real space. */
+    /* 7 drawn rows; the 8th keeps the last off the bottom border. */
+    const int CAP_ROWS_FULL = 11;
+    const int CAP_ROWS_MIN  = 8;
+
+    int cap_h = CAP_ROWS_FULL;
+    if (wh - row - cap_h < 1)
+        cap_h = wh - row - 1;       /* keep at least one move row */
+    if (cap_h < CAP_ROWS_MIN)
+        cap_h = 0;                  /* no room at all: drop the section */
+
+    int hist_rows = (cap_h ? (wh - cap_h) : (wh - 1)) - row;
     if (hist_rows < 1) hist_rows = 1;
+
+    /* First row the move list must not touch: the captured section's
+     * separator if there is one, otherwise the panel's bottom border. */
+    int move_limit = cap_h ? (wh - cap_h) : (wh - 1);
 
     int total  = (state->game.move_count + 1) / 2;
     int start  = total - hist_rows;
     if (start < 0) start = 0;
 
-    for (int p = start; p < total && row < wh - cap_h; p++) {
+    for (int p = start; p < total && row < move_limit; p++) {
         int wi = p*2, bi = p*2+1;
         int latest = (p == total - 1);
 
+        if (!wide) {
+            /* "12. e2e4 e7e5" */
+            attr_t a = latest ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD
+                              : COLOR_PAIR(CP_INFO_VAL);
+            wattron(win, a);
+            mvw_clip(win, row, 1, "%3d. %-5s %-5s", p+1,
+                     state->game.move_history[wi],
+                     bi < state->game.move_count ? state->game.move_history[bi] : "");
+            wattroff(win, a);
+            row++;
+            continue;
+        }
+
         /* Move number */
         wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, row, 1, "%3d.", p+1);
+        mvw_clip(win, row, 1, "%3d.", p+1);
         wattroff(win, COLOR_PAIR(CP_HINT));
 
         /* White move — glyph@6 move@8 time@14 */
@@ -738,12 +763,12 @@ static void draw_info(WINDOW *win, const TUIState *state)
                 wattroff(win, wa);
             }
             wattron(win, wa);
-            mvwprintw(win, row, 8, "%-5s", state->game.move_history[wi]);
+            mvw_clip(win, row, 8, "%-5s", state->game.move_history[wi]);
             wattroff(win, wa);
             int t = state->game.move_time[wi];
             wattron(win, COLOR_PAIR(CP_HINT));
-            if (t < 60)   mvwprintw(win, row, 14, "%2ds", t);
-            else          mvwprintw(win, row, 14, "%dm%d", t/60, t%60);
+            if (t < 60)   mvw_clip(win, row, 14, "%2ds", t);
+            else          mvw_clip(win, row, 14, "%dm%d", t/60, t%60);
             wattroff(win, COLOR_PAIR(CP_HINT));
         }
 
@@ -760,23 +785,25 @@ static void draw_info(WINDOW *win, const TUIState *state)
                 wattroff(win, ba);
             }
             wattron(win, ba);
-            mvwprintw(win, row, 21, "%-5s", state->game.move_history[bi]);
+            mvw_clip(win, row, 21, "%-5s", state->game.move_history[bi]);
             wattroff(win, ba);
             int t = state->game.move_time[bi];
             wattron(win, COLOR_PAIR(CP_HINT));
-            if (t < 60)   mvwprintw(win, row, 27, "%2ds", t);
-            else          mvwprintw(win, row, 27, "%dm%d", t/60, t%60);
+            if (t < 60)   mvw_clip(win, row, 27, "%2ds", t);
+            else          mvw_clip(win, row, 27, "%dm%d", t/60, t%60);
             wattroff(win, COLOR_PAIR(CP_HINT));
         }
         row++;
     }
-    if (state->game.move_count == 0) {
+    if (state->game.move_count == 0 && row < move_limit) {
         wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, row, 2, "(no moves)");
+        mvw_clip(win, row, 2, "(no moves)");
         wattroff(win, COLOR_PAIR(CP_HINT));
     }
 
-    /* CAPTURED section */
+    /* Skipped entirely when cap_h came out 0. */
+    if (cap_h == 0) { wnoutrefresh(win); return; }
+
     int ct = wh - cap_h;
     wattron(win, COLOR_PAIR(CP_BORDER));
     mvwaddch(win, ct, 0, ACS_LTEE);
@@ -786,7 +813,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
     ct++;
 
     wattron(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
-    mvwprintw(win, ct++, 2, "CAPTURED");
+    mvw_clip(win, ct++, 2, "CAPTURED");
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
     int cw[6], cb[6];
@@ -794,22 +821,22 @@ static void draw_info(WINDOW *win, const TUIState *state)
     int adv = 0;
     for (int i = 0; i < 5; i++) adv += (cb[i] - cw[i]) * PC_VAL[i];
 
-    wattron(win, COLOR_PAIR(CP_HINT)); mvwprintw(win, ct++, 2, "W took:"); wattroff(win, COLOR_PAIR(CP_HINT));
+    wattron(win, COLOR_PAIR(CP_HINT)); mvw_clip(win, ct++, 2, "W took:"); wattroff(win, COLOR_PAIR(CP_HINT));
     draw_captured_row(win, ct++, 2, cb, 1, ww);
-    wattron(win, COLOR_PAIR(CP_HINT)); mvwprintw(win, ct++, 2, "B took:"); wattroff(win, COLOR_PAIR(CP_HINT));
+    wattron(win, COLOR_PAIR(CP_HINT)); mvw_clip(win, ct++, 2, "B took:"); wattroff(win, COLOR_PAIR(CP_HINT));
     draw_captured_row(win, ct++, 2, cw, 0, ww);
 
     attr_t aa = adv != 0 ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD : COLOR_PAIR(CP_INFO_VAL);
     wattron(win, aa);
-    if      (adv > 0) mvwprintw(win, ct++, 2, "+%d White", adv);
-    else if (adv < 0) mvwprintw(win, ct++, 2, "+%d Black", -adv);
-    else              mvwprintw(win, ct++, 2, "Even");
+    if      (adv > 0) mvw_clip(win, ct++, 2, "+%d White", adv);
+    else if (adv < 0) mvw_clip(win, ct++, 2, "+%d Black", -adv);
+    else              mvw_clip(win, ct++, 2, "Even");
     wattroff(win, aa);
 
     wnoutrefresh(win);
 }
 
-/* ── Command bar ────────────────────────────────────────────────────────── */
+/* Command bar  */
 static void draw_cmd(WINDOW *win)
 {
     wclear(win);
@@ -822,20 +849,16 @@ static void draw_cmd(WINDOW *win)
     wnoutrefresh(win);
 }
 
-/* ── draw_eval_bar ───────────────────────────────────────────────────────────
- *
+/* draw_eval_bar
  * Vertical evaluation bar styled like chess.com:
  *   • Black fills from the top
  *   • White fills from the bottom
  *   • The boundary between them shifts based on centipawn eval
  *   • A small score label is shown at the boundary
  *   • "B" label at top, "W" label at bottom
- * ─────────────────────────────────────────────────────────────────────────── */
-/* ── Clock display ───────────────────────────────────────────────────────
- * "W: 03:07.42" -- minutes:seconds.centiseconds, tagged with the side.
- * Minutes are clamped so the field can never outgrow the buffer: a game
- * long enough to reach 99 minutes pins the display there rather than
- * widening (and truncating) mid-render. */
+ */
+/* "W: 03:07.42". Minutes are clamped so the field can never outgrow the
+ * buffer mid-render. */
 #define CLOCK_MAX_MINUTES 99
 #define CLOCK_STR_SIZE    16   /* "W: 99:59.99" + NUL, with room to spare */
 
@@ -925,7 +948,7 @@ static void draw_eval_bar(WINDOW *win, const TUIState *state)
     wnoutrefresh(win);
 }
 
-/* ── render_all ─────────────────────────────────────────────────────────── */
+/* render_all  */
 void render_all(WINDOW *board_win, WINDOW *info_win, WINDOW *eval_bar_win,
                 WINDOW *cmd_win,   const TUIState *state)
 {
@@ -951,7 +974,7 @@ void render_all(WINDOW *board_win, WINDOW *info_win, WINDOW *eval_bar_win,
     if (bc > 10) mvwprintw(board_win, 0, bc, "%s", brand);
     wattroff(board_win, COLOR_PAIR(CP_LINK)|A_BOLD);
 
-    /* ── Clock bar (row 1, inside border) ──
+    /* Clock bar (row 1, inside border) ──
      * White clock left, Black clock right, ticking with centiseconds. */
     {
         struct timespec mono_now;

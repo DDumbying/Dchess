@@ -5,42 +5,26 @@
 #include "engine/move.h"
 #include <time.h>
 
-/* ── The game itself ─────────────────────────────────────────────────────
+/* The played game: position, move log, clocks and draw bookkeeping.
+ * Knows nothing about ncurses, threads or the engine.
  *
- * Everything needed to know what has been played and whether the game is
- * over: the position, the move log, the clocks, and the draw-rule
- * bookkeeping. Deliberately knows nothing about ncurses, threads, the
- * cursor, or the engine -- it is the model the TUI renders and the engine
- * plays into, and it can be exercised in a plain unit test.
- *
- * All of this used to live in TUIState alongside the cursor position and
- * the search thread, with the rules logic spread across tui.c and
- * commands.c. That is what allowed a move to be committed from two
- * different places with two subtly different implementations, and a
- * "new game" to be spelled out longhand in three.
- *
- * game_play() is the ONLY function that advances the position. Anything
- * that mutates `pos` behind its back will desync the move log, the
- * clocks and the repetition history from the board. */
+ * game_play() is the ONLY function that advances the position; mutating
+ * `pos` behind its back desyncs the log, clocks and repetition history. */
 
-/* Half-moves of move log and evaluation history kept for display. Games
- * longer than this keep playing correctly -- only the scrollback stops
- * growing. (Draw detection does NOT depend on this; see below.) */
+/* Display scrollback only. Draw detection does not depend on it. */
 #define MAX_MOVE_HISTORY 1024
 
-/* Ring of recent position hashes, used only for threefold repetition.
- *
- * It can be a small fixed ring because a repetition can never span an
- * irreversible move: a pawn push or a capture makes every earlier
- * position unreachable forever. So the only positions worth comparing
- * against are the last `halfmove_clock` ones -- and halfmove_clock can
- * never exceed 99 here, because 100 triggers the 50-move draw first.
- * Anything above 100 is therefore headroom.
- *
- * This replaced a flat 256-entry array that simply stopped recording
- * once full, which silently switched threefold detection off for the
- * rest of a long game. */
+/* A repetition can never span an irreversible move, so only the last
+ * halfmove_clock positions can match -- and that never exceeds 99 before
+ * the 50-move rule fires. The rest is headroom. */
 #define GAME_REPETITION_WINDOW 128
+
+/* Snapshot rather than an unmake_move(): correct by construction for
+ * castling, en passant and promotion. ~144 KB buys unlimited undo. */
+typedef struct {
+    Position pos;            /* as it was BEFORE the move */
+    int      halfmove_clock;
+} UndoRecord;
 
 typedef struct {
     Position pos;
@@ -71,49 +55,43 @@ typedef struct {
     /* Engine evaluation after each half-move, in centipawns */
     int  eval_history[MAX_MOVE_HISTORY];
     int  eval_count;
+
+    /* Undo stack, one entry per ply played, parallel to the move log. */
+    UndoRecord undo[MAX_MOVE_HISTORY];
+    int        undo_count;
 } GameState;
 
-/* Start a fresh game from the standard opening position. Clears the move
- * log, clocks, draw bookkeeping and outcome. */
 void game_reset(GameState *g);
 
-/* Replace the position from a FEN string. Returns 0 and leaves `g`
- * completely untouched if the FEN is malformed. Clears the move log and
- * outcome (but not the clocks -- a loaded position continues the
- * session's timing). */
+/* Returns 0 and leaves `g` untouched on a malformed FEN. Keeps the clocks
+ * running. */
 int game_load_fen(GameState *g, const char *fen);
 
-/* Find the legal move matching from/to among the side to move's moves.
- *
- * `promo` is a FLAG_PROMO_* flag, or 0 to mean "queen, if this is a
- * promotion at all" -- the default every caller wants. Returns 1 and
- * writes *out on success. Returns 0 if no such move exists or if it
- * would leave the mover's own king in check. */
+/* `promo` is a FLAG_PROMO_* flag, or 0 for "queen if this is a promotion
+ * at all". Returns 0 if no such move exists or it leaves the king in
+ * check. */
 int game_find_move(const GameState *g, int from, int to, int promo, Move *out);
 
-/* Play `m` and advance the game: charges the mover's clock, updates the
- * halfmove clock, makes the move, records the position hash and appends
- * to the move log. `m` must have come from game_find_move() (i.e. be
- * known legal in the current position).
- *
- * This is the single point at which the position changes. */
+/* `m` must have come from game_find_move(). */
 void game_play(GameState *g, Move m);
 
-/* Recompute game_over/result. Checks, in order: checkmate/stalemate,
- * insufficient material, the 50-move rule, threefold repetition. The
- * order matters -- a position can be checkmate with material that could
- * never mate again, and the material rule must beat the counting rules
- * that would take another 50 moves to reach the same verdict.
- * A no-op once the game is over. Call after every game_play(). */
+/* Call after every game_play(). Order matters: mate can happen with
+ * material that could never mate again, and the material rule must beat
+ * the counting rules that would reach the same verdict 50 moves later. */
 void game_update_status(GameState *g);
 
-/* Append an engine evaluation (centipawns, White-positive) to the log. */
 void game_record_eval(GameState *g, int score_cp);
 
-/* Piece index 0-11 occupying `sq`, or -1 if the square is empty. */
+/* Piece index 0-11 on `sq`, or -1. */
 int game_piece_at(const GameState *g, int sq);
 
-/* Hash of the current position, for comparing against a snapshot. */
 U64 game_hash(const GameState *g);
+
+int game_can_undo(const GameState *g);
+
+/* Takes back exactly ONE ply and clears any game-over verdict. How many
+ * plies a takeback should be depends on whether an engine plays the
+ * other side, which this module does not know -- see tui_undo(). */
+int game_undo(GameState *g);
 
 #endif

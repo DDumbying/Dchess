@@ -11,24 +11,17 @@
 
 static long node_count;
 
-/* ── Time budget ─────────────────────────────────────────────────────────
- * Checked periodically (not every node -- clock_gettime() isn't free)
- * from inside alpha_beta()/quiescence(). When the deadline passes,
- * search_aborted latches true and every frame unwinds immediately;
- * search()'s iterative-deepening loop then discards that in-progress
- * iteration and returns the last one that finished cleanly. Depth 1 is
- * always run with the time check disabled (see search()), so a legal
- * move is always available even under an unreasonably tight budget.
- *
- * Cancellation (below) is NOT gated this way -- it fires at every
- * depth, including depth 1, so that "quit"/"new" stay responsive. That
- * means a cancelled search CAN return an empty best_move; callers are
- * required to handle it (see search.h). */
+/* Checked periodically, not every node. On expiry search_aborted latches
+ * and search() returns the last iteration that finished cleanly. Depth 1
+ * runs with the check disabled, so a legal move is always available.
+ * Cancellation is NOT gated that way -- it fires at every depth so quit
+ * stays responsive, which means a cancelled search can return an empty
+ * best_move. Callers must handle it (see search.h). */
 static int time_limited;
 static int search_aborted;
 static struct timespec search_deadline;
 
-/* ── Cancellation ────────────────────────────────────────────────────────
+/* Cancellation
  * search_cancel() is the one function in this file meant to be called
  * from a *different* thread than the one running search() -- e.g. the
  * UI thread asking a background search to stop early (see commands.c).
@@ -63,7 +56,7 @@ static int cmp_moves(const void *a, const void *b) {
     return move_score(*(Move*)b) - move_score(*(Move*)a);
 }
 
-/* ── Transposition table ─────────────────────────────────────────────────
+/* Transposition table
  * Keyed by hash_position(). Content-addressed, so entries stay valid
  * across searches/games — a matching key means an identical position,
  * regardless of when it was first stored. Always-replace on collision:

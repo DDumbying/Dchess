@@ -5,20 +5,18 @@
 
 /*
  * read_key — unified input handler for the TUI.
- *
  * Vim-style modal input:
  *   Normal mode  (insert_mode == 0):
  *     * hjkl / arrow keys  -> cursor navigation (returned to caller)
+ *     * 'u'                -> take back the last move
  *     * 'i'                -> enter insert mode (returns 0)
  *     * Enter on empty buf -> cursor action (returned as '\n')
  *     * All other keys     -> ignored
- *
  *   Insert mode  (insert_mode == 1):
  *     * Printable chars    -> accumulated in ibuf
  *     * Enter              -> submit command (-2) or plain Enter ('\n')
  *     * Backspace          -> erase last char
  *     * ESC                -> clear buf, exit insert mode (returns 27)
- *
  * Returns:
  *   KEY_UP / KEY_DOWN / KEY_LEFT / KEY_RIGHT  -> arrow keys (normal mode)
  *   '\n'                                       -> Enter (cursor action)
@@ -53,9 +51,7 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
 
     int ch = wgetch(win);
 
-    /* A resize is not a keystroke: hand it straight back so the caller
-     * can rebuild its windows. Swallowing it here (as the default
-     * branches below would) left the UI drawn for the old size. */
+    /* Not a keystroke: hand it back so the caller can rebuild. */
     if (ch == KEY_RESIZE) return KEY_RESIZE;
 
     /* ESC always exits insert mode */
@@ -74,6 +70,8 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
             case KEY_LEFT:  case KEY_RIGHT:
             case 'k': case 'j': case 'h': case 'l':
                 return ch;
+            case 'u':   /* takeback */
+                return 'u';
             case '\n': case '\r': case KEY_ENTER:
                 return '\n';
             case '\t':   /* Tab — pass through for stats overlay */

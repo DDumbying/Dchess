@@ -1,27 +1,16 @@
 #ifndef STATS_TUI_H
 #define STATS_TUI_H
 
-/* ─────────────────────────────────────────────────────────────
- * dchess  –  full-screen ncurses statistics overlay
- *
- * show_stats_overlay() blocks until the user presses any key,
- * then returns so the game can continue.
- *
- * draw_stats_overlay() draws into an existing WINDOW without
- * blocking — used by the Tab-hold overlay in tui_run.
- * ───────────────────────────────────────────────────────────── */
-
 #include "utils/stats.h"
 #include <ncurses.h>
 
-/* Full-screen blocking stats view (used by --stats flag TUI) */
+/* Blocks until a key is pressed. Used by --stats. */
 void show_stats_overlay(const DchessStats *s);
 
-/* Draw full stats + win-rate history graph into an existing window */
+/* Full stats plus the win-rate graph, into an existing window. */
 void draw_stats_overlay(WINDOW *win, const DchessStats *s);
 
-
-/* Small centered popup for in-game quick stats (Tab key) */
+/* Small centred popup for in-game quick stats (Tab). */
 void draw_stats_mini(WINDOW *parent, const DchessStats *s);
 
-#endif /* STATS_TUI_H */
+#endif

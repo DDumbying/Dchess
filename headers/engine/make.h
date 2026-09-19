@@ -4,15 +4,11 @@
 #include "board.h"
 #include "move.h"
 
-/* Returns 0 if move leaves own king in check (illegal), 1 otherwise */
+/* Returns 0 if the move leaves its own king in check. */
 int make_move(Position *pos, Move move);
 
-/* NOTE: there's no undo_move(). Every call site currently does a full
- * Position memcpy before calling make_move() and restores it after --
- * see search.c/commands.c. A real incremental make/unmake (restoring
- * just what changed instead of copying the whole struct) would be a
- * meaningful search-speed win, but touches castling rights, captured
- * pieces, and en passant state carefully enough that it deserves its
- * own dedicated pass rather than a quick bolt-on here. */
+/* No undo_move(): every call site copies the whole Position and restores
+ * it. An incremental make/unmake would be a real search-speed win, but
+ * castling rights, captured pieces and en passant make it its own job. */
 
 #endif

@@ -8,14 +8,9 @@ static const int piece_value[12] = {
     100, 320, 330, 500, 900, 20000    /* black */
 };
 
-/* Piece-square tables.
- *
- * CAREFUL: these are written out rank 8 FIRST (the way you'd read a
- * board or a FEN), so index 0 is a8 and index 63 is h1. That is the
- * opposite of the engine's square numbering, where a1 = 0 (see
- * fen.c/move.c: square = rank*8 + file). The mirror() at the lookup
- * site is what reconciles the two, and it therefore belongs on WHITE,
- * not Black -- see the NOTE there before changing any of this. */
+/* CAREFUL: written rank 8 FIRST, so index 0 is a8 -- the opposite of the
+ * engine's a1=0 numbering. mirror() at the lookup site reconciles them,
+ * which is why it belongs on WHITE, not Black. */
 static const int pawn_pst[64] = {
      0,  0,  0,  0,  0,  0,  0,  0,
     50, 50, 50, 50, 50, 50, 50, 50,
@@ -94,7 +89,7 @@ static const int king_endgame_pst[64] = {
     -50,-30,-30,-30,-30,-30,-30,-50
 };
 
-/* ── Game phase ──────────────────────────────────────────────────────────
+/* Game phase
  * A simple material-based phase count (the same scheme popularized by
  * PeSTO): each non-pawn, non-king piece contributes a weight, and the
  * total tells us where we are between "everyone's still on the board"

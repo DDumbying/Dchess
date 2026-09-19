@@ -9,7 +9,7 @@
 
 int main(int argc, char **argv)
 {
-    /* ── Parse command-line flags ──────────────────────────────────────── */
+    /* Parse command-line flags ──────────────────────────────────────── */
     CliArgs args;
     if (cli_parse(argc, argv, &args) != 0) {
         fprintf(stderr, "dchess: %s\n", args.error_msg);
@@ -29,7 +29,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    /* ── Normal game startup ───────────────────────────────────────────── */
+    /* Normal game startup ───────────────────────────────────────────── */
     init_attacks();
 
     TUIState state;
