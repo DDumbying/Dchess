@@ -5,6 +5,7 @@
 #include "engine/move.h"
 #include "engine/hash.h"
 #include "engine/fen.h"
+#include "game/pgn.h"
 #include "tui/render.h"
 #include "utils/theme.h"
 #include "utils/constants.h"
@@ -288,6 +289,32 @@ int handle_command(TUIState *state, const char *cmd) {
             start_engine_search(state);
         return 1;
     }
+    if (strcmp(cmd, "pgn") == 0 || strncmp(cmd, "pgn ", 4) == 0) {
+        char path[512];
+        if (cmd[3] == ' ' && cmd[4])
+            snprintf(path, sizeof(path), "%s", cmd + 4);
+        else
+            pgn_default_path(path, sizeof(path));
+
+        char engine_name[64];
+        snprintf(engine_name, sizeof(engine_name), "dchess (%s)",
+                 difficulty_label(state->difficulty));
+
+        PgnHeader h = {
+            .event = "Casual game",
+            .site  = "dchess",
+            .white = (state->player_side == WHITE) ? "Player" : engine_name,
+            .black = (state->player_side == WHITE) ? engine_name : "Player",
+        };
+        if (state->two_player) { h.white = "Player 1"; h.black = "Player 2"; }
+
+        if (pgn_write(&state->game, &h, path) == 0)
+            snprintf(state->status, sizeof(state->status), "Saved PGN: %.200s", path);
+        else
+            snprintf(state->status, sizeof(state->status),
+                     "Could not write PGN to %.200s", path);
+        return 1;
+    }
     if (strcmp(cmd, "fen") == 0) {
         char buf[FEN_BUFSIZE];
         int fullmove = state->game.move_count / 2 + 1;
@@ -355,7 +382,7 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
-                 "e2e4|go|stop|undo|new|flip|depth N|eval|fen|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
+                 "e2e4|go|stop|undo|new|flip|depth N|eval|fen|pgn|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;
