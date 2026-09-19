@@ -1,5 +1,4 @@
 /* render.c — Dchess TUI rendering
- *
  * Rendering contract (per the spec):
  *   • Each square: SQ_W=5 cols × SQ_H=2 rows, fixed.
  *   • Row 0 of square: blank background fill
@@ -23,7 +22,7 @@
 #include <wchar.h>
 #include <time.h>
 
-/* ── Unicode pieces ────────────────────────────────────────────────────── */
+/* Unicode pieces  */
 static const wchar_t PIECE_GLYPH[12] = {
     0x2659, 0x2658, 0x2657, 0x2656, 0x2655, 0x2654,  /* ♙♘♗♖♕♔ white */
     0x265F, 0x265E, 0x265D, 0x265C, 0x265B, 0x265A   /* ♟♞♝♜♛♚ black */
@@ -40,7 +39,7 @@ static void init_glyph_width(void)
     GLYPH_W = (w == 2) ? 2 : 1;
 }
 
-/* ── Square dimensions — computed at render time to fill available space ── */
+/* Square dimensions — computed at render time to fill available space ── */
 #define SQ_W_MIN 5
 #define SQ_H_MIN 2
 
@@ -82,7 +81,7 @@ void init_colors(int theme)
     const Theme *t = theme_get(theme);
 
     if (can_change_color()) {
-        /* ── Define palette ── */
+        /* Define palette ── */
         init_color(COL_LIGHT,  t->light[0],  t->light[1],  t->light[2]);
         init_color(COL_DARK,   t->dark[0],   t->dark[1],   t->dark[2]);
         /* COL_WPFG slot unused — white pieces use COLOR_YELLOW directly */
@@ -98,33 +97,33 @@ void init_colors(int theme)
         init_color(COL_CHROME, t->chrome[0], t->chrome[1], t->chrome[2]);
         init_color(COL_SHADOW, t->shadow[0], t->shadow[1], t->shadow[2]);
 
-        /* ── Board squares (fg = bg = same, invisible on empty cells) ── */
+        /* Board squares (fg = bg = same, invisible on empty cells) ── */
         init_pair(CP_LIGHT,      COL_LIGHT,  COL_LIGHT);
         init_pair(CP_DARK,       COL_DARK,   COL_DARK);
 
-        /* ── Normal piece pairs ── */
+        /* Normal piece pairs ── */
         init_pair(CP_W_LIGHT,    COLOR_YELLOW, COL_LIGHT);
         init_pair(CP_W_DARK,     COLOR_YELLOW, COL_DARK);
         init_pair(CP_B_LIGHT,    COL_BPFG,   COL_LIGHT);
         init_pair(CP_B_DARK,     COL_BPFG,   COL_DARK);
 
-        /* ── Cursor (arrow-key highlight) ── */
+        /* Cursor (arrow-key highlight) ── */
         init_pair(CP_CURSOR,     COL_CANVAS, COL_CURSOR);
         init_pair(CP_CURSOR_PC,  COLOR_YELLOW, COL_CURSOR);
 
-        /* ── Selection ── */
+        /* Selection ── */
         init_pair(CP_SEL,        COL_CANVAS, COL_SEL);
         init_pair(CP_SEL_PC,     COLOR_YELLOW, COL_SEL);
 
-        /* ── Legal move destination highlight ── */
+        /* Legal move destination highlight ── */
         init_pair(CP_MOVE_HI,    COL_CANVAS, COL_MOVEHI);
         init_pair(CP_MOVE_HI_PC, COLOR_YELLOW, COL_MOVEHI);
 
-        /* ── Check ── */
+        /* Check ── */
         init_pair(CP_CHECK_SQ,   COL_GOLD,   COL_CHECK);
         init_pair(CP_CHECK_PC,   COL_GOLD,   COL_CHECK);
 
-        /* ── Last-move ── */
+        /* Last-move ── */
         init_pair(CP_LMVL,       COL_LIGHT,  COL_LMVL);
         init_pair(CP_LMVD,       COL_DARK,   COL_LMVD);
         init_pair(CP_W_LMVL,     COLOR_YELLOW, COL_LMVL);
@@ -132,7 +131,7 @@ void init_colors(int theme)
         init_pair(CP_B_LMVL,     COL_BPFG,   COL_LMVL);
         init_pair(CP_B_LMVD,     COL_BPFG,   COL_LMVD);
 
-        /* ── UI chrome ── */
+        /* UI chrome ── */
         init_pair(CP_BORDER,     COL_CHROME,  -1);
         init_pair(CP_TITLE,      COL_CHROME,  -1);
         init_pair(CP_LINK,       COLOR_WHITE, -1);
@@ -152,7 +151,7 @@ void init_colors(int theme)
         init_pair(CP_FRAME,      COL_CHROME,  -1);
 
     } else {
-        /* ── 8-color fallback ──────────────────────────────────────────
+        /* 8-color fallback
          * No custom RGB on this terminal, only the 8 standard ANSI
          * colors -- board squares stay a fixed black/white regardless
          * of theme (safest for piece readability); the accent colors
@@ -199,7 +198,7 @@ void init_colors(int theme)
     }
 }
 
-/* ── Internal helpers ───────────────────────────────────────────────────── */
+/* Internal helpers  */
 static int piece_at(const Position *pos, int sq)
 {
     for (int i = 0; i < 12; i++)
@@ -280,20 +279,17 @@ static void put_glyph(WINDOW *win, int r, int c, int piece, attr_t attr)
     wattroff(win, attr);
 }
 
-/* ── draw_square ─────────────────────────────────────────────────────────
- *
+/* draw_square
  * Draws one SQ_W × SQ_H square at window coordinates (row, col).
- *
  * Layout (SQ_W=5, SQ_H=2):
  *   row+0:  "     "    ← sq_attr (background fill)
  *   row+1:  " ♙♙ "    ← sq_attr padding + pc_attr glyph (2 cells) + sq_attr padding
  *                         piece centered at col+1 (lpad=1, glyph=2, rpad=2)
- *
  * sq_attr : color pair for background cells  (fg == bg on empty squares)
  * pc_attr : color pair for the glyph         (proper fg on same bg)
  * piece   : 0-11 index, or -1 for empty
  * dot     : draw a subtle "•" indicator for legal-move destinations
- * ──────────────────────────────────────────────────────────────────────── */
+ */
 /* Paints only the silhouette cells, so the square background shows
  * through the gaps and highlights still read. */
 static void draw_piece_art(WINDOW *win, int row, int col,
@@ -491,11 +487,10 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
     wattroff(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
 }
 
-/* ── draw_board ──────────────────────────────────────────────────────────
- *
+/* draw_board
  * Scales square size to fill available space, then centers.
  * Keeps aspect: sq_w = sq_h * 2 + 1  (so pieces look square).
- * ─────────────────────────────────────────────────────────────────────── */
+ */
 /* Largest square whose whole board fits. sq_w = sq_h * 2 + 1 reads as
  * square because cells are about twice as tall as wide. Returns 0 if
  * even a 1-row square does not fit. */
@@ -559,7 +554,7 @@ static void draw_board(WINDOW *win, const TUIState *state)
     draw_board_grid(win, state, sr, sc, sq_h, sq_w, framed);
 }
 
-/* ── Status bar (inside board window) ──────────────────────────────────── */
+/* Status bar (inside board window)  */
 static void draw_status(WINDOW *win, const TUIState *state)
 {
     int wh, ww;
@@ -629,7 +624,7 @@ static void draw_status(WINDOW *win, const TUIState *state)
     wattroff(win, COLOR_PAIR(CP_HINT));
 }
 
-/* ── Info panel ──────────────────────────────────────────────────────────  */
+/* Info panel   */
 static void draw_captured_row(WINDOW *win, int row, int col,
                                const int cap[6], int white_sym, int maxcol)
 {
@@ -841,7 +836,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
     wnoutrefresh(win);
 }
 
-/* ── Command bar ────────────────────────────────────────────────────────── */
+/* Command bar  */
 static void draw_cmd(WINDOW *win)
 {
     wclear(win);
@@ -854,15 +849,14 @@ static void draw_cmd(WINDOW *win)
     wnoutrefresh(win);
 }
 
-/* ── draw_eval_bar ───────────────────────────────────────────────────────────
- *
+/* draw_eval_bar
  * Vertical evaluation bar styled like chess.com:
  *   • Black fills from the top
  *   • White fills from the bottom
  *   • The boundary between them shifts based on centipawn eval
  *   • A small score label is shown at the boundary
  *   • "B" label at top, "W" label at bottom
- * ─────────────────────────────────────────────────────────────────────────── */
+ */
 /* "W: 03:07.42". Minutes are clamped so the field can never outgrow the
  * buffer mid-render. */
 #define CLOCK_MAX_MINUTES 99
@@ -954,7 +948,7 @@ static void draw_eval_bar(WINDOW *win, const TUIState *state)
     wnoutrefresh(win);
 }
 
-/* ── render_all ─────────────────────────────────────────────────────────── */
+/* render_all  */
 void render_all(WINDOW *board_win, WINDOW *info_win, WINDOW *eval_bar_win,
                 WINDOW *cmd_win,   const TUIState *state)
 {
@@ -980,7 +974,7 @@ void render_all(WINDOW *board_win, WINDOW *info_win, WINDOW *eval_bar_win,
     if (bc > 10) mvwprintw(board_win, 0, bc, "%s", brand);
     wattroff(board_win, COLOR_PAIR(CP_LINK)|A_BOLD);
 
-    /* ── Clock bar (row 1, inside border) ──
+    /* Clock bar (row 1, inside border) ──
      * White clock left, Black clock right, ticking with centiseconds. */
     {
         struct timespec mono_now;

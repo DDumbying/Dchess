@@ -1,5 +1,4 @@
 /* stats_tui.c — ncurses statistics overlay for dchess
- *
  * draw_stats_overlay()  — full stats screen with rolling win-rate graph
  * show_stats_overlay()  — blocking wrapper used by the standalone --stats TUI
  */
@@ -72,7 +71,7 @@ static void init_stats_colors(void)
     }
 }
 
-/* ── Shared drawing helpers ──────────────────────────────────────────── */
+/* Shared drawing helpers  */
 
 static void draw_bar(WINDOW *win, int row, int col,
                      int filled, int total,
@@ -103,7 +102,7 @@ static void draw_section_head(WINDOW *win, int row, int col, int width,
     wattroff(win, COLOR_PAIR(SCP_HEAD));
 }
 
-/* ── Win-rate history graph ──────────────────────────────────────────── */
+/* Win-rate history graph  */
 
 #define GRAPH_WIN_SIZE 10
 
@@ -287,11 +286,10 @@ static void draw_history_graph(WINDOW *win, int row_top, int col_l,
     wattroff(win, COLOR_PAIR(SCP_HINT) | A_DIM);
 }
 
-/* ══════════════════════════════════════════════════════════════════════
- * draw_stats_overlay()
+/*
  * Full stats screen: all numeric sections PLUS the win-rate history
  * graph drawn in the empty space below the numeric data.
- * ══════════════════════════════════════════════════════════════════════ */
+ */
 
 void draw_stats_overlay(WINDOW *win, const DchessStats *s)
 {
@@ -325,7 +323,7 @@ void draw_stats_overlay(WINDOW *win, const DchessStats *s)
     int total_l = s->losses[0] + s->losses[1] + s->losses[2];
     int total_d = s->draws[0]  + s->draws[1]  + s->draws[2];
 
-    /* ═══ WIN RATE BY DIFFICULTY ════════════════════════════════════ */
+    /* WIN RATE BY DIFFICULTY  */
     draw_section_head(win, row++, lm, cw, "WIN RATE BY DIFFICULTY");
     row++;
     static const char *dname[3] = { "Easy  ", "Medium", "Hard  " };
@@ -356,7 +354,7 @@ void draw_stats_overlay(WINDOW *win, const DchessStats *s)
     }
     row++;
 
-    /* ═══ COLOR PERFORMANCE ══════════════════════════════════════════ */
+    /* COLOR PERFORMANCE  */
     if (row + 7 < wh - 2) {
         draw_section_head(win, row++, lm, cw, "COLOR PERFORMANCE");
         row++;
@@ -403,7 +401,7 @@ void draw_stats_overlay(WINDOW *win, const DchessStats *s)
         row++;
     }
 
-    /* ═══ PERFORMANCE ════════════════════════════════════════════════ */
+    /* PERFORMANCE  */
     if (row + 5 < wh - 2) {
         draw_section_head(win, row++, lm, cw, "PERFORMANCE");
         row++;
@@ -444,7 +442,7 @@ void draw_stats_overlay(WINDOW *win, const DchessStats *s)
         row++;
     }
 
-    /* ═══ OVERALL SCORE ══════════════════════════════════════════════ */
+    /* OVERALL SCORE  */
     if (row + 4 < wh - 2 && total_g > 0) {
         draw_section_head(win, row++, lm, cw, "OVERALL SCORE");
         row++;
@@ -503,7 +501,7 @@ void draw_stats_overlay(WINDOW *win, const DchessStats *s)
         row += 2;
     }
 
-    /* ═══ WIN RATE HISTORY GRAPH — fills remaining vertical space ════ */
+    /* WIN RATE HISTORY GRAPH — fills remaining vertical space  */
     row++;
     int graph_height = (wh - 2) - row;
     if (graph_height >= 8) {
@@ -513,7 +511,7 @@ void draw_stats_overlay(WINDOW *win, const DchessStats *s)
     wnoutrefresh(win);
 }
 
-/* ── Blocking full-screen wrapper ────────────────────────────────────── */
+/* Blocking full-screen wrapper  */
 
 void show_stats_overlay(const DchessStats *s)
 {
@@ -540,11 +538,10 @@ void show_stats_overlay(const DchessStats *s)
     endwin();
 }
 
-/* ══════════════════════════════════════════════════════════════════════
- * draw_stats_mini()
+/*
  * Small centered popup for the in-game Tab overlay.
  * Creates its own WINDOW, draws stats, waits for a key, then cleans up.
- * ══════════════════════════════════════════════════════════════════════ */
+ */
 void draw_stats_mini(WINDOW *parent, const DchessStats *s)
 {
     init_stats_colors();
@@ -595,7 +592,7 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
     int row = 2;
     int lm  = 2;
 
-    /* ── Overall W/L/D ── */
+    /* Overall W/L/D ── */
     wattron(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
     mvwprintw(pop, row++, lm, "Overall  (%d games)", total_g);
     wattroff(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
@@ -641,7 +638,7 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
         wattroff(pop, COLOR_PAIR(SCP_VAL));
         row += 2;
 
-        /* ── Per-difficulty ── */
+        /* Per-difficulty ── */
         wattron(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
         mvwprintw(pop, row++, lm, "By difficulty");
         wattroff(pop, COLOR_PAIR(SCP_HEAD) | A_BOLD);
@@ -685,7 +682,7 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
         }
         row++;
 
-        /* ── Longest game & avg time ── */
+        /* Longest game & avg time ── */
         if (row < pop_h - 2) {
             int avg_t = total_g ? s->total_time_secs / total_g : 0;
             wattron(pop, COLOR_PAIR(SCP_VAL));

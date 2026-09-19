@@ -1,7 +1,7 @@
 #ifndef TUI_COLORS_H
 #define TUI_COLORS_H
 
-/* ── ncurses color-pair and color-slot registry ──────────────────────────
+/* ncurses color-pair and color-slot registry ──────────────────────────
  *
  * Every init_pair()/init_color() ID used anywhere in the TUI lives here,
  * and nowhere else. These are global to the ncurses session: two files
@@ -25,7 +25,7 @@
  * leaving a gap at the end of it, not renumbering what is already here.
  */
 
-/* ── Game UI pairs (render.c) ───────────────────────────────────────────── */
+/* Game UI pairs (render.c) ───────────────────────────────────────────── */
 #define CP_LIGHT        1   /* light square bg                    */
 #define CP_DARK         2   /* dark  square bg                    */
 #define CP_W_LIGHT      3   /* white piece fg on light sq         */
@@ -64,7 +64,7 @@
 #define CP_SHADOW      36   /* panel drop shadow                  */
 #define CP_FRAME       37   /* board frame / grid border          */
 
-/* ── Custom RGB slots for the game UI (init_color, not init_pair) ───────── */
+/* Custom RGB slots for the game UI (init_color, not init_pair) ───────── */
 #define COL_LIGHT       8
 #define COL_DARK        9
 #define COL_WPFG       10   /* unused: white pieces use COLOR_YELLOW directly */
@@ -80,7 +80,7 @@
 #define COL_CHROME     20
 #define COL_SHADOW     21
 
-/* ── Statistics screen pairs (stats_tui.c) ──────────────────────────────── */
+/* Statistics screen pairs (stats_tui.c) ──────────────────────────────── */
 #define SCP_BORDER     40
 #define SCP_TITLE      41
 #define SCP_HEAD       42
@@ -100,7 +100,7 @@
 #define SCP_GRAPH_D    56
 #define SCP_GRAPH_BG   57
 
-/* ── Custom RGB slots for the statistics screens ────────────────────────── */
+/* Custom RGB slots for the statistics screens ────────────────────────── */
 #define SCOL_TEAL      60
 #define SCOL_GOLD      61
 #define SCOL_RUST      62

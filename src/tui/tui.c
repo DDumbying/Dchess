@@ -29,7 +29,7 @@ typedef struct Screen Screen;
 static void screen_handle_resize(Screen *sc);
 static WINDOW *screen_board(const Screen *sc);
 
-/* ── Game-over popup ────────────────────────────────────────────────────── */
+/* Game-over popup  */
 /* Split out from the input loop so a resize can rebuild both windows. */
 static void build_game_over_panel(WINDOW *board_win, const TUIState *state,
                                   WINDOW **out_pop, WINDOW **out_shadow)
@@ -89,7 +89,7 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
     WINDOW *pop, *shadow;
     build_game_over_panel(screen_board(sc), state, &pop, &shadow);
 
-    /* ── Save stats for this completed game ───────────────────────────── */
+    /* Save stats for this completed game  */
     {
         int result = 0; /* draw by default */
         const char *r = state->game.result;
@@ -435,7 +435,7 @@ static void screen_paint_hook(void *ctx) { screen_paint((const Screen *)ctx); }
 
 static WINDOW *screen_board(const Screen *sc) { return sc->board; }
 
-/* ── Key handling ───────────────────────────────────────────────────────── */
+/* Key handling  */
 
 /* Blocks while the terminal is too small: there is no smaller layout to
  * fall back to. */

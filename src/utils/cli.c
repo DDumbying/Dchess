@@ -8,10 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ── Depth table ─────────────────────────────────────────────────────────── */
+/* Depth table ─────────────────────────────────────────────────────────── */
 static const int diff_to_depth[3] = { 2, 5, 8 };
 
-/* ── Time budget table (ms) ──────────────────────────────────────────────
+/* Time budget table (ms) ──────────────────────────────────────────────
  * Generous on purpose, but not unlimited: measured against the opening
  * position, this engine's depth 7 takes ~26s and depth 8 ~170s to
  * complete (no null-move pruning or late-move reductions to tame the
@@ -36,7 +36,7 @@ int cli_time_limit_for_difficulty(int difficulty)
     return diff_to_time_ms[difficulty];
 }
 
-/* ── Help page ───────────────────────────────────────────────────────────── */
+/* Help page ───────────────────────────────────────────────────────────── */
 void cli_help(void)
 {
     printf(
@@ -131,14 +131,14 @@ void cli_help(void)
     exit(0);
 }
 
-/* ── Version ─────────────────────────────────────────────────────────────── */
+/* Version ─────────────────────────────────────────────────────────────── */
 void cli_version(void)
 {
     printf("dchess %s\n", DCHESS_VERSION);
     exit(0);
 }
 
-/* ── Parser ──────────────────────────────────────────────────────────────── */
+/* Parser ──────────────────────────────────────────────────────────────── */
 int cli_parse(int argc, char **argv, CliArgs *args)
 {
     /* defaults */
@@ -160,25 +160,25 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
 
-        /* ── --help / -h ──────────────────────────────────────────────── */
+        /* --help / -h ──────────────────────────────────────────────── */
         if (strcmp(a, "--help") == 0 || strcmp(a, "-h") == 0) {
             args->show_help = 1;
             return 0;
         }
 
-        /* ── --version / -V ───────────────────────────────────────────── */
+        /* --version / -V ───────────────────────────────────────────── */
         if (strcmp(a, "--version") == 0 || strcmp(a, "-V") == 0) {
             args->show_version = 1;
             return 0;
         }
 
-        /* ── --stats / -s ─────────────────────────────────────────────── */
+        /* --stats / -s ─────────────────────────────────────────────── */
         if (strcmp(a, "--stats") == 0 || strcmp(a, "-s") == 0) {
             args->show_stats = 1;
             return 0;
         }
 
-        /* ── --color / -c ─────────────────────────────────────────────── */
+        /* --color / -c ─────────────────────────────────────────────── */
         if (strcmp(a, "--color") == 0 || strcmp(a, "-c") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),
@@ -201,7 +201,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
-        /* ── --difficulty / -d ────────────────────────────────────────── */
+        /* --difficulty / -d ────────────────────────────────────────── */
         if (strcmp(a, "--difficulty") == 0 || strcmp(a, "-d") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),
@@ -227,14 +227,14 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
-        /* ── --two-player / -2 ────────────────────────────────────────── */
+        /* --two-player / -2 ────────────────────────────────────────── */
         if (strcmp(a, "--two-player") == 0 || strcmp(a, "-2") == 0) {
             args->two_player = 1;
             args->any_gameplay_flag = 1;
             continue;
         }
 
-        /* ── --fen <string> ───────────────────────────────────────────── */
+        /* --fen <string> ───────────────────────────────────────────── */
         if (strcmp(a, "--fen") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),
@@ -255,19 +255,19 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
-        /* ── --menu / -m ───────────────────────────────────────────────── */
+        /* --menu / -m ───────────────────────────────────────────────── */
         if (strcmp(a, "--menu") == 0 || strcmp(a, "-m") == 0) {
             args->menu = 1;
             continue;
         }
 
-        /* ── --no-menu ─────────────────────────────────────────────────── */
+        /* --no-menu ─────────────────────────────────────────────────── */
         if (strcmp(a, "--no-menu") == 0) {
             args->no_menu = 1;
             continue;
         }
 
-        /* ── --theme <name> ───────────────────────────────────────────── */
+        /* --theme <name> ───────────────────────────────────────────── */
         if (strcmp(a, "--theme") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),
@@ -294,7 +294,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
-        /* ── unknown flag ─────────────────────────────────────────────── */
+        /* unknown flag ─────────────────────────────────────────────── */
         snprintf(args->error_msg, sizeof(args->error_msg),
                  "Unknown option '%s'. Try: dchess --help", a);
         args->error = 1;

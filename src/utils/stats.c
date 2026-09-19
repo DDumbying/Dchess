@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-/* ── File path helpers ───────────────────────────────────────────────────── */
+/* File path helpers ───────────────────────────────────────────────────── */
 
 #define STATS_MAGIC   0x44434853UL   /* "DCHS" */
 #define STATS_VERSION 2
@@ -52,7 +52,7 @@ static void ensure_dir(void)
     mkdir(path, 0755);
 }
 
-/* ── Public API ──────────────────────────────────────────────────────────── */
+/* Public API ──────────────────────────────────────────────────────────── */
 
 /* Reads `n` objects of `size` from `f` into `ptr`; returns 1 on a full
  * read, 0 short of it (truncated/corrupt file). Checking this matters
@@ -195,7 +195,7 @@ void stats_record(DchessStats *s,
     s->history_count++;
 }
 
-/* ── Pretty printer ──────────────────────────────────────────────────────── */
+/* Pretty printer ──────────────────────────────────────────────────────── */
 
 static float winrate(int wins, int total)
 {

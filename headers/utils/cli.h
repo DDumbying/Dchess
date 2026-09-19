@@ -1,11 +1,7 @@
 #ifndef CLI_H
 #define CLI_H
 
-/* ─────────────────────────────────────────────────────────────
- * dchess  –  command-line argument handling
- * ───────────────────────────────────────────────────────────── */
-
-/* Difficulty levels map to engine search depth */
+/* Difficulty maps to engine search depth. */
 #define DIFF_EASY   0    /* depth 2  */
 #define DIFF_MEDIUM 1    /* depth 5  */
 #define DIFF_HARD   2    /* depth 8  */
@@ -27,23 +23,17 @@ typedef struct {
     char error_msg[256];
 } CliArgs;
 
-/* Parse argc/argv into *args.  Returns 0 on success. */
+/* Returns 0 on success. */
 int  cli_parse(int argc, char **argv, CliArgs *args);
 
-/* Same table cli_parse() uses for -d/--difficulty, exposed so the TUI
- * onboarding screen can derive engine_depth from a difficulty choice
- * without duplicating the mapping. */
+/* Shared with the onboarding screen so the mapping is not duplicated. */
 int  cli_depth_for_difficulty(int difficulty);
 
-/* Wall-clock time budget (milliseconds) paired with each difficulty's
- * depth cap, for search()'s iterative deepening. Whichever runs out
- * first -- depth or time -- ends the search. */
+/* Milliseconds paired with each difficulty's depth cap; whichever runs
+ * out first ends the search. */
 int  cli_time_limit_for_difficulty(int difficulty);
 
-/* Print the help page and exit(0). */
 void cli_help(void);
-
-/* Print version string and exit(0). */
 void cli_version(void);
 
 #endif /* CLI_H */

@@ -89,7 +89,7 @@ static const int king_endgame_pst[64] = {
     -50,-30,-30,-30,-30,-30,-30,-50
 };
 
-/* ── Game phase ──────────────────────────────────────────────────────────
+/* Game phase
  * A simple material-based phase count (the same scheme popularized by
  * PeSTO): each non-pawn, non-king piece contributes a weight, and the
  * total tells us where we are between "everyone's still on the board"

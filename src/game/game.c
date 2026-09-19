@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <time.h>
 
-/* ── Internals ──────────────────────────────────────────────────────────── */
+/* Internals  */
 
 /* Must never stop recording, or threefold detection dies mid-game. */
 static void record_position(GameState *g)
@@ -100,7 +100,7 @@ static void clear_progress(GameState *g, int keep_clocks)
     clock_gettime(CLOCK_MONOTONIC, &g->turn_start_mono);
 }
 
-/* ── Public API ─────────────────────────────────────────────────────────── */
+/* Public API  */
 
 void game_reset(GameState *g)
 {

@@ -1,12 +1,8 @@
 #ifndef STATS_H
 #define STATS_H
 
-/* ─────────────────────────────────────────────────────────────
- * dchess  –  persistent game statistics
- *
- * Stats are stored in  ~/.local/share/dchess/stats.dat
- * (plain binary struct, versioned with a magic header).
- * ───────────────────────────────────────────────────────────── */
+/* Persisted to ~/.local/share/dchess/stats.dat as a plain binary struct
+ * behind a versioned magic header. */
 
 #define DCHESS_VERSION "1.0.0-alpha"
 
@@ -42,13 +38,12 @@ typedef struct {
     GameRecord history[DCHESS_MAX_HISTORY];
 } DchessStats;
 
-/* Load stats from disk into *s.  Zeros *s and returns 0 on first run. */
+/* Zeros *s and returns 0 on first run. */
 int  stats_load(DchessStats *s);
 
-/* Persist *s to disk.  Returns 0 on success. */
 int  stats_save(const DchessStats *s);
 
-/* Pretty-print to stdout (no ncurses). */
+/* stdout, no ncurses. */
 void stats_print(const DchessStats *s);
 
 /* Record the result of one finished game.

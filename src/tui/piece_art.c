@@ -3,7 +3,6 @@
 /* Unicode block elements (U+2580-259F). Every row is EXACTLY `cols`
  * cells of single-width characters -- draw_square() relies on it, and a
  * stray wide glyph would shear the board.
- *
  * Shapes are drawn narrower than their box so neighbouring squares keep
  * air between them, and stay distinguishable in silhouette since colour
  * is the only other cue. */

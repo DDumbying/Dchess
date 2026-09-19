@@ -5,7 +5,6 @@
 
 /*
  * read_key — unified input handler for the TUI.
- *
  * Vim-style modal input:
  *   Normal mode  (insert_mode == 0):
  *     * hjkl / arrow keys  -> cursor navigation (returned to caller)
@@ -13,13 +12,11 @@
  *     * 'i'                -> enter insert mode (returns 0)
  *     * Enter on empty buf -> cursor action (returned as '\n')
  *     * All other keys     -> ignored
- *
  *   Insert mode  (insert_mode == 1):
  *     * Printable chars    -> accumulated in ibuf
  *     * Enter              -> submit command (-2) or plain Enter ('\n')
  *     * Backspace          -> erase last char
  *     * ESC                -> clear buf, exit insert mode (returns 27)
- *
  * Returns:
  *   KEY_UP / KEY_DOWN / KEY_LEFT / KEY_RIGHT  -> arrow keys (normal mode)
  *   '\n'                                       -> Enter (cursor action)

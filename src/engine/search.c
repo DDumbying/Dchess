@@ -14,7 +14,6 @@ static long node_count;
 /* Checked periodically, not every node. On expiry search_aborted latches
  * and search() returns the last iteration that finished cleanly. Depth 1
  * runs with the check disabled, so a legal move is always available.
- *
  * Cancellation is NOT gated that way -- it fires at every depth so quit
  * stays responsive, which means a cancelled search can return an empty
  * best_move. Callers must handle it (see search.h). */
@@ -22,7 +21,7 @@ static int time_limited;
 static int search_aborted;
 static struct timespec search_deadline;
 
-/* ── Cancellation ────────────────────────────────────────────────────────
+/* Cancellation
  * search_cancel() is the one function in this file meant to be called
  * from a *different* thread than the one running search() -- e.g. the
  * UI thread asking a background search to stop early (see commands.c).
@@ -57,7 +56,7 @@ static int cmp_moves(const void *a, const void *b) {
     return move_score(*(Move*)b) - move_score(*(Move*)a);
 }
 
-/* ── Transposition table ─────────────────────────────────────────────────
+/* Transposition table
  * Keyed by hash_position(). Content-addressed, so entries stay valid
  * across searches/games — a matching key means an identical position,
  * regardless of when it was first stored. Always-replace on collision:
