@@ -19,6 +19,7 @@
 #include "utils/theme.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <wchar.h>
 #include <time.h>
 
@@ -213,6 +214,29 @@ static int piece_at(const Position *pos, int sq)
     for (int i = 0; i < 12; i++)
         if (GET_BIT(pos->bitboards[i], sq)) return i;
     return -1;
+}
+
+/* printf into a window, truncated at the right border.
+ *
+ * Plain mvwprintw() does NOT clip: ncurses wraps an over-long string
+ * onto the next line of the same window, silently overwriting whatever
+ * was drawn there. On a narrow terminal that is what shredded the info
+ * panel (its 28-column move header wrapping into the captured-pieces
+ * rows) and the status lines. Anything whose length depends on the
+ * window width, the position or user text goes through here. */
+static void mvw_clip(WINDOW *win, int row, int col, const char *fmt, ...)
+{
+    int wh, ww;
+    getmaxyx(win, wh, ww);
+    if (row < 0 || row >= wh || col < 0 || col >= ww - 1) return;
+
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    mvwprintw(win, row, col, "%.*s", ww - col - 1, buf);
 }
 
 static void hfill(WINDOW *w, int r, int c, int len, chtype ch)
@@ -590,46 +614,53 @@ static void draw_status(WINDOW *win, const TUIState *state)
     mvwprintw(win, wh-5, 2, "%-*.*s", ww-4, ww-4, state->status);
     wattroff(win, st);
 
-    /* Check callout */
-    if (is_in_check(&state->game.pos, state->game.pos.side)) {
+    /* Check callout. Right-anchored overlays are skipped outright on a
+     * narrow window: there they would land on top of the very text they
+     * are meant to sit beside. */
+    if (ww >= 34 && is_in_check(&state->game.pos, state->game.pos.side)) {
         wattron(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
-        mvwprintw(win, wh-5, ww-14, " !! CHECK !! ");
+        mvw_clip(win, wh-5, ww-14, " !! CHECK !! ");
         wattroff(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
     }
 
     /* Hint line */
     wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, wh-4, 2, "move:e2e4  go  new  flip  depth N  quit  [Tab]=stats");
+    mvw_clip(win, wh-4, 2, "move:e2e4  go  new  flip  depth N  quit  [Tab]=stats");
     wattroff(win, COLOR_PAIR(CP_HINT));
 
     /* Cursor position hint */
     {
         int cr = 7 - state->cursor_row;   /* rank number */
         int cf = state->cursor_col;        /* file index  */
-        wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, wh-4, ww-10, "[%c%d]    ", 'a'+cf, cr+1);
-        wattroff(win, COLOR_PAIR(CP_HINT));
+        /* The hint line beside this is a fixed 52 columns starting at
+         * column 2, so the overlay only has somewhere to go once the
+         * window is wider than that plus its own width. */
+        if (ww - 10 > 56) {
+            wattron(win, COLOR_PAIR(CP_HINT));
+            mvw_clip(win, wh-4, ww-10, "[%c%d]", 'a'+cf, cr+1);
+            wattroff(win, COLOR_PAIR(CP_HINT));
+        }
     }
 
     /* Game info */
     const char *side = state->game.pos.side == WHITE ? "White" : "Black";
     wattron(win, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
-    mvwprintw(win, wh-3, 2, "[ %s to move ]  depth:%d  eval:%s",
-              side, state->engine_depth, state->last_eval);
+    mvw_clip(win, wh-3, 2, "[ %s to move ]  depth:%d  eval:%s",
+             side, state->engine_depth, state->last_eval);
     wattroff(win, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
 
     /* Selection hint */
-    if (state->selected) {
+    if (state->selected && ww - 16 > 40) {
         int sr = 7 - state->sel_row;
         int sf = state->sel_col;
         wattron(win, COLOR_PAIR(CP_SEL_PC)|A_BOLD);
-        mvwprintw(win, wh-3, ww-16, " selected:%c%d  ", 'a'+sf, sr+1);
+        mvw_clip(win, wh-3, ww-16, " selected:%c%d ", 'a'+sf, sr+1);
         wattroff(win, COLOR_PAIR(CP_SEL_PC)|A_BOLD);
     }
 
     /* Navigation hint */
     wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, wh-2, 2, "arrows/hjkl=cursor   enter=select/move   esc=deselect");
+    mvw_clip(win, wh-2, 2, "arrows/hjkl=cursor   enter=select/move   esc=deselect");
     wattroff(win, COLOR_PAIR(CP_HINT));
 }
 
@@ -672,28 +703,28 @@ static void draw_info(WINDOW *win, const TUIState *state)
 
     /* Title in border */
     wattron(win, COLOR_PAIR(CP_TITLE)|A_BOLD);
-    mvwprintw(win, 0, (ww-6)/2, " INFO ");
+    mvw_clip(win, 0, (ww-6)/2, " INFO ");
     wattroff(win, COLOR_PAIR(CP_TITLE)|A_BOLD);
 
     int row = 2;
 
     /* GAME section */
     wattron(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
-    mvwprintw(win, row++, 2, "GAME");
+    mvw_clip(win, row++, 2, "GAME");
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
     const char *eng = state->engine_side == WHITE ? "White" :
                       state->engine_side == BLACK ? "Black" : "None";
     wattron(win, COLOR_PAIR(CP_INFO_VAL));
-    mvwprintw(win, row++, 2, "depth : %d",  state->engine_depth);
-    mvwprintw(win, row++, 2, "eval  : %s",  state->last_eval);
-    mvwprintw(win, row++, 2, "side  : %s",  state->game.pos.side == WHITE ? "White" : "Black");
-    mvwprintw(win, row++, 2, "engine: %s",  eng);
+    mvw_clip(win, row++, 2, "depth : %d",  state->engine_depth);
+    mvw_clip(win, row++, 2, "eval  : %s",  state->last_eval);
+    mvw_clip(win, row++, 2, "side  : %s",  state->game.pos.side == WHITE ? "White" : "Black");
+    mvw_clip(win, row++, 2, "engine: %s",  eng);
     wattroff(win, COLOR_PAIR(CP_INFO_VAL));
 
     if (is_in_check(&state->game.pos, state->game.pos.side)) {
         wattron(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
-        mvwprintw(win, row++, 2, "** CHECK **");
+        mvw_clip(win, row++, 2, "** CHECK **");
         wattroff(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
     } else {
         row++;
@@ -701,28 +732,70 @@ static void draw_info(WINDOW *win, const TUIState *state)
 
     /* MOVES section */
     wattron(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
-    mvwprintw(win, row++, 2, "MOVES");
+    mvw_clip(win, row++, 2, "MOVES");
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
-    wattron(win, COLOR_PAIR(CP_HINT));
-    mvwprintw(win, row++, 1, "  # pc  mv   t  pc  mv   t");
-    wattroff(win, COLOR_PAIR(CP_HINT));
+    /* The two-column move table needs about 30 columns for its glyph,
+     * move and time fields on both sides. The info panel is only 20 or
+     * 26 wide until the terminal reaches 90 columns, so below that the
+     * table can never fit and a compact one-line-per-move form is drawn
+     * instead -- previously it was drawn anyway and wrapped, which is
+     * what shredded the panel. */
+    int wide = (ww >= 30);
 
-    int cap_h     = 11;
-    int hist_rows = wh - row - cap_h;
+    if (wide) {
+        wattron(win, COLOR_PAIR(CP_HINT));
+        mvw_clip(win, row++, 1, "  # pc  mv   t  pc  mv   t");
+        wattroff(win, COLOR_PAIR(CP_HINT));
+    }
+
+    /* Split the remaining height between the move list and the captured
+     * section. CAPTURED is drawn upwards from a fixed offset off the
+     * bottom while the move list grows downwards, so without this they
+     * simply overwrote each other on a short panel. */
+    /* separator, "CAPTURED", "W took:", its row, "B took:", its row and
+     * the advantage line is 7 drawn rows; the 8th keeps the last of them
+     * off the panel's bottom border. */
+    const int CAP_ROWS_FULL = 11;
+    const int CAP_ROWS_MIN  = 8;
+
+    int cap_h = CAP_ROWS_FULL;
+    if (wh - row - cap_h < 1)
+        cap_h = wh - row - 1;       /* keep at least one move row */
+    if (cap_h < CAP_ROWS_MIN)
+        cap_h = 0;                  /* no room at all: drop the section */
+
+    int hist_rows = (cap_h ? (wh - cap_h) : (wh - 1)) - row;
     if (hist_rows < 1) hist_rows = 1;
+
+    /* First row the move list must not touch: the captured section's
+     * separator if there is one, otherwise the panel's bottom border. */
+    int move_limit = cap_h ? (wh - cap_h) : (wh - 1);
 
     int total  = (state->game.move_count + 1) / 2;
     int start  = total - hist_rows;
     if (start < 0) start = 0;
 
-    for (int p = start; p < total && row < wh - cap_h; p++) {
+    for (int p = start; p < total && row < move_limit; p++) {
         int wi = p*2, bi = p*2+1;
         int latest = (p == total - 1);
 
+        if (!wide) {
+            /* Compact: "12. e2e4 e7e5" -- no glyphs, no times. */
+            attr_t a = latest ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD
+                              : COLOR_PAIR(CP_INFO_VAL);
+            wattron(win, a);
+            mvw_clip(win, row, 1, "%3d. %-5s %-5s", p+1,
+                     state->game.move_history[wi],
+                     bi < state->game.move_count ? state->game.move_history[bi] : "");
+            wattroff(win, a);
+            row++;
+            continue;
+        }
+
         /* Move number */
         wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, row, 1, "%3d.", p+1);
+        mvw_clip(win, row, 1, "%3d.", p+1);
         wattroff(win, COLOR_PAIR(CP_HINT));
 
         /* White move — glyph@6 move@8 time@14 */
@@ -738,12 +811,12 @@ static void draw_info(WINDOW *win, const TUIState *state)
                 wattroff(win, wa);
             }
             wattron(win, wa);
-            mvwprintw(win, row, 8, "%-5s", state->game.move_history[wi]);
+            mvw_clip(win, row, 8, "%-5s", state->game.move_history[wi]);
             wattroff(win, wa);
             int t = state->game.move_time[wi];
             wattron(win, COLOR_PAIR(CP_HINT));
-            if (t < 60)   mvwprintw(win, row, 14, "%2ds", t);
-            else          mvwprintw(win, row, 14, "%dm%d", t/60, t%60);
+            if (t < 60)   mvw_clip(win, row, 14, "%2ds", t);
+            else          mvw_clip(win, row, 14, "%dm%d", t/60, t%60);
             wattroff(win, COLOR_PAIR(CP_HINT));
         }
 
@@ -760,23 +833,25 @@ static void draw_info(WINDOW *win, const TUIState *state)
                 wattroff(win, ba);
             }
             wattron(win, ba);
-            mvwprintw(win, row, 21, "%-5s", state->game.move_history[bi]);
+            mvw_clip(win, row, 21, "%-5s", state->game.move_history[bi]);
             wattroff(win, ba);
             int t = state->game.move_time[bi];
             wattron(win, COLOR_PAIR(CP_HINT));
-            if (t < 60)   mvwprintw(win, row, 27, "%2ds", t);
-            else          mvwprintw(win, row, 27, "%dm%d", t/60, t%60);
+            if (t < 60)   mvw_clip(win, row, 27, "%2ds", t);
+            else          mvw_clip(win, row, 27, "%dm%d", t/60, t%60);
             wattroff(win, COLOR_PAIR(CP_HINT));
         }
         row++;
     }
-    if (state->game.move_count == 0) {
+    if (state->game.move_count == 0 && row < move_limit) {
         wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, row, 2, "(no moves)");
+        mvw_clip(win, row, 2, "(no moves)");
         wattroff(win, COLOR_PAIR(CP_HINT));
     }
 
-    /* CAPTURED section */
+    /* CAPTURED section -- skipped entirely when cap_h came out 0 above. */
+    if (cap_h == 0) { wnoutrefresh(win); return; }
+
     int ct = wh - cap_h;
     wattron(win, COLOR_PAIR(CP_BORDER));
     mvwaddch(win, ct, 0, ACS_LTEE);
@@ -786,7 +861,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
     ct++;
 
     wattron(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
-    mvwprintw(win, ct++, 2, "CAPTURED");
+    mvw_clip(win, ct++, 2, "CAPTURED");
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
     int cw[6], cb[6];
@@ -794,16 +869,16 @@ static void draw_info(WINDOW *win, const TUIState *state)
     int adv = 0;
     for (int i = 0; i < 5; i++) adv += (cb[i] - cw[i]) * PC_VAL[i];
 
-    wattron(win, COLOR_PAIR(CP_HINT)); mvwprintw(win, ct++, 2, "W took:"); wattroff(win, COLOR_PAIR(CP_HINT));
+    wattron(win, COLOR_PAIR(CP_HINT)); mvw_clip(win, ct++, 2, "W took:"); wattroff(win, COLOR_PAIR(CP_HINT));
     draw_captured_row(win, ct++, 2, cb, 1, ww);
-    wattron(win, COLOR_PAIR(CP_HINT)); mvwprintw(win, ct++, 2, "B took:"); wattroff(win, COLOR_PAIR(CP_HINT));
+    wattron(win, COLOR_PAIR(CP_HINT)); mvw_clip(win, ct++, 2, "B took:"); wattroff(win, COLOR_PAIR(CP_HINT));
     draw_captured_row(win, ct++, 2, cw, 0, ww);
 
     attr_t aa = adv != 0 ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD : COLOR_PAIR(CP_INFO_VAL);
     wattron(win, aa);
-    if      (adv > 0) mvwprintw(win, ct++, 2, "+%d White", adv);
-    else if (adv < 0) mvwprintw(win, ct++, 2, "+%d Black", -adv);
-    else              mvwprintw(win, ct++, 2, "Even");
+    if      (adv > 0) mvw_clip(win, ct++, 2, "+%d White", adv);
+    else if (adv < 0) mvw_clip(win, ct++, 2, "+%d Black", -adv);
+    else              mvw_clip(win, ct++, 2, "Even");
     wattroff(win, aa);
 
     wnoutrefresh(win);

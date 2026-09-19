@@ -353,11 +353,19 @@ struct Screen {
     TUIState *state;
 };
 
-/* Smallest terminal the layout can be built for at all. Below this the
- * windows would come out zero-height or zero-width, newwin() would hand
- * back NULL, and everything downstream would dereference it. */
-#define MIN_ROWS 10
-#define MIN_COLS 30
+/* Smallest terminal that can show a COMPLETE board.
+ *
+ * Below this the windows would come out degenerate (newwin() eventually
+ * returns NULL), but the binding constraint is reached well before that:
+ * eight ranks at one row each, plus the file labels, the clock row, the
+ * five status rows and two borders, needs 20 rows; eight files at three
+ * columns each plus the rank label and borders needs 34.
+ *
+ * Being too permissive here is worse than refusing: the board simply got
+ * clipped and the player lost rank 1 off the bottom with no indication
+ * anything was missing. */
+#define MIN_ROWS 20
+#define MIN_COLS 34
 
 /* Fill `sc`'s windows for the current terminal size. Windows are
  * replaced in place rather than the Screen being returned by value, so
