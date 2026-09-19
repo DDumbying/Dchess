@@ -529,6 +529,10 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
             }
             break;
 
+        case 'u':   /* takeback */
+            tui_undo(state);
+            break;
+
         case 27: /* Esc */
             clear_selection(state);
             snprintf(state->status, sizeof(state->status), "Deselected.");

@@ -37,6 +37,17 @@ void cancel_engine_search(TUIState *state);
  * came to be missing the search cancellation. */
 void tui_new_game(TUIState *state);
 
+/* Take back the last move, in whatever sense the current mode makes it
+ * mean: one ply in two-player (both sides are human), otherwise as many
+ * plies as it takes to hand the turn back to the human -- normally two,
+ * or one if the engine has not replied yet.
+ *
+ * Cancels any search in flight first, since it belongs to a position
+ * that is about to stop existing, and deliberately does NOT start a new
+ * one afterwards: letting the engine move again would immediately undo
+ * the undo. Sets the status line either way. */
+void tui_undo(TUIState *state);
+
 /* "Easy" / "Medium" / "Hard" for a DIFF_* constant. */
 const char *difficulty_label(int difficulty);
 

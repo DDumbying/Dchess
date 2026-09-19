@@ -42,6 +42,16 @@
  * rest of a long game. */
 #define GAME_REPETITION_WINDOW 128
 
+/* One ply's worth of "how to get back". Snapshots rather than an
+ * unmake_move() because a snapshot is correct by construction for
+ * castling, en passant and promotion -- the three cases an incremental
+ * unmake gets wrong most easily. At 140 bytes a ply a whole game costs
+ * about 144 KB, which buys unlimited undo. */
+typedef struct {
+    Position pos;            /* the position BEFORE the move was played */
+    int      halfmove_clock; /* and the 50-move counter before it        */
+} UndoRecord;
+
 typedef struct {
     Position pos;
 
@@ -71,6 +81,10 @@ typedef struct {
     /* Engine evaluation after each half-move, in centipawns */
     int  eval_history[MAX_MOVE_HISTORY];
     int  eval_count;
+
+    /* Undo stack, one entry per ply played, parallel to the move log. */
+    UndoRecord undo[MAX_MOVE_HISTORY];
+    int        undo_count;
 } GameState;
 
 /* Start a fresh game from the standard opening position. Clears the move
@@ -115,5 +129,21 @@ int game_piece_at(const GameState *g, int sq);
 
 /* Hash of the current position, for comparing against a snapshot. */
 U64 game_hash(const GameState *g);
+
+/* Is there a move to take back? */
+int game_can_undo(const GameState *g);
+
+/* Take back exactly ONE ply: restores the position and the 50-move
+ * counter, drops the last move-log and evaluation entries, refunds the
+ * time that ply cost to the mover's clock, and clears any game-over
+ * verdict (taking a move back resumes a finished game).
+ *
+ * Deliberately one ply and not "one move by each side": this module
+ * knows nothing about engines, and how many plies a takeback should undo
+ * depends entirely on whether an engine is playing the other side. That
+ * policy belongs to the caller -- see tui_undo() in commands.c.
+ *
+ * Returns 0 and changes nothing when there is nothing to take back. */
+int game_undo(GameState *g);
 
 #endif

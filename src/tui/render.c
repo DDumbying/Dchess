@@ -625,7 +625,7 @@ static void draw_status(WINDOW *win, const TUIState *state)
 
     /* Hint line */
     wattron(win, COLOR_PAIR(CP_HINT));
-    mvw_clip(win, wh-4, 2, "move:e2e4  go  new  flip  depth N  quit  [Tab]=stats");
+    mvw_clip(win, wh-4, 2, "move:e2e4  go  u=undo  new  flip  depth N  quit  [Tab]=stats");
     wattroff(win, COLOR_PAIR(CP_HINT));
 
     /* Cursor position hint */

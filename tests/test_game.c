@@ -319,6 +319,161 @@ static void test_long_game(void)
           f.game_over == 1 && strstr(f.result, "50-move") != NULL);
 }
 
+/* ── Undo ───────────────────────────────────────────────────────────────── */
+
+/* Put a specific position on the board with a clean history. */
+static void load_board(GameState *g, const char board[64], int side,
+                       int castling, int enpassant)
+{
+    game_reset(g);
+    setup_position(&g->pos, board, side, castling, enpassant);
+    g->game_over = 0;
+    g->result[0] = '\0';
+    g->halfmove_clock = 0;
+    g->position_count = 0;
+    g->move_count = 0;
+}
+
+static void test_undo_basics(void)
+{
+    printf("== undo: basics ==\n");
+
+    GameState g;
+    game_reset(&g);
+
+    check("nothing to undo in the starting position", game_can_undo(&g) == 0);
+    check("and game_undo() refuses", game_undo(&g) == 0);
+
+    Position before = g.pos;
+    int positions_before = g.position_count;
+
+    play(&g, "e2e4");
+    check("a move can be taken back", game_can_undo(&g) == 1);
+    check("game_undo() reports success", game_undo(&g) == 1);
+
+    check("the position is restored exactly",
+          memcmp(&before, &g.pos, sizeof(Position)) == 0);
+    check("the move log shrinks", g.move_count == 0);
+    check("repetition bookkeeping rewinds",
+          g.position_count == positions_before);
+    check("and there is nothing left to undo", game_can_undo(&g) == 0);
+}
+
+static void test_undo_restores_state(void)
+{
+    printf("== undo: bookkeeping ==\n");
+
+    GameState g;
+    game_reset(&g);
+
+    play(&g, "g1f3");                  /* quiet move: clock goes to 1 */
+    play(&g, "g8f6");                  /* and to 2                    */
+    check("halfmove clock is 2 before undo", g.halfmove_clock == 2);
+
+    play(&g, "e2e4");                  /* pawn move: clock resets     */
+    check("pawn move reset the clock", g.halfmove_clock == 0);
+
+    game_undo(&g);
+    check("undo restores the previous halfmove clock", g.halfmove_clock == 2);
+    check("and the move count", g.move_count == 2);
+
+    game_record_eval(&g, 42);
+    int evals = g.eval_count;
+    play(&g, "d2d4");
+    game_record_eval(&g, 99);
+    game_undo(&g);
+    check("undo drops the evaluation recorded for that ply",
+          g.eval_count == evals);
+
+    /* A finished game comes back to life when the mating move is taken
+     * back -- otherwise undo would leave the board playable but the
+     * game still flagged over. */
+    GameState m;
+    game_reset(&m);
+    play(&m, "f2f3"); play(&m, "e7e5"); play(&m, "g2g4"); play(&m, "d8h4");
+    game_update_status(&m);
+    check("fool's mate ends the game", m.game_over == 1);
+    game_undo(&m);
+    check("undoing the mate resumes the game",
+          m.game_over == 0 && m.result[0] == '\0');
+    check("and legal moves are available again", has_legal_moves(&m.pos) == 1);
+}
+
+static void test_undo_special_moves(void)
+{
+    printf("== undo: special moves ==\n");
+
+    GameState g;
+    Position before;
+
+    /* Capture: the taken piece has to come back. */
+    load_board(&g, "K......." "........" "........" "....P..."
+                   "...p...." "........" "........" ".......k",
+               WHITE, 0, -1);
+    before = g.pos;
+    check("exd5 is legal", play(&g, "e4d5") == 1);
+    game_undo(&g);
+    check("undoing a capture restores the captured piece",
+          memcmp(&before, &g.pos, sizeof(Position)) == 0);
+
+    /* En passant: both the capturing and the captured pawn move. */
+    load_board(&g, "K......." "........" "........" "........"
+                   "...pP..." "........" "........" ".......k",
+               /* Black has just played d7-d5, so the square it can be
+                * captured on is d6, not the square it sits on. */
+               WHITE, 0, d6);
+    before = g.pos;
+    check("e5xd6 e.p. is legal", play(&g, "e5d6") == 1);
+    game_undo(&g);
+    check("undoing en passant restores both pawns",
+          memcmp(&before, &g.pos, sizeof(Position)) == 0);
+
+    /* Castling moves two pieces and forfeits rights. */
+    load_board(&g, "R...K..R" "........" "........" "........"
+                   "........" "........" "........" "....k...",
+               WHITE, CASTLE_WHITE_KING | CASTLE_WHITE_QUEEN, -1);
+    before = g.pos;
+    check("O-O is legal", play(&g, "e1g1") == 1);
+    game_undo(&g);
+    check("undoing a castle restores king, rook and rights",
+          memcmp(&before, &g.pos, sizeof(Position)) == 0);
+
+    /* Promotion replaces the pawn with a new piece. */
+    load_board(&g, "K......." "........" "........" "........"
+                   "........" "........" ".P......" ".......k",
+               WHITE, 0, -1);
+    before = g.pos;
+    check("b7b8 promotion is legal", play(&g, "b7b8") == 1);
+    game_undo(&g);
+    check("undoing a promotion restores the pawn",
+          memcmp(&before, &g.pos, sizeof(Position)) == 0);
+}
+
+static void test_undo_repeated(void)
+{
+    printf("== undo: unwinding a whole game ==\n");
+
+    GameState g;
+    game_reset(&g);
+    Position start = g.pos;
+
+    const char *moves[] = { "e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6" };
+    for (int i = 0; i < 6; i++) play(&g, moves[i]);
+    check("six plies played", g.move_count == 6);
+
+    int undone = 0;
+    while (game_can_undo(&g)) { game_undo(&g); undone++; }
+
+    check("every ply can be taken back", undone == 6);
+    check("the board is back to the starting position",
+          memcmp(&start, &g.pos, sizeof(Position)) == 0);
+    check("the move log is empty", g.move_count == 0);
+    check("the clocks are back to zero",
+          g.white_clock == 0 && g.black_clock == 0);
+    check("repetition history holds only the start",
+          g.position_count == 1);
+}
+
 /* ── Move lookup ────────────────────────────────────────────────────────── */
 
 static void test_find_move(void)
@@ -412,6 +567,10 @@ int main(void)
     test_game_over();
     test_insufficient_material();
     test_long_game();
+    test_undo_basics();
+    test_undo_restores_state();
+    test_undo_special_moves();
+    test_undo_repeated();
     test_find_move();
     test_load_fen();
     test_piece_at();

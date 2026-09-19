@@ -93,6 +93,7 @@ static void clear_progress(GameState *g, int keep_clocks)
     g->halfmove_clock  = 0;
     g->position_count  = 0;
     g->eval_count      = 0;
+    g->undo_count      = 0;
     g->game_over         = 0;
     g->result[0]         = '\0';
 
@@ -168,6 +169,15 @@ int game_find_move(const GameState *g, int from, int to, int promo, Move *out)
 
 void game_play(GameState *g, Move m)
 {
+    /* Snapshot BEFORE anything changes -- this is what game_undo() winds
+     * back to. Taken first so it cannot accidentally capture a
+     * half-applied state. */
+    if (g->undo_count < MAX_MOVE_HISTORY) {
+        g->undo[g->undo_count].pos            = g->pos;
+        g->undo[g->undo_count].halfmove_clock = g->halfmove_clock;
+        g->undo_count++;
+    }
+
     int piece   = game_piece_at(g, FROM(m));
     int elapsed = charge_clock(g);
 
@@ -268,4 +278,45 @@ int game_piece_at(const GameState *g, int sq)
 U64 game_hash(const GameState *g)
 {
     return hash_position(&g->pos);
+}
+
+int game_can_undo(const GameState *g)
+{
+    return g->undo_count > 0;
+}
+
+int game_undo(GameState *g)
+{
+    if (!game_can_undo(g)) return 0;
+
+    const UndoRecord *u = &g->undo[--g->undo_count];
+
+    /* Refund the clock before restoring the position: which side gets
+     * the time back is decided by whose turn it was when the move was
+     * played, which is the side to move in the snapshot. */
+    if (g->move_count > 0) {
+        int spent = g->move_time[g->move_count - 1];
+        if (u->pos.side == WHITE) g->white_clock -= spent;
+        else                      g->black_clock -= spent;
+        if (g->white_clock < 0) g->white_clock = 0;
+        if (g->black_clock < 0) g->black_clock = 0;
+    }
+
+    g->pos            = u->pos;
+    g->halfmove_clock = u->halfmove_clock;
+
+    if (g->move_count     > 0) g->move_count--;
+    if (g->position_count > 0) g->position_count--;
+    if (g->eval_count     > 0) g->eval_count--;
+
+    /* Taking a move back resumes a finished game -- otherwise the board
+     * would be playable again while still flagged as over. */
+    g->game_over = 0;
+    g->result[0] = '\0';
+
+    g->clock_side = g->pos.side;
+    g->turn_start = time(NULL);
+    clock_gettime(CLOCK_MONOTONIC, &g->turn_start_mono);
+
+    return 1;
 }

@@ -34,6 +34,41 @@ void describe_setup(const TUIState *state, char *buf, size_t n)
              difficulty_label(state->difficulty));
 }
 
+void tui_undo(TUIState *state)
+{
+    /* Whatever the engine is thinking about is about to stop being the
+     * position on the board. */
+    cancel_engine_search(state);
+
+    /* "flip" can set engine_side to -1, which means nobody is playing the
+     * other side -- same situation as two-player. */
+    int has_engine = (!state->two_player && state->engine_side >= 0);
+
+    /* How many plies it takes to hand the turn back to the human. With an
+     * engine that is two when it has already replied and one when it has
+     * not; with two humans a takeback is always a single ply. */
+    int needed = 1;
+    if (has_engine)
+        needed = (state->game.pos.side == state->engine_side) ? 1 : 2;
+
+    /* Decided up front rather than undone-then-checked: stopping halfway
+     * would leave the engine to move with no search running, and the
+     * board would just sit there. Undoing the engine's opening move is
+     * the case that hits this. */
+    if (state->game.undo_count < needed) {
+        snprintf(state->status, sizeof(state->status), "Nothing to undo");
+        return;
+    }
+
+    for (int i = 0; i < needed; i++)
+        game_undo(&state->game);
+
+    state->selected = 0;
+    memset(state->highlight, 0, sizeof(state->highlight));
+    snprintf(state->status, sizeof(state->status),
+             "Took back %d %s", needed, needed == 1 ? "move" : "moves");
+}
+
 void tui_new_game(TUIState *state)
 {
     /* Any search still running belongs to the game being thrown away;
@@ -268,6 +303,7 @@ int handle_command(TUIState *state, const char *cmd) {
      * see cancel_engine_search()) and proceed immediately instead of
      * making the player wait or rejecting the command outright. */
     if (strcmp(cmd, "new") == 0 || strcmp(cmd, "flip") == 0 ||
+        strcmp(cmd, "undo") == 0 || strcmp(cmd, "u") == 0 ||
         strncmp(cmd, "loadfen ", 8) == 0) {
         cancel_engine_search(state);
     }
@@ -290,6 +326,10 @@ int handle_command(TUIState *state, const char *cmd) {
                      "Depth cap set to %d (still bounded by the %.1fs time budget)",
                      d, state->time_limit_ms / 1000.0f);
         }
+        return 1;
+    }
+    if (strcmp(cmd, "undo") == 0 || strcmp(cmd, "u") == 0) {
+        tui_undo(state);
         return 1;
     }
     if (strcmp(cmd, "new") == 0) {
@@ -368,7 +408,7 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
-                 "e2e4|go|stop|new|flip|depth N|eval|fen|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
+                 "e2e4|go|stop|undo|new|flip|depth N|eval|fen|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;

@@ -9,6 +9,7 @@
  * Vim-style modal input:
  *   Normal mode  (insert_mode == 0):
  *     * hjkl / arrow keys  -> cursor navigation (returned to caller)
+ *     * 'u'                -> take back the last move
  *     * 'i'                -> enter insert mode (returns 0)
  *     * Enter on empty buf -> cursor action (returned as '\n')
  *     * All other keys     -> ignored
@@ -74,6 +75,8 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
             case KEY_LEFT:  case KEY_RIGHT:
             case 'k': case 'j': case 'h': case 'l':
                 return ch;
+            case 'u':   /* takeback — handled by the caller */
+                return 'u';
             case '\n': case '\r': case KEY_ENTER:
                 return '\n';
             case '\t':   /* Tab — pass through for stats overlay */
