@@ -1,20 +1,12 @@
 #include "tui/piece_art.h"
 
-/* ── The art ─────────────────────────────────────────────────────────────
- * Silhouettes drawn from the Unicode block-elements range (U+2580-259F),
- * quadrants included. Every row of a tier is EXACTLY `cols` cells wide
- * and every character is single-width -- draw_square() relies on that to
- * keep columns aligned, and a stray wide glyph would shear the board.
+/* Unicode block elements (U+2580-259F). Every row is EXACTLY `cols`
+ * cells of single-width characters -- draw_square() relies on it, and a
+ * stray wide glyph would shear the board.
  *
- * The shapes deliberately do NOT fill their tier: they are drawn a cell
- * or two narrower than the box so that neighbouring squares keep some
- * air between them. A piece that fills its square edge to edge makes the
- * board read as a solid slab rather than as 64 squares.
- *
- * Shapes stay distinguishable in silhouette, since colour is the only
- * other cue: the rook is crenellated, the queen has a spiked crown, the
- * king a cross, the bishop a cleft mitre, and the knight is the only
- * asymmetric piece. */
+ * Shapes are drawn narrower than their box so neighbouring squares keep
+ * air between them, and stay distinguishable in silhouette since colour
+ * is the only other cue. */
 
 static const wchar_t *const ART_SMALL[6][PIECE_ART_MAX_ROWS] = {
     /* Pawn */ {
@@ -88,8 +80,7 @@ static const wchar_t *const ART_LARGE[6][PIECE_ART_MAX_ROWS] = {
     },
 };
 
-/* Smallest first: piece_art_for_square() walks backwards to find the
- * largest tier that fits. */
+/* Smallest first. */
 static const PieceArtTier TIERS[] = {
     { 3, 5, ART_SMALL },
     { 4, 7, ART_LARGE },
@@ -106,12 +97,8 @@ const PieceArtTier *piece_art_tier(int index)
 
 const PieceArtTier *piece_art_for_square(int sq_h, int sq_w)
 {
-    /* Vertical space is the scarce one -- the board is 8 squares tall in
-     * a terminal that is rarely more than 50 rows -- so a tier may use a
-     * square's full height, but must keep a blank column each side so
-     * neighbouring pieces never touch horizontally. The rest of the
-     * breathing room comes from the art being drawn narrower than its
-     * own box (see above). */
+    /* Vertical space is scarce (8 squares in <50 rows), so a tier may use
+     * the full height but must keep a blank column each side. */
     for (int i = TIER_COUNT - 1; i >= 0; i--)
         if (TIERS[i].rows <= sq_h && TIERS[i].cols + 2 <= sq_w)
             return &TIERS[i];
@@ -121,7 +108,7 @@ const PieceArtTier *piece_art_for_square(int sq_h, int sq_w)
 const wchar_t *piece_art_row(const PieceArtTier *tier, int piece, int row)
 {
     if (!tier || row < 0 || row >= tier->rows) return NULL;
-    int type = piece % 6;   /* both colours share a silhouette */
+    int type = piece % 6;
     if (type < 0) return NULL;
     return tier->art[type][row];
 }

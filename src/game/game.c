@@ -12,18 +12,15 @@
 
 /* ── Internals ──────────────────────────────────────────────────────────── */
 
-/* Append the current position to the repetition ring. Unlike the move
- * log this must never stop recording, or threefold detection quietly
- * dies partway through a long game. */
+/* Must never stop recording, or threefold detection dies mid-game. */
 static void record_position(GameState *g)
 {
     g->repetition[g->position_count % GAME_REPETITION_WINDOW] = hash_position(&g->pos);
     g->position_count++;
 }
 
-/* How many times the current position has occurred, counting itself.
- * Only positions since the last irreversible move can match, so the
- * scan is bounded by halfmove_clock rather than by the whole game. */
+/* Counting itself. Only positions since the last irreversible move can
+ * match, so halfmove_clock bounds the scan. */
 static int times_repeated(const GameState *g)
 {
     if (g->position_count == 0) return 0;
@@ -42,8 +39,7 @@ static int times_repeated(const GameState *g)
     return seen;
 }
 
-/* Charge the side that is about to move for the time it spent thinking,
- * and restart the turn timer. Returns the seconds charged, for the log. */
+/* Returns the seconds charged, for the log. */
 static int charge_clock(GameState *g)
 {
     time_t now = time(NULL);
@@ -61,8 +57,7 @@ static int charge_clock(GameState *g)
     return elapsed;
 }
 
-/* The 50-move counter resets on a pawn move or a capture, and must be
- * evaluated against the board as it stands BEFORE the move is made. */
+/* Must be evaluated BEFORE the move is made. */
 static void update_halfmove_clock(GameState *g, Move m, int piece)
 {
     int to_sq      = TO(m);
@@ -85,8 +80,7 @@ static void append_to_log(GameState *g, Move m, int piece, int elapsed)
     g->move_count++;
 }
 
-/* Clear everything that describes a game in progress, leaving `pos`
- * alone -- callers set the position themselves. */
+/* Leaves `pos` alone; callers set the position themselves. */
 static void clear_progress(GameState *g, int keep_clocks)
 {
     g->move_count      = 0;
@@ -121,10 +115,7 @@ int game_load_fen(GameState *g, const char *fen)
     Position parsed;
     int hm = 0, fm = 1;
 
-    /* Parse into a scratch position first: parse_fen() is documented to
-     * leave its output untouched on failure, but keeping the live game
-     * out of it entirely makes "invalid FEN changes nothing" true here
-     * regardless of what the parser does. */
+    /* Scratch first, so an invalid FEN cannot touch the live game. */
     if (!parse_fen(fen, &parsed, &hm, &fm)) return 0;
 
     g->pos = parsed;
@@ -151,13 +142,10 @@ int game_find_move(const GameState *g, int from, int to, int promo, Move *out)
         if (promo) {
             if (!(FLAGS(m) & promo)) continue;
         } else if (FLAGS(m) & FLAG_PROMOTION) {
-            /* No promotion piece asked for: default to a queen rather
-             * than whichever underpromotion happens to come first. */
-            if (!(FLAGS(m) & FLAG_PROMO_Q)) continue;
+            if (!(FLAGS(m) & FLAG_PROMO_Q)) continue;   /* default queen */
         }
 
-        /* generate_moves() is pseudo-legal, so this is the step that
-         * rules out moves leaving the mover's own king in check. */
+        /* generate_moves() is pseudo-legal; this filters illegal ones. */
         Position test = g->pos;
         if (!make_move(&test, m)) return 0;
 
@@ -169,9 +157,7 @@ int game_find_move(const GameState *g, int from, int to, int promo, Move *out)
 
 void game_play(GameState *g, Move m)
 {
-    /* Snapshot BEFORE anything changes -- this is what game_undo() winds
-     * back to. Taken first so it cannot accidentally capture a
-     * half-applied state. */
+    /* Snapshot before anything changes; game_undo() winds back to this. */
     if (g->undo_count < MAX_MOVE_HISTORY) {
         g->undo[g->undo_count].pos            = g->pos;
         g->undo[g->undo_count].halfmove_clock = g->halfmove_clock;
@@ -181,8 +167,8 @@ void game_play(GameState *g, Move m)
     int piece   = game_piece_at(g, FROM(m));
     int elapsed = charge_clock(g);
 
-    update_halfmove_clock(g, m, piece);   /* must precede make_move() */
-    append_to_log(g, m, piece, elapsed);  /* ditto: reads the pre-move board */
+    update_halfmove_clock(g, m, piece);   /* both read the pre-move board */
+    append_to_log(g, m, piece, elapsed);
 
     make_move(&g->pos, m);
 
@@ -190,17 +176,9 @@ void game_play(GameState *g, Move m)
     g->clock_side = g->pos.side;
 }
 
-/* Is checkmate still possible for either side with the material left on
- * the board? FIDE calls a position where it is not a "dead position",
- * and the game is drawn immediately.
- *
- * The drawn cases are K vs K, K plus a single minor vs K, and K+B vs
- * K+B with both bishops on the same colour (neither can ever attack the
- * other's squares, so the position can never be forced). Everything
- * else is treated as sufficient: a pawn, rook or queen can obviously
- * mate, and so can two knights or bishop+knight -- for two knights the
- * mate is not forced, but it is reachable, which is the test FIDE
- * applies here. */
+/* FIDE "dead position": K vs K, K+minor vs K, and K+B vs K+B on the same
+ * colour. Two knights and bishop+knight are NOT drawn -- mate is
+ * reachable there, which is the test FIDE applies. */
 static int insufficient_material(const Position *pos)
 {
     if (pos->bitboards[P] | pos->bitboards[p] |
@@ -240,9 +218,8 @@ void game_update_status(GameState *g)
         return;
     }
 
-    /* Checked after mate/stalemate (a position can be mate with material
-     * that could never mate again) but before the counting rules, which
-     * would otherwise take another 50 moves to reach the same verdict. */
+    /* After mate (which can happen with un-mating material), before the
+     * counting rules that would reach the same verdict 50 moves later. */
     if (insufficient_material(&g->pos)) {
         g->game_over = 1;
         snprintf(g->result, sizeof(g->result), "Insufficient material — Draw!");
@@ -291,9 +268,7 @@ int game_undo(GameState *g)
 
     const UndoRecord *u = &g->undo[--g->undo_count];
 
-    /* Refund the clock before restoring the position: which side gets
-     * the time back is decided by whose turn it was when the move was
-     * played, which is the side to move in the snapshot. */
+    /* Before restoring: the snapshot says whose time to refund. */
     if (g->move_count > 0) {
         int spent = g->move_time[g->move_count - 1];
         if (u->pos.side == WHITE) g->white_clock -= spent;
@@ -309,8 +284,7 @@ int game_undo(GameState *g)
     if (g->position_count > 0) g->position_count--;
     if (g->eval_count     > 0) g->eval_count--;
 
-    /* Taking a move back resumes a finished game -- otherwise the board
-     * would be playable again while still flagged as over. */
+    /* A takeback resumes a finished game. */
     g->game_over = 0;
     g->result[0] = '\0';
 

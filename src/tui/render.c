@@ -46,36 +46,27 @@ static void init_glyph_width(void)
 
 
 
-/* ── 8-color fallback contrast helpers ───────────────────────────────────
- * In the fallback path the highlight backgrounds come from the theme
- * (t->fb_*), but the foregrounds used to be hard-coded. Any theme that
- * picked a background equal to one of those foregrounds rendered that
- * cell invisible -- e.g. "contrast" sets fb_sel_bg = FB_WHITE, and the
- * selected piece was drawn COLOR_WHITE on it. Deriving the foreground
- * from the background instead makes every theme legible by construction,
- * and keeps a new theme from reintroducing the same bug. */
+/* Foregrounds are derived from the theme's background rather than
+ * hard-coded, so no theme can pick a background that renders its own
+ * foreground invisible. */
 
-/* Of the 8 ANSI colors, which read as light backgrounds? */
+/* Which of the 8 ANSI colors read as light backgrounds? */
 static int fb_is_light(int bg)
 {
     return bg == COLOR_WHITE || bg == COLOR_YELLOW || bg == COLOR_CYAN;
 }
 
-/* Foreground for an empty highlighted square. */
 static int fb_plain_fg(int bg)
 {
     return fb_is_light(bg) ? COLOR_BLACK : COLOR_WHITE;
 }
 
-/* Foreground for a WHITE piece sitting on `bg`. */
 static int fb_white_pc_fg(int bg)
 {
     return fb_is_light(bg) ? COLOR_BLUE : COLOR_WHITE;
 }
 
-/* Foreground for a BLACK piece sitting on `bg`. Red reads as "black
- * piece" everywhere else in this file, so keep it unless the background
- * is itself red. */
+/* Red reads as "black piece" elsewhere in this file. */
 static int fb_black_pc_fg(int bg)
 {
     return (bg == COLOR_RED || bg == COLOR_MAGENTA) ? COLOR_BLACK : COLOR_RED;
@@ -216,14 +207,9 @@ static int piece_at(const Position *pos, int sq)
     return -1;
 }
 
-/* printf into a window, truncated at the right border.
- *
- * Plain mvwprintw() does NOT clip: ncurses wraps an over-long string
- * onto the next line of the same window, silently overwriting whatever
- * was drawn there. On a narrow terminal that is what shredded the info
- * panel (its 28-column move header wrapping into the captured-pieces
- * rows) and the status lines. Anything whose length depends on the
- * window width, the position or user text goes through here. */
+/* printf truncated at the right border. Plain mvwprintw() does not clip:
+ * ncurses wraps an over-long string onto the next line of the same
+ * window, silently overwriting it. */
 static void mvw_clip(WINDOW *win, int row, int col, const char *fmt, ...)
 {
     int wh, ww;
@@ -308,10 +294,8 @@ static void put_glyph(WINDOW *win, int r, int c, int piece, attr_t attr)
  * piece   : 0-11 index, or -1 for empty
  * dot     : draw a subtle "•" indicator for legal-move destinations
  * ──────────────────────────────────────────────────────────────────────── */
-/* Draw a piece as multi-row art, centred in the square. The square's
- * background has already been laid down by the caller; this only paints
- * the silhouette cells, leaving the gaps showing that background so
- * highlights and the cursor still read through. */
+/* Paints only the silhouette cells, so the square background shows
+ * through the gaps and highlights still read. */
 static void draw_piece_art(WINDOW *win, int row, int col,
                            int sq_h, int sq_w,
                            const PieceArtTier *tier, int piece,
@@ -344,14 +328,11 @@ static void draw_square(WINDOW *win,
                         attr_t sq_attr, attr_t pc_attr,
                         int dot)
 {
-    /* Art needs room; below that the square falls back to the single
-     * centred glyph this board has always drawn. */
+    /* NULL below the smallest tier: fall back to the single glyph. */
     const PieceArtTier *tier = piece_art_for_square(sq_h, sq_w);
 
     if (piece >= 0 && tier) {
-        /* Lay the whole square down as background first, then paint the
-         * silhouette over it -- simpler than the row-by-row padding the
-         * glyph path needs, and it keeps the layering contract. */
+        /* Background first, silhouette over it. */
         wattron(win, sq_attr);
         for (int roff = 0; roff < sq_h; roff++)
             hfill(win, row + roff, col, sq_w, ' ');
@@ -397,9 +378,7 @@ static void draw_square(WINDOW *win,
     wattroff(win, sq_attr);
 }
 
-/* A single-line frame hugging the 8x8 grid. Drawn before the squares so
- * that nothing can paint over a square, and offset one cell outside the
- * grid on every side. */
+/* Drawn before the squares, one cell outside the grid. */
 static void draw_board_frame(WINDOW *win, int start_row, int start_col,
                              int sq_h, int sq_w)
 {
@@ -502,8 +481,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
         }
     }
 
-    /* File labels — a-h left-to-right when normal, h-a when flipped.
-     * One row below the frame's bottom edge so they never collide. */
+    /* a-h left-to-right, h-a when flipped. */
     int lr = start_row + 8 * sq_h + (framed ? 1 : 0);
     wattron(win, COLOR_PAIR(CP_LABEL) | A_BOLD);
     for (int f = 0; f < 8; f++) {
@@ -518,12 +496,9 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
  * Scales square size to fill available space, then centers.
  * Keeps aspect: sq_w = sq_h * 2 + 1  (so pieces look square).
  * ─────────────────────────────────────────────────────────────────────── */
-/* Largest square size whose whole board fits in the given area.
- *
- * Squares keep the aspect sq_w = sq_h * 2 + 1, which reads as square
- * because terminal cells are about twice as tall as they are wide.
- * Returns 0 if not even a 1-row square fits, leaving *out_h / *out_w
- * untouched. */
+/* Largest square whose whole board fits. sq_w = sq_h * 2 + 1 reads as
+ * square because cells are about twice as tall as wide. Returns 0 if
+ * even a 1-row square does not fit. */
 static int fit_board(int avail_h, int avail_w, int framed,
                      int *out_h, int *out_w)
 {
@@ -551,17 +526,12 @@ static void draw_board(WINDOW *win, const TUIState *state)
     getmaxyx(win, wh, ww);
 
     /* Available area (inside border, above status section) */
-    /* Row 0 is the window border and row 1 holds the clocks, so the board
-     * starts at row 2 -- the clock row used to be unaccounted for, which
-     * is why a short terminal drew rank 8 straight over the clocks. */
+    /* Row 0 is the border and row 1 the clocks, so the board starts at 2. */
     int avail_h = wh - 8;   /* border + clock row + 5 status rows + border */
     int avail_w = ww - 6;   /* 2 borders + rank-label col + margins        */
 
-    /* Pick the largest square size that actually fits. A framed board
-     * costs 2 extra rows and 2 extra columns, so on a short terminal it
-     * is dropped rather than allowed to push the bottom ranks off the
-     * window -- which is what used to happen: at 80x24 rank 1 was simply
-     * cut off and the overflow corrupted the status lines below. */
+    /* A frame costs 2 rows and 2 columns, so it is dropped rather than
+     * allowed to push the bottom ranks off the window. */
     int sq_h, sq_w;
     int framed = 1;
     if (!fit_board(avail_h, avail_w, 1, &sq_h, &sq_w)) {
@@ -578,9 +548,7 @@ static void draw_board(WINDOW *win, const TUIState *state)
     int board_h = 8 * sq_h + chrome_h;
     int board_w = 8 * sq_w + chrome_w;
 
-    /* Centre inside the available area. The minimums keep the frame and
-     * the rank labels inside the window's own border: the frame sits one
-     * cell outside the grid, the rank label one cell outside that. */
+    /* Minimums keep the frame and rank labels inside the border. */
     int sr = 2 + (avail_h - board_h) / 2;
     int sc = 2 + (avail_w - board_w) / 2 + 2;
     int min_r = framed ? 3 : 2;
@@ -614,9 +582,8 @@ static void draw_status(WINDOW *win, const TUIState *state)
     mvwprintw(win, wh-5, 2, "%-*.*s", ww-4, ww-4, state->status);
     wattroff(win, st);
 
-    /* Check callout. Right-anchored overlays are skipped outright on a
-     * narrow window: there they would land on top of the very text they
-     * are meant to sit beside. */
+    /* Right-anchored overlays are skipped on a narrow window, where they
+     * would land on the text they are meant to sit beside. */
     if (ww >= 34 && is_in_check(&state->game.pos, state->game.pos.side)) {
         wattron(win, COLOR_PAIR(CP_STATUS_ERR)|A_BOLD);
         mvw_clip(win, wh-5, ww-14, " !! CHECK !! ");
@@ -632,9 +599,7 @@ static void draw_status(WINDOW *win, const TUIState *state)
     {
         int cr = 7 - state->cursor_row;   /* rank number */
         int cf = state->cursor_col;        /* file index  */
-        /* The hint line beside this is a fixed 52 columns starting at
-         * column 2, so the overlay only has somewhere to go once the
-         * window is wider than that plus its own width. */
+        /* The hint beside it is a fixed 52 columns. */
         if (ww - 10 > 56) {
             wattron(win, COLOR_PAIR(CP_HINT));
             mvw_clip(win, wh-4, ww-10, "[%c%d]", 'a'+cf, cr+1);
@@ -735,12 +700,8 @@ static void draw_info(WINDOW *win, const TUIState *state)
     mvw_clip(win, row++, 2, "MOVES");
     wattroff(win, COLOR_PAIR(CP_INFO_HEAD)|A_BOLD);
 
-    /* The two-column move table needs about 30 columns for its glyph,
-     * move and time fields on both sides. The info panel is only 20 or
-     * 26 wide until the terminal reaches 90 columns, so below that the
-     * table can never fit and a compact one-line-per-move form is drawn
-     * instead -- previously it was drawn anyway and wrapped, which is
-     * what shredded the panel. */
+    /* The two-column table needs ~30 columns, but the panel is 20 or 26
+     * wide until the terminal reaches 90. Below that, a compact form. */
     int wide = (ww >= 30);
 
     if (wide) {
@@ -749,13 +710,9 @@ static void draw_info(WINDOW *win, const TUIState *state)
         wattroff(win, COLOR_PAIR(CP_HINT));
     }
 
-    /* Split the remaining height between the move list and the captured
-     * section. CAPTURED is drawn upwards from a fixed offset off the
-     * bottom while the move list grows downwards, so without this they
-     * simply overwrote each other on a short panel. */
-    /* separator, "CAPTURED", "W took:", its row, "B took:", its row and
-     * the advantage line is 7 drawn rows; the 8th keeps the last of them
-     * off the panel's bottom border. */
+    /* CAPTURED is drawn from a fixed offset off the bottom while the move
+     * list grows down, so the split has to come from real space. */
+    /* 7 drawn rows; the 8th keeps the last off the bottom border. */
     const int CAP_ROWS_FULL = 11;
     const int CAP_ROWS_MIN  = 8;
 
@@ -781,7 +738,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
         int latest = (p == total - 1);
 
         if (!wide) {
-            /* Compact: "12. e2e4 e7e5" -- no glyphs, no times. */
+            /* "12. e2e4 e7e5" */
             attr_t a = latest ? COLOR_PAIR(CP_STATUS_OK)|A_BOLD
                               : COLOR_PAIR(CP_INFO_VAL);
             wattron(win, a);
@@ -849,7 +806,7 @@ static void draw_info(WINDOW *win, const TUIState *state)
         wattroff(win, COLOR_PAIR(CP_HINT));
     }
 
-    /* CAPTURED section -- skipped entirely when cap_h came out 0 above. */
+    /* Skipped entirely when cap_h came out 0. */
     if (cap_h == 0) { wnoutrefresh(win); return; }
 
     int ct = wh - cap_h;
@@ -906,11 +863,8 @@ static void draw_cmd(WINDOW *win)
  *   • A small score label is shown at the boundary
  *   • "B" label at top, "W" label at bottom
  * ─────────────────────────────────────────────────────────────────────────── */
-/* ── Clock display ───────────────────────────────────────────────────────
- * "W: 03:07.42" -- minutes:seconds.centiseconds, tagged with the side.
- * Minutes are clamped so the field can never outgrow the buffer: a game
- * long enough to reach 99 minutes pins the display there rather than
- * widening (and truncating) mid-render. */
+/* "W: 03:07.42". Minutes are clamped so the field can never outgrow the
+ * buffer mid-render. */
 #define CLOCK_MAX_MINUTES 99
 #define CLOCK_STR_SIZE    16   /* "W: 99:59.99" + NUL, with room to spare */
 

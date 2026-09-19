@@ -17,16 +17,12 @@
 #include <time.h>
 #include <pthread.h>
 
-/* ── Shared game-lifecycle helpers ──────────────────────────────────────── */
-
 const char *difficulty_label(int difficulty)
 {
     return (difficulty == DIFF_EASY) ? "Easy" :
            (difficulty == DIFF_HARD) ? "Hard" : "Medium";
 }
 
-/* The "You play White | Medium difficulty" blurb, which three separate
- * places used to format by hand off two ternary chains each. */
 void describe_setup(const TUIState *state, char *buf, size_t n)
 {
     snprintf(buf, n, "You play %s | %s difficulty",
@@ -36,25 +32,18 @@ void describe_setup(const TUIState *state, char *buf, size_t n)
 
 void tui_undo(TUIState *state)
 {
-    /* Whatever the engine is thinking about is about to stop being the
-     * position on the board. */
     cancel_engine_search(state);
 
-    /* "flip" can set engine_side to -1, which means nobody is playing the
-     * other side -- same situation as two-player. */
+    /* "flip" can set engine_side to -1: nobody plays the other side. */
     int has_engine = (!state->two_player && state->engine_side >= 0);
 
-    /* How many plies it takes to hand the turn back to the human. With an
-     * engine that is two when it has already replied and one when it has
-     * not; with two humans a takeback is always a single ply. */
+    /* Plies needed to hand the turn back to the human. */
     int needed = 1;
     if (has_engine)
         needed = (state->game.pos.side == state->engine_side) ? 1 : 2;
 
-    /* Decided up front rather than undone-then-checked: stopping halfway
-     * would leave the engine to move with no search running, and the
-     * board would just sit there. Undoing the engine's opening move is
-     * the case that hits this. */
+    /* Decided up front: stopping halfway would leave the engine to move
+     * with no search running, and the board would just sit there. */
     if (state->game.undo_count < needed) {
         snprintf(state->status, sizeof(state->status), "Nothing to undo");
         return;
@@ -71,8 +60,6 @@ void tui_undo(TUIState *state)
 
 void tui_new_game(TUIState *state)
 {
-    /* Any search still running belongs to the game being thrown away;
-     * its result must never land on the new board. */
     cancel_engine_search(state);
 
     game_reset(&state->game);
@@ -110,10 +97,7 @@ static int try_move(TUIState *state, const char *movestr)
 
 static void apply_engine_result(TUIState *state, SearchResult res);
 
-/* Runs on a separate thread (see start_engine_search()). Searches only
- * state->search_snapshot -- a private copy taken at kickoff time -- so
- * this never touches state->game.pos, and the main thread can keep safely
- * reading/rendering state->game.pos the whole time this runs. */
+/* Runs on the worker thread. Touches only search_snapshot. */
 static void *engine_search_worker(void *arg) {
     TUIState *state = (TUIState *)arg;
     SearchResult res = search(&state->search_snapshot,
@@ -127,17 +111,13 @@ static void *engine_search_worker(void *arg) {
     return NULL;
 }
 
-/* Kicks off a background search and returns immediately -- it does not
- * wait for a result. Call poll_engine_search() (from the main loop) to
- * notice when it finishes and apply the move. A no-op if a search is
- * already running, so it's safe to call this defensively. */
+/* Returns immediately; poll_engine_search() applies the result. No-op if
+ * a search is already running. */
 static void start_engine_search(TUIState *state) {
     if (state->search_running) return;
 
-    /* engine_depth/time_limit_ms are captured into the search itself via
-     * arguments inside the worker below; search_snapshot is captured
-     * here, before the thread starts, so nothing the worker reads can
-     * change out from under it once it's running. */
+    /* Captured before the thread starts, so nothing it reads can change
+     * under it. */
     state->search_snapshot      = state->game.pos;
     state->search_snapshot_hash = game_hash(&state->game);
     state->search_depth_arg     = state->engine_depth;
@@ -149,15 +129,9 @@ static void start_engine_search(TUIState *state) {
     if (state->request_redraw) state->request_redraw(state->redraw_ctx);
 
     if (pthread_create(&state->search_thread, NULL, engine_search_worker, state) != 0) {
-        /* Thread creation failing is rare (resource exhaustion) but not
-         * impossible -- fall back to a synchronous search rather than
-         * leaving search_running stuck true forever with nothing ever
-         * going to clear it.
-         *
-         * This path must apply the result itself: with search_running
-         * back to 0, poll_engine_search() bails out at its first line
-         * and would never look at search_ready, so leaving the result
-         * sitting in the struct means the engine simply never moves. */
+        /* Rare, but must not leave search_running stuck true. This path
+         * applies the result itself: with search_running back to 0,
+         * poll_engine_search() would never look at it. */
         state->search_running = 0;
         state->search_ready   = 0;
         SearchResult res = search(&state->game.pos, state->engine_depth, state->time_limit_ms);
@@ -165,18 +139,12 @@ static void start_engine_search(TUIState *state) {
     }
 }
 
-/* Applies a completed search result: plays the move (or ends the game),
- * updates eval history and the status line. Shared by poll_engine_search()
- * (the normal, threaded path) and start_engine_search()'s same-thread
- * fallback above. */
+
 static void apply_engine_result(TUIState *state, SearchResult res)
 {
     if (!res.best_move) {
-        /* An empty result means the search found nothing to play -- which
-         * is only "game over" if the position genuinely has no legal
-         * move. A search cancelled during depth 1 also comes back empty
-         * (see search.h), and calling that checkmate would end a live
-         * game on a bogus result. Ask the board, not the search. */
+        /* A cancelled search also comes back empty (see search.h), so ask
+         * the board whether the game is really over. */
         if (has_legal_moves(&state->game.pos)) {
             snprintf(state->status, sizeof(state->status),
                      "Search stopped — no move played");
@@ -187,10 +155,8 @@ static void apply_engine_result(TUIState *state, SearchResult res)
         return;
     }
 
-    /* Normalize the score to White's perspective: negamax reports it for
-     * the side that just moved, so if the engine is Black a positive
-     * score means Black is ahead -- flip it so last_eval always reads
-     * from White's point of view. */
+    /* Negamax reports for the side that just moved; flip so last_eval is
+     * always from White's point of view. */
     int score_white = (state->game.pos.side == BLACK) ? res.best_score : -res.best_score;
     float eval_f = score_white / 100.0f;
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
@@ -204,7 +170,7 @@ static void apply_engine_result(TUIState *state, SearchResult res)
              text, eval_f, res.depth_reached);
 }
 
-/* Is a just-finished search still about the position on screen? */
+
 static int engine_result_is_current(const TUIState *state)
 {
     if (state->game.game_over) return 0;
@@ -225,16 +191,12 @@ int poll_engine_search(TUIState *state) {
     state->search_running = 0;
     state->search_ready   = 0;
 
-    /* Only play the move if the board is still the one it was computed
-     * for. Anything that changed `pos` while the search was in flight
-     * (a piece moved via the board cursor, a new game started from the
-     * game-over popup) invalidates the result -- applying it anyway
-     * would move a piece that has since left its square. */
+    /* Applying a result computed for a different board would move a
+     * piece that has since left its square. */
     if (!engine_result_is_current(state)) {
-        /* Discarding a result must not leave the engine owing a move it
-         * will never play, so re-search the position that is actually on
-         * the board. The fresh snapshot matches it by construction, so
-         * this cannot loop. */
+        /* Re-search the position actually on the board, so the engine is
+         * not left owing a move. The fresh snapshot matches by
+         * construction, so this cannot loop. */
         if (!state->game.game_over && !state->two_player &&
             state->engine_side == state->game.pos.side)
             start_engine_search(state);
@@ -245,8 +207,7 @@ int poll_engine_search(TUIState *state) {
     return 1;
 }
 
-/* See commands.h. Use this, not a "please wait" rejection, for anything
- * that means "start over." */
+
 void cancel_engine_search(TUIState *state) {
     if (!state->search_running) return;
     search_cancel();
@@ -258,10 +219,7 @@ void cancel_engine_search(TUIState *state) {
 int handle_command(TUIState *state, const char *cmd) {
     if (!cmd || !cmd[0]) return 1;
 
-    /* "stop": ask an in-flight search to return its best-guess-so-far
-     * move right now, same idea as UCI's "stop" -- the last cleanly
-     * completed iteration always has a legal move ready (see search.c),
-     * so this always has something to apply, never nothing. */
+    /* Like UCI's "stop": return the best move found so far. */
     if (strcmp(cmd, "stop") == 0) {
         if (!state->search_running) {
             snprintf(state->status, sizeof(state->status), "No search in progress");
@@ -278,13 +236,8 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
 
-    /* Commands that don't touch state->game.pos and wouldn't call search()
-     * again concurrently (fen, theme, help, stats, quit) are always
-     * safe to run immediately, search or no search.
-     *
-     * Moves/"go"/"eval" are simply rejected while the engine thinks --
-     * none of them mean "start over," so waiting (or using "stop" first)
-     * makes more sense than force-cancelling on their behalf. */
+    /* Moves/"go"/"eval" are rejected while the engine thinks; none of
+     * them mean "start over". Everything else is safe to run. */
     int is_move = (cmd[0] >= 'a' && cmd[0] <= 'h' && cmd[1] >= '1' && cmd[1] <= '8');
     int reject_while_thinking =
         is_move ||
@@ -297,11 +250,8 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
 
-    /* "new"/"loadfen"/"flip" all mean "replace the current game state,"
-     * so a stale in-flight search for the position being replaced isn't
-     * worth waiting for -- cancel it (discarding whatever it had found;
-     * see cancel_engine_search()) and proceed immediately instead of
-     * making the player wait or rejecting the command outright. */
+    /* These replace the game state, so a search for the old position is
+     * not worth waiting for. */
     if (strcmp(cmd, "new") == 0 || strcmp(cmd, "flip") == 0 ||
         strcmp(cmd, "undo") == 0 || strcmp(cmd, "u") == 0 ||
         strncmp(cmd, "loadfen ", 8) == 0) {
@@ -335,8 +285,7 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strcmp(cmd, "new") == 0) {
         tui_new_game(state);
 
-        /* If it is already the engine's turn (the player chose Black),
-         * it moves first. */
+
         if (!state->two_player && state->engine_side == state->game.pos.side)
             start_engine_search(state);
         return 1;

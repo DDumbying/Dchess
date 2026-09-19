@@ -54,9 +54,7 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
 
     int ch = wgetch(win);
 
-    /* A resize is not a keystroke: hand it straight back so the caller
-     * can rebuild its windows. Swallowing it here (as the default
-     * branches below would) left the UI drawn for the old size. */
+    /* Not a keystroke: hand it back so the caller can rebuild. */
     if (ch == KEY_RESIZE) return KEY_RESIZE;
 
     /* ESC always exits insert mode */
@@ -75,7 +73,7 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
             case KEY_LEFT:  case KEY_RIGHT:
             case 'k': case 'j': case 'h': case 'l':
                 return ch;
-            case 'u':   /* takeback — handled by the caller */
+            case 'u':   /* takeback */
                 return 'u';
             case '\n': case '\r': case KEY_ENTER:
                 return '\n';

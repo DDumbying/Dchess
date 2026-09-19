@@ -23,16 +23,14 @@
 #include <time.h>
 
 
-/* Declared ahead of the panels below, which are defined before Screen is
- * but need to rebuild it when the terminal resizes under them. */
+/* The panels below are defined before Screen but must rebuild it on
+ * resize. */
 typedef struct Screen Screen;
 static void screen_handle_resize(Screen *sc);
 static WINDOW *screen_board(const Screen *sc);
 
 /* ── Game-over popup ────────────────────────────────────────────────────── */
-/* Builds (or rebuilds) the game-over panel and its shadow at the current
- * terminal size. Split out from the input loop so a resize can simply
- * throw both windows away and call this again. */
+/* Split out from the input loop so a resize can rebuild both windows. */
 static void build_game_over_panel(WINDOW *board_win, const TUIState *state,
                                   WINDOW **out_pop, WINDOW **out_shadow)
 {
@@ -43,10 +41,8 @@ static void build_game_over_panel(WINDOW *board_win, const TUIState *state,
     if (pw > bw) pw = bw;
     if (ph > bh) ph = bh;
 
-    /* newwin() takes SCREEN coordinates while the centring below is
-     * relative to board_win, so the window's own origin has to be added
-     * -- without it the popup drifts left and sits over the info panel
-     * instead of over the board it belongs to. */
+    /* newwin() takes SCREEN coordinates but the centring is relative to
+     * board_win, so its origin has to be added. */
     int bwr, bwc;
     getbegyx(board_win, bwr, bwc);
     int pr     = bwr + (bh - ph) / 2;
@@ -117,11 +113,9 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
         int ch = wgetch(pop);
 
         if (ch == KEY_RESIZE) {
-            /* The popup can sit here indefinitely, so it has to follow
-             * the terminal -- and it must rebuild the board behind it
-             * too, since it swallowed the resize the main loop would
-             * otherwise have acted on. The stats above are recorded once
-             * outside this loop, so rebuilding cannot re-record them. */
+            /* Rebuilds the board behind it too, since it swallowed the
+             * resize the main loop would have acted on. Stats are
+             * recorded outside this loop, so this cannot re-record. */
             delwin(pop);
             panel_shadow_destroy(shadow);
             screen_handle_resize(sc);
@@ -130,18 +124,15 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
         }
 
         if (ch == 'r' || ch == 'R') {
-            /* tui_new_game() also cancels any search still in flight.
-             * One can be: handle_command() kicks the engine off *before*
-             * tui_run() reaches game_update_status(), so a human move
-             * that ends the game by repetition or the 50-move rule
-             * leaves the engine thinking behind this popup. */
+            /* Also cancels any search: the engine can still be thinking
+             * behind this popup when a move ended the game by a draw
+             * rule. */
             tui_new_game(state);
             break;
         }
         if (ch == 'q' || ch == 'Q') {
-            /* Same reason as the join in tui_run()'s quit path: the
-             * worker writes into TUIState, which lives in main()'s
-             * frame, so it must be stopped before exit() tears down. */
+            /* The worker writes into TUIState, which lives in main()'s
+             * frame, so stop it before exit() tears down. */
             cancel_engine_search(state);
             delwin(pop);
             panel_shadow_destroy(shadow);
@@ -153,11 +144,8 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
     panel_shadow_destroy(shadow);
 }
 
-/* ── Screen <-> board coordinate mapping ─────────────────────────────────
- * The board is drawn from view_side's perspective, so row 0 is rank 8
- * when viewing as White and rank 1 when viewing as Black. This pair of
- * conversions used to be open-coded, with the flip ternaries written out
- * by hand, at four separate sites. */
+/* The board is drawn from view_side's perspective: row 0 is rank 8 as
+ * White, rank 1 as Black. */
 
 static int screen_to_square(const TUIState *state, int row, int col)
 {
@@ -175,7 +163,6 @@ static void square_to_screen(const TUIState *state, int sq, int *row, int *col)
     *col = flipped ? (7 - file) : file;
 }
 
-/* ── Legal move highlights ──────────────────────────────────────────────── */
 static void build_highlights(TUIState *state)
 {
     memset(state->highlight, 0, sizeof(state->highlight));
@@ -199,15 +186,13 @@ static void build_highlights(TUIState *state)
     }
 }
 
-/* ── Cursor selection ───────────────────────────────────────────────────── */
-
 static void clear_selection(TUIState *state)
 {
     state->selected = 0;
     memset(state->highlight, 0, sizeof(state->highlight));
 }
 
-/* First Enter press: pick up a piece belonging to the side to move. */
+/* First Enter: pick up a piece. */
 static void select_square(TUIState *state, int sq)
 {
     int piece = game_piece_at(&state->game, sq);
@@ -230,7 +215,7 @@ static void select_square(TUIState *state, int sq)
              'a' + (sq % 8), (sq / 8) + 1);
 }
 
-/* Second Enter press: play the selected piece to the cursor square. */
+/* Second Enter: play it to the cursor square. */
 static void move_to_square(TUIState *state, int to_sq)
 {
     int from_sq = screen_to_square(state, state->sel_row, state->sel_col);
@@ -258,10 +243,7 @@ static void move_to_square(TUIState *state, int to_sq)
         state->cursor_row = 6;
         state->cursor_col = 4;
     } else if (state->engine_side == state->game.pos.side) {
-        /* "go" only kicks off a background search and returns right
-         * away, so there is nothing to sync or check here. The main
-         * loop's poll_engine_search() re-syncs and calls
-         * game_update_status() once the engine's move actually lands. */
+        /* Only kicks off the search; the main loop applies the result. */
         handle_command(state, "go");
     }
 }
@@ -341,36 +323,20 @@ void tui_init(TUIState *state, const CliArgs *args)
 
 void tui_cleanup(void) { endwin(); }
 
-/* ── Screen ──────────────────────────────────────────────────────────────
- * The four windows the game is drawn into, plus the paint routine that
- * refreshes them. The paint sequence (erase, render, touch every window,
- * refresh every window, doupdate) used to be written out inline three
- * times -- in the redraw hook, before the game-over popup, and in the
- * main loop -- each copy having to remember the NULL checks on the two
- * optional windows. */
+/* The four windows the game is drawn into, plus the paint routine. */
 struct Screen {
     WINDOW   *board, *info, *eval_bar, *cmd;
     TUIState *state;
 };
 
-/* Smallest terminal that can show a COMPLETE board.
- *
- * Below this the windows would come out degenerate (newwin() eventually
- * returns NULL), but the binding constraint is reached well before that:
- * eight ranks at one row each, plus the file labels, the clock row, the
- * five status rows and two borders, needs 20 rows; eight files at three
- * columns each plus the rank label and borders needs 34.
- *
- * Being too permissive here is worse than refusing: the board simply got
- * clipped and the player lost rank 1 off the bottom with no indication
- * anything was missing. */
+/* Smallest terminal that fits a COMPLETE board: eight ranks plus file
+ * labels, the clock row, five status rows and two borders. Being too
+ * permissive here silently clips rank 1 off the bottom. */
 #define MIN_ROWS 20
 #define MIN_COLS 34
 
-/* Fill `sc`'s windows for the current terminal size. Windows are
- * replaced in place rather than the Screen being returned by value, so
- * that TUIState.redraw_ctx -- which points at the caller's Screen --
- * stays valid across a resize. */
+/* Replaces windows in place, so TUIState.redraw_ctx -- which points at
+ * the caller's Screen -- stays valid across a resize. */
 static void screen_build(Screen *sc)
 {
     int rows, cols;
@@ -399,8 +365,8 @@ static void screen_build(Screen *sc)
     wtimeout(sc->cmd, 100);
 }
 
-/* Lay out [INFO panel][EVAL BAR][BOARD] above a command line. The info
- * panel and eval bar are dropped on terminals too narrow for them. */
+/* [INFO][EVAL BAR][BOARD] above a command line; the first two are
+ * dropped on narrow terminals. */
 static Screen screen_create(TUIState *state)
 {
     Screen sc;
@@ -424,7 +390,6 @@ static void screen_destroy(Screen *sc)
     screen_free_windows(sc);
 }
 
-/* Is the terminal currently big enough to lay the game out? */
 static int screen_too_small(void)
 {
     int rows, cols;
@@ -432,9 +397,7 @@ static int screen_too_small(void)
     return rows < MIN_ROWS || cols < MIN_COLS;
 }
 
-/* Tell the player to make the window bigger, since there is no layout we
- * could draw instead. stdscr is used directly: the game's own windows do
- * not exist at this point. */
+/* Drawn on stdscr: the game's own windows do not exist at this point. */
 static void screen_draw_too_small(void)
 {
     int rows, cols;
@@ -474,20 +437,16 @@ static WINDOW *screen_board(const Screen *sc) { return sc->board; }
 
 /* ── Key handling ───────────────────────────────────────────────────────── */
 
-/* Rebuild every window for the terminal's new size and repaint. Blocks
- * while the terminal is too small to lay out at all, because there is no
- * smaller layout to fall back to -- the windows would be degenerate and
- * newwin() would start returning NULL. */
+/* Blocks while the terminal is too small: there is no smaller layout to
+ * fall back to. */
 static void screen_handle_resize(Screen *sc)
 {
     screen_free_windows(sc);
 
     while (screen_too_small()) {
         screen_draw_too_small();
-        /* stdscr has no timeout set, so this blocks until a key or the
-         * next resize -- exactly the two things worth waking for. The
-         * game is paused meanwhile: there is no usable layout to play
-         * on, so neither the clocks nor a finished search are polled. */
+        /* Blocks until a key or the next resize. The game is paused
+         * meanwhile -- clocks stop, searches are not polled. */
         wgetch(stdscr);
     }
 
@@ -515,12 +474,9 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
             break;
 
         case '\n': case '\r': case KEY_ENTER:
-            /* Mirror handle_command()'s rejection of moves while the
-             * engine thinks. Without it this path would happily move the
-             * *engine's* pieces (it is the engine's turn, so they read as
-             * "friendly"), mutating the position under the search and
-             * leaving its result to be played onto a board that no
-             * longer matches it. */
+            /* Mirrors handle_command(): without this the cursor could
+             * move the engine's own pieces (it is their turn, so they
+             * read as friendly) out from under the search. */
             if (state->search_running) {
                 snprintf(state->status, sizeof(state->status),
                          "Engine is thinking — please wait, or use 'stop'");
@@ -576,22 +532,18 @@ void tui_run(TUIState *state)
 
     Screen sc = screen_create(state);
 
-    /* Let start_engine_search() force a repaint right after it sets the
-     * "Engine thinking..." status, so that status appears immediately
-     * instead of waiting for the next 100ms tick. */
+    /* So "Engine thinking..." appears immediately. */
     state->request_redraw = screen_paint_hook;
     state->redraw_ctx     = &sc;
 
-    /* The engine moves first if it already has the move -- the player
-     * chose Black, or a custom FEN starts on the engine's side. */
+    /* Engine moves first if it already has the move. */
     if (!state->two_player && state->engine_side == state->game.pos.side)
         handle_command(state, "go");
 
     char cmd_buf[256];
 
     for (;;) {
-        /* If the background search just finished, apply its move before
-         * anything else this iteration. */
+
         if (poll_engine_search(state))
             game_update_status(&state->game);
 
@@ -619,15 +571,9 @@ void tui_run(TUIState *state)
         if (!handle_key(&sc, ch, cmd_buf)) break;
     }
 
-    /* Cancel and join any in-flight search before returning. This stays
-     * effectively instant -- cancellation is checked every ~512 nodes, so
-     * the worker stops almost immediately rather than running out its
-     * remaining time budget.
-     *
-     * Joining is not optional: the worker writes state->search_result and
-     * state->search_ready when it finishes, and TUIState lives in main()'s
-     * stack frame. Returning while it is still running leaves it writing
-     * into a frame that process teardown is already reusing. */
+    /* Joining is not optional: the worker writes into TUIState, which
+     * lives in main()'s stack frame. Near-instant, since cancellation is
+     * checked every ~512 nodes. */
     cancel_engine_search(state);
 
     screen_destroy(&sc);

@@ -11,19 +11,13 @@
 
 static long node_count;
 
-/* ── Time budget ─────────────────────────────────────────────────────────
- * Checked periodically (not every node -- clock_gettime() isn't free)
- * from inside alpha_beta()/quiescence(). When the deadline passes,
- * search_aborted latches true and every frame unwinds immediately;
- * search()'s iterative-deepening loop then discards that in-progress
- * iteration and returns the last one that finished cleanly. Depth 1 is
- * always run with the time check disabled (see search()), so a legal
- * move is always available even under an unreasonably tight budget.
+/* Checked periodically, not every node. On expiry search_aborted latches
+ * and search() returns the last iteration that finished cleanly. Depth 1
+ * runs with the check disabled, so a legal move is always available.
  *
- * Cancellation (below) is NOT gated this way -- it fires at every
- * depth, including depth 1, so that "quit"/"new" stay responsive. That
- * means a cancelled search CAN return an empty best_move; callers are
- * required to handle it (see search.h). */
+ * Cancellation is NOT gated that way -- it fires at every depth so quit
+ * stays responsive, which means a cancelled search can return an empty
+ * best_move. Callers must handle it (see search.h). */
 static int time_limited;
 static int search_aborted;
 static struct timespec search_deadline;
