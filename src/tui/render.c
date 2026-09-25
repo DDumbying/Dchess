@@ -71,131 +71,135 @@ static int fb_black_pc_fg(int bg)
     return (bg == COLOR_RED || bg == COLOR_MAGENTA) ? COLOR_BLACK : COLOR_RED;
 }
 
+static void init_palette_256(const Theme *t)
+{
+    int bg = t->bg;
+
+    init_pair(CP_LIGHT,   t->sq_light, t->sq_light);
+    init_pair(CP_DARK,    t->sq_dark,  t->sq_dark);
+    init_pair(CP_W_LIGHT, t->pc_white, t->sq_light);
+    init_pair(CP_W_DARK,  t->pc_white, t->sq_dark);
+    init_pair(CP_B_LIGHT, t->pc_black, t->sq_light);
+    init_pair(CP_B_DARK,  t->pc_black, t->sq_dark);
+
+    init_pair(CP_CURSOR,       t->pc_black, t->cursor);
+    init_pair(CP_CURSOR_PC,    t->pc_white, t->cursor);
+    init_pair(CP_CURSOR_PC_B,  t->pc_black, t->cursor);
+    init_pair(CP_SEL,          t->pc_black, t->sel);
+    init_pair(CP_SEL_PC,       t->pc_white, t->sel);
+    init_pair(CP_SEL_PC_B,     t->pc_black, t->sel);
+    init_pair(CP_MOVE_HI,      t->pc_black, t->movehi);
+    init_pair(CP_MOVE_HI_PC,   t->pc_white, t->movehi);
+    init_pair(CP_MOVE_HI_PC_B, t->pc_black, t->movehi);
+    init_pair(CP_CHECK_SQ,     t->pc_black, t->check);
+    init_pair(CP_CHECK_PC,     t->pc_white, t->check);
+    init_pair(CP_CHECK_PC_B,   t->pc_black, t->check);
+
+    init_pair(CP_LMVL,   t->lm_light, t->lm_light);
+    init_pair(CP_LMVD,   t->lm_dark,  t->lm_dark);
+    init_pair(CP_W_LMVL, t->pc_white, t->lm_light);
+    init_pair(CP_W_LMVD, t->pc_white, t->lm_dark);
+    init_pair(CP_B_LMVL, t->pc_black, t->lm_light);
+    init_pair(CP_B_LMVD, t->pc_black, t->lm_dark);
+
+    init_pair(CP_BORDER,     t->line, bg);
+    init_pair(CP_TITLE,      t->fg,   bg);
+    init_pair(CP_LINK,       t->dim,  bg);
+    init_pair(CP_LABEL,      t->dim,  bg);
+    init_pair(CP_INFO_HEAD,  t->acc_board, bg);
+    init_pair(CP_INFO_VAL,   t->fg,   bg);
+    init_pair(CP_STATUS_OK,  t->ok,   bg);
+    init_pair(CP_STATUS_ERR, t->err,  bg);
+    init_pair(CP_HINT,       t->dim,  bg);
+    init_pair(CP_CMD,        t->fg,   bg);
+    init_pair(CP_MOVE_W,     t->fg,   bg);
+    init_pair(CP_MOVE_B,     t->dim,  bg);
+    init_pair(CP_CAP_W,      t->fg,   bg);
+    init_pair(CP_CAP_B,      t->dim,  bg);
+    init_pair(CP_CANVAS,     t->fg,   bg);
+    init_pair(CP_SHADOW,     t->shadow, bg);
+    init_pair(CP_FRAME,      t->line, bg);
+
+    init_pair(CP_ACC_BOARD,  t->acc_board,  bg);
+    init_pair(CP_ACC_EVAL,   t->acc_eval,   bg);
+    init_pair(CP_ACC_CLOCK,  t->acc_clock,  bg);
+    init_pair(CP_ACC_MOVES,  t->acc_moves,  bg);
+    init_pair(CP_ACC_ENGINE, t->acc_engine, bg);
+    init_pair(CP_TRACK,      t->track, t->track);
+    for (int i = 0; i < THEME_RAMP; i++)
+        init_pair(CP_RAMP_BASE + i, t->ramp[i], bg);
+}
+
+static void init_palette_8(const Theme *t)
+{
+    static const int RAMP8[THEME_RAMP] = {
+        COLOR_GREEN, COLOR_GREEN, COLOR_GREEN, COLOR_YELLOW,
+        COLOR_YELLOW, COLOR_YELLOW, COLOR_RED, COLOR_RED,
+    };
+
+    init_pair(CP_LIGHT,      COLOR_BLACK,  COLOR_WHITE);
+    init_pair(CP_DARK,       COLOR_WHITE,  COLOR_BLACK);
+    init_pair(CP_W_LIGHT,    COLOR_YELLOW, COLOR_WHITE);
+    init_pair(CP_W_DARK,     COLOR_YELLOW, COLOR_BLACK);
+    init_pair(CP_B_LIGHT,    COLOR_RED,    COLOR_WHITE);
+    init_pair(CP_B_DARK,     COLOR_RED,    COLOR_BLACK);
+    init_pair(CP_CURSOR,       fb_plain_fg(t->fb_cursor_bg),    t->fb_cursor_bg);
+    init_pair(CP_CURSOR_PC,    fb_white_pc_fg(t->fb_cursor_bg), t->fb_cursor_bg);
+    init_pair(CP_CURSOR_PC_B,  fb_black_pc_fg(t->fb_cursor_bg), t->fb_cursor_bg);
+    init_pair(CP_SEL,          fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
+    init_pair(CP_SEL_PC,       fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+    init_pair(CP_SEL_PC_B,     fb_black_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+    init_pair(CP_MOVE_HI,      fb_plain_fg(t->fb_movehi_bg),    t->fb_movehi_bg);
+    init_pair(CP_MOVE_HI_PC,   fb_white_pc_fg(t->fb_movehi_bg), t->fb_movehi_bg);
+    init_pair(CP_MOVE_HI_PC_B, fb_black_pc_fg(t->fb_movehi_bg), t->fb_movehi_bg);
+    init_pair(CP_CHECK_SQ,     fb_plain_fg(t->fb_check_bg),     t->fb_check_bg);
+    init_pair(CP_CHECK_PC,     fb_white_pc_fg(t->fb_check_bg),  t->fb_check_bg);
+    init_pair(CP_CHECK_PC_B,   fb_black_pc_fg(t->fb_check_bg),  t->fb_check_bg);
+    init_pair(CP_LMVL,       fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
+    init_pair(CP_LMVD,       fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
+    init_pair(CP_W_LMVL,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+    init_pair(CP_W_LMVD,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+    init_pair(CP_B_LMVL,     fb_black_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+    init_pair(CP_B_LMVD,     fb_black_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
+    init_pair(CP_BORDER,     t->fb_accent, -1);
+    init_pair(CP_TITLE,      t->fb_accent, -1);
+    init_pair(CP_LINK,       COLOR_WHITE,  -1);
+    init_pair(CP_LABEL,      t->fb_accent, -1);
+    init_pair(CP_INFO_HEAD,  COLOR_YELLOW, -1);
+    init_pair(CP_INFO_VAL,   COLOR_WHITE,  -1);
+    init_pair(CP_STATUS_OK,  COLOR_GREEN,  -1);
+    init_pair(CP_STATUS_ERR, COLOR_RED,    -1);
+    init_pair(CP_HINT,       t->fb_accent, -1);
+    init_pair(CP_CMD,        COLOR_WHITE,  -1);
+    init_pair(CP_MOVE_W,     COLOR_WHITE,  -1);
+    init_pair(CP_MOVE_B,     t->fb_accent, -1);
+    init_pair(CP_CAP_W,      COLOR_BLUE,   -1);
+    init_pair(CP_CAP_B,      COLOR_RED,    -1);
+    init_pair(CP_CANVAS,     COLOR_WHITE,  -1);
+    init_pair(CP_SHADOW,     COLOR_BLACK,  -1);
+    init_pair(CP_FRAME,      t->fb_accent, -1);
+    init_pair(CP_ACC_BOARD,  COLOR_YELLOW,  -1);
+    init_pair(CP_ACC_EVAL,   COLOR_GREEN,   -1);
+    init_pair(CP_ACC_CLOCK,  COLOR_YELLOW,  -1);
+    init_pair(CP_ACC_MOVES,  COLOR_MAGENTA, -1);
+    init_pair(CP_ACC_ENGINE, COLOR_CYAN,    -1);
+    init_pair(CP_TRACK,      COLOR_BLACK, COLOR_BLACK);
+    for (int i = 0; i < THEME_RAMP; i++)
+        init_pair(CP_RAMP_BASE + i, RAMP8[i], -1);
+}
+
 void init_colors(int theme)
 {
-    init_glyph_width();   /* detect 1- vs 2-cell chess glyphs for this terminal */
+    init_glyph_width();
     if (!has_colors()) return;
     start_color();
     use_default_colors();
 
     const Theme *t = theme_get(theme);
+    if (COLORS >= 256) init_palette_256(t);
+    else               init_palette_8(t);
 
-    if (can_change_color()) {
-        /* Define palette ── */
-        init_color(COL_LIGHT,  t->light[0],  t->light[1],  t->light[2]);
-        init_color(COL_DARK,   t->dark[0],   t->dark[1],   t->dark[2]);
-        /* COL_WPFG slot unused — white pieces use COLOR_YELLOW directly */
-        init_color(COL_BPFG,   t->bpfg[0],   t->bpfg[1],   t->bpfg[2]);
-        init_color(COL_CURSOR, t->cursor[0], t->cursor[1], t->cursor[2]);
-        init_color(COL_SEL,    t->sel[0],    t->sel[1],    t->sel[2]);
-        init_color(COL_MOVEHI, t->movehi[0], t->movehi[1], t->movehi[2]);
-        init_color(COL_CHECK,  t->check[0],  t->check[1],  t->check[2]);
-        init_color(COL_GOLD,   t->gold[0],   t->gold[1],   t->gold[2]);
-        init_color(COL_LMVL,   t->lmvl[0],   t->lmvl[1],   t->lmvl[2]);
-        init_color(COL_LMVD,   t->lmvd[0],   t->lmvd[1],   t->lmvd[2]);
-        init_color(COL_CANVAS, t->canvas[0], t->canvas[1], t->canvas[2]);
-        init_color(COL_CHROME, t->chrome[0], t->chrome[1], t->chrome[2]);
-        init_color(COL_SHADOW, t->shadow[0], t->shadow[1], t->shadow[2]);
-
-        /* Board squares (fg = bg = same, invisible on empty cells) ── */
-        init_pair(CP_LIGHT,      COL_LIGHT,  COL_LIGHT);
-        init_pair(CP_DARK,       COL_DARK,   COL_DARK);
-
-        /* Normal piece pairs ── */
-        init_pair(CP_W_LIGHT,    COLOR_YELLOW, COL_LIGHT);
-        init_pair(CP_W_DARK,     COLOR_YELLOW, COL_DARK);
-        init_pair(CP_B_LIGHT,    COL_BPFG,   COL_LIGHT);
-        init_pair(CP_B_DARK,     COL_BPFG,   COL_DARK);
-
-        /* Cursor (arrow-key highlight) ── */
-        init_pair(CP_CURSOR,     COL_CANVAS, COL_CURSOR);
-        init_pair(CP_CURSOR_PC,  COLOR_YELLOW, COL_CURSOR);
-
-        /* Selection ── */
-        init_pair(CP_SEL,        COL_CANVAS, COL_SEL);
-        init_pair(CP_SEL_PC,     COLOR_YELLOW, COL_SEL);
-
-        /* Legal move destination highlight ── */
-        init_pair(CP_MOVE_HI,    COL_CANVAS, COL_MOVEHI);
-        init_pair(CP_MOVE_HI_PC, COLOR_YELLOW, COL_MOVEHI);
-
-        /* Check ── */
-        init_pair(CP_CHECK_SQ,   COL_GOLD,   COL_CHECK);
-        init_pair(CP_CHECK_PC,   COL_GOLD,   COL_CHECK);
-
-        /* Last-move ── */
-        init_pair(CP_LMVL,       COL_LIGHT,  COL_LMVL);
-        init_pair(CP_LMVD,       COL_DARK,   COL_LMVD);
-        init_pair(CP_W_LMVL,     COLOR_YELLOW, COL_LMVL);
-        init_pair(CP_W_LMVD,     COLOR_YELLOW, COL_LMVD);
-        init_pair(CP_B_LMVL,     COL_BPFG,   COL_LMVL);
-        init_pair(CP_B_LMVD,     COL_BPFG,   COL_LMVD);
-
-        /* UI chrome ── */
-        init_pair(CP_BORDER,     COL_CHROME,  -1);
-        init_pair(CP_TITLE,      COL_CHROME,  -1);
-        init_pair(CP_LINK,       COLOR_WHITE, -1);
-        init_pair(CP_LABEL,      COL_CHROME,  -1);
-        init_pair(CP_INFO_HEAD,  COLOR_YELLOW,-1);
-        init_pair(CP_INFO_VAL,   COLOR_WHITE, -1);
-        init_pair(CP_STATUS_OK,  COLOR_GREEN, -1);
-        init_pair(CP_STATUS_ERR, COLOR_RED,   -1);
-        init_pair(CP_HINT,       COL_CHROME,  -1);
-        init_pair(CP_CMD,        COLOR_WHITE, -1);
-        init_pair(CP_MOVE_W,     COLOR_WHITE, -1);
-        init_pair(CP_MOVE_B,     COL_CHROME,  -1);
-        init_pair(CP_CAP_W,      COLOR_WHITE, -1);
-        init_pair(CP_CAP_B,      COLOR_YELLOW,-1);
-        init_pair(CP_CANVAS,     COL_CANVAS,  COL_CANVAS);
-        init_pair(CP_SHADOW,     COL_SHADOW,  -1);
-        init_pair(CP_FRAME,      COL_CHROME,  -1);
-
-    } else {
-        /* 8-color fallback
-         * No custom RGB on this terminal, only the 8 standard ANSI
-         * colors -- board squares stay a fixed black/white regardless
-         * of theme (safest for piece readability); the accent colors
-         * (t->fb_*) are what actually varies by theme here. */
-        init_pair(CP_LIGHT,      COLOR_BLACK,  COLOR_WHITE);
-        init_pair(CP_DARK,       COLOR_WHITE,  COLOR_BLACK);
-        init_pair(CP_W_LIGHT,    COLOR_YELLOW, COLOR_WHITE);
-        init_pair(CP_W_DARK,     COLOR_YELLOW, COLOR_BLACK);
-        init_pair(CP_B_LIGHT,    COLOR_RED,    COLOR_WHITE);
-        init_pair(CP_B_DARK,     COLOR_RED,    COLOR_BLACK);
-        init_pair(CP_CURSOR,     fb_plain_fg(t->fb_cursor_bg),    t->fb_cursor_bg);
-        init_pair(CP_CURSOR_PC,  fb_white_pc_fg(t->fb_cursor_bg), t->fb_cursor_bg);
-        init_pair(CP_SEL,        fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
-        init_pair(CP_SEL_PC,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
-        init_pair(CP_MOVE_HI,    fb_plain_fg(t->fb_movehi_bg),    t->fb_movehi_bg);
-        init_pair(CP_MOVE_HI_PC, fb_white_pc_fg(t->fb_movehi_bg), t->fb_movehi_bg);
-        init_pair(CP_CHECK_SQ,   fb_plain_fg(t->fb_check_bg),     t->fb_check_bg);
-        init_pair(CP_CHECK_PC,   fb_white_pc_fg(t->fb_check_bg),  t->fb_check_bg);
-        init_pair(CP_LMVL,       fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
-        init_pair(CP_LMVD,       fb_plain_fg(t->fb_sel_bg),       t->fb_sel_bg);
-        init_pair(CP_W_LMVL,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
-        init_pair(CP_W_LMVD,     fb_white_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
-        init_pair(CP_B_LMVL,     fb_black_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
-        init_pair(CP_B_LMVD,     fb_black_pc_fg(t->fb_sel_bg),    t->fb_sel_bg);
-        init_pair(CP_BORDER,     t->fb_accent, -1);
-        init_pair(CP_TITLE,      t->fb_accent, -1);
-        init_pair(CP_LINK,       COLOR_WHITE,  -1);
-        init_pair(CP_LABEL,      t->fb_accent, -1);
-        init_pair(CP_INFO_HEAD,  COLOR_YELLOW, -1);
-        init_pair(CP_INFO_VAL,   COLOR_WHITE,  -1);
-        init_pair(CP_STATUS_OK,  COLOR_GREEN,  -1);
-        init_pair(CP_STATUS_ERR, COLOR_RED,    -1);
-        init_pair(CP_HINT,       t->fb_accent, -1);
-        init_pair(CP_CMD,        COLOR_WHITE,  -1);
-        init_pair(CP_MOVE_W,     COLOR_WHITE,  -1);
-        init_pair(CP_MOVE_B,     t->fb_accent, -1);
-        init_pair(CP_CAP_W,      COLOR_BLUE,   -1);
-        init_pair(CP_CAP_B,      COLOR_RED,    -1);
-        init_pair(CP_CANVAS,     COLOR_WHITE,  COLOR_BLACK);
-        /* "Bright black" is the only grey the 8-colour palette offers;
-         * paired with A_DIM at draw time it reads as shade. */
-        init_pair(CP_SHADOW,     COLOR_BLACK,  -1);
-        init_pair(CP_FRAME,      t->fb_accent, -1);
-    }
+    bkgd(COLOR_PAIR(CP_CANVAS));
 }
 
 /* Internal helpers  */
@@ -455,10 +459,10 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
             attr_t pc_attr = sq_attr;
             if (piece >= 0) {
                 int iw = (piece < 6);
-                if      (is_check)  pc_attr = COLOR_PAIR(CP_CHECK_PC)   | A_BOLD;
-                else if (is_sel)    pc_attr = COLOR_PAIR(CP_SEL_PC)     | A_BOLD;
-                else if (is_cursor) pc_attr = COLOR_PAIR(CP_CURSOR_PC)  | A_BOLD;
-                else if (is_movehi) pc_attr = COLOR_PAIR(CP_MOVE_HI_PC) | A_BOLD;
+                if      (is_check)  pc_attr = COLOR_PAIR(iw ? CP_CHECK_PC   : CP_CHECK_PC_B)   | A_BOLD;
+                else if (is_sel)    pc_attr = COLOR_PAIR(iw ? CP_SEL_PC     : CP_SEL_PC_B)     | A_BOLD;
+                else if (is_cursor) pc_attr = COLOR_PAIR(iw ? CP_CURSOR_PC  : CP_CURSOR_PC_B)  | A_BOLD;
+                else if (is_movehi) pc_attr = COLOR_PAIR(iw ? CP_MOVE_HI_PC : CP_MOVE_HI_PC_B) | A_BOLD;
                 else if (is_lmv) {
                     if (iw) pc_attr = COLOR_PAIR(light ? CP_W_LMVL : CP_W_LMVD) | A_BOLD;
                     else    pc_attr = COLOR_PAIR(light ? CP_B_LMVL : CP_B_LMVD) | A_BOLD;

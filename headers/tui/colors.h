@@ -1,31 +1,14 @@
 #ifndef TUI_COLORS_H
 #define TUI_COLORS_H
 
-/* ncurses color-pair and color-slot registry ──────────────────────────
+/* Every init_pair() ID used anywhere in the TUI lives here and nowhere
+ * else: pair numbers are global to the ncurses session.
  *
- * Every init_pair()/init_color() ID used anywhere in the TUI lives here,
- * and nowhere else. These are global to the ncurses session: two files
- * that pick the same number are talking about the same pair, whether or
- * not they meant to.
+ *     1 - 55   CP_*
  *
- * This header exists because they used to be re-#defined per file, with
- * the numbers written out by hand -- render.c owned the real table while
- * tui.c and onboard.c each kept their own partial copy. Nothing checked
- * that the copies agreed, so renumbering a pair in render.c would
- * silently repaint whatever the stale copies pointed at.
- *
- * Ranges are carved up so they cannot collide:
- *     1 - 37   CP_*    main game UI  (render.c)
- *     8 - 21   COL_*   custom RGB slots, NOT pairs -- a different
- *                      namespace, so overlapping CP_* numbers is fine
- *    40 - 57   SCP_*   statistics screens (stats_tui.c)
- *    60 - 68   SCOL_*  custom RGB slots for the statistics screens
- *
- * Adding a pair means taking the next free number in the right range and
- * leaving a gap at the end of it, not renumbering what is already here.
- */
+ * Add a pair at the end. IDs must stay below 64, the pair count many
+ * 8-colour terminals offer. */
 
-/* Game UI pairs (render.c) ───────────────────────────────────────────── */
 #define CP_LIGHT        1   /* light square bg                    */
 #define CP_DARK         2   /* dark  square bg                    */
 #define CP_W_LIGHT      3   /* white piece fg on light sq         */
@@ -33,13 +16,13 @@
 #define CP_B_LIGHT      5   /* black piece fg on light sq         */
 #define CP_B_DARK       6   /* black piece fg on dark  sq         */
 #define CP_CURSOR       7   /* cursor highlight (no piece)        */
-#define CP_CURSOR_PC    8   /* cursor highlight (piece)           */
+#define CP_CURSOR_PC    8   /* white piece on the cursor          */
 #define CP_SEL          9   /* selected square bg                 */
-#define CP_SEL_PC      10   /* selected square piece              */
+#define CP_SEL_PC      10   /* white piece on the selection       */
 #define CP_MOVE_HI     11   /* legal-move dest highlight bg       */
-#define CP_MOVE_HI_PC  12   /* legal-move dest with piece         */
+#define CP_MOVE_HI_PC  12   /* white piece on a legal destination */
 #define CP_CHECK_SQ    13   /* king-in-check square               */
-#define CP_CHECK_PC    14   /* king piece on check sq             */
+#define CP_CHECK_PC    14   /* white king on the check square     */
 #define CP_LMVL        15   /* last-move light sq                 */
 #define CP_LMVD        16   /* last-move dark  sq                 */
 #define CP_W_LMVL      17   /* white piece on last-move light sq  */
@@ -64,51 +47,23 @@
 #define CP_SHADOW      36   /* panel drop shadow                  */
 #define CP_FRAME       37   /* board frame / grid border          */
 
-/* Custom RGB slots for the game UI (init_color, not init_pair) ───────── */
-#define COL_LIGHT       8
-#define COL_DARK        9
-#define COL_WPFG       10   /* unused: white pieces use COLOR_YELLOW directly */
-#define COL_BPFG       11
-#define COL_CURSOR     12
-#define COL_SEL        13
-#define COL_MOVEHI     14
-#define COL_CHECK      15
-#define COL_GOLD       16
-#define COL_LMVL       17
-#define COL_LMVD       18
-#define COL_CANVAS     19
-#define COL_CHROME     20
-#define COL_SHADOW     21
+#define CP_ACC_BOARD   38
+#define CP_ACC_EVAL    39
+#define CP_ACC_CLOCK   40
+#define CP_ACC_MOVES   41
+#define CP_ACC_ENGINE  42
+#define CP_TRACK       43
+#define CP_RAMP_BASE   44   /* 44-51: gradient, low to high */
 
-/* Statistics screen pairs (stats_tui.c) ──────────────────────────────── */
-#define SCP_BORDER     40
-#define SCP_TITLE      41
-#define SCP_HEAD       42
-#define SCP_BAR_WIN    43
-#define SCP_BAR_LOSS   44
-#define SCP_BAR_DRAW   45
-#define SCP_BAR_BG     46
-#define SCP_VAL        47
-#define SCP_HINT       48
-#define SCP_LABEL      49
-#define SCP_GOOD       50
-#define SCP_BAD        51
-#define SCP_NEUT       52
-#define SCP_GRAPH_AX   53
-#define SCP_GRAPH_W    54
-#define SCP_GRAPH_L    55
-#define SCP_GRAPH_D    56
-#define SCP_GRAPH_BG   57
+/* Black-piece counterparts of 8, 10, 12 and 14. The block-art pieces
+ * share one silhouette, so colour is all that tells them apart. */
+#define CP_CURSOR_PC_B  52
+#define CP_SEL_PC_B     53
+#define CP_MOVE_HI_PC_B 54
+#define CP_CHECK_PC_B   55
 
-/* Custom RGB slots for the statistics screens ────────────────────────── */
-#define SCOL_TEAL      60
-#define SCOL_GOLD      61
-#define SCOL_RUST      62
-#define SCOL_SLATE     63
-#define SCOL_MIST      64
-#define SCOL_BARK      65
-#define SCOL_LIME      66
-#define SCOL_CORAL     67
-#define SCOL_SKY       68
+#define CP_LAST         55
+
+_Static_assert(CP_LAST < 64, "colour pair IDs must stay below 64");
 
 #endif

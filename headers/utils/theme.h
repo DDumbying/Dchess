@@ -16,18 +16,23 @@
 #define FB_CYAN    6
 #define FB_WHITE   7
 
+#define THEME_RAMP 8
+
+/* All colours are xterm-256 palette indices, used directly: no
+ * init_color(), so tmux and screen (which report can_change_color() false
+ * while offering 256 colours) get the real theme. */
 typedef struct {
     const char *name;
-    int light[3], dark[3], bpfg[3], cursor[3], sel[3], movehi[3],
-        check[3], gold[3], lmvl[3], lmvd[3], canvas[3], chrome[3];
+    int bg, fg, dim, line;
+    int acc_board, acc_eval, acc_clock, acc_moves, acc_engine;
+    int ramp[THEME_RAMP];            /* gradient, low to high */
+    int track;                       /* empty part of a bar */
+    int sq_light, sq_dark, pc_white, pc_black;
+    int cursor, sel, movehi, check, lm_light, lm_dark;
+    int ok, err, shadow;
 
-    /* Mid-grey, not black: every canvas here is already near-black. */
-    int shadow[3];
-
-    /* For terminals without can_change_color(). Board squares stay a
-     * fixed black/white -- readability beats theming -- so only the
-     * accents vary. */
-    int fb_accent;    /* border/title/hint/labels */
+    /* Terminals with fewer than 256 colours. */
+    int fb_accent;
     int fb_cursor_bg;
     int fb_sel_bg;
     int fb_movehi_bg;
@@ -36,11 +41,14 @@ typedef struct {
 
 int theme_count(void);
 
-/* Out-of-range clamps to 0 ("classic"). Never NULL. */
+/* Out-of-range clamps to 0 ("gruvbox"). Never NULL. */
 const Theme *theme_get(int theme);
 const char *theme_name(int theme);
 
 /* Case-insensitive. Returns -1 if no theme matches. */
 int theme_from_name(const char *name);
+
+/* WCAG contrast ratio between two xterm-256 colours, 1.0 to 21.0. */
+double theme_contrast(int a, int b);
 
 #endif

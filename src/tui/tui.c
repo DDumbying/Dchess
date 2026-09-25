@@ -353,6 +353,10 @@ static void screen_build(Screen *sc)
     sc->eval_bar = eval_bar_w ? newwin(main_h, eval_bar_w, 0, info_w) : NULL;
     sc->cmd      = newwin(cmd_h, cols, main_h, 0);
 
+    WINDOW *wins[] = { sc->board, sc->info, sc->eval_bar, sc->cmd };
+    for (int i = 0; i < 4; i++)
+        if (wins[i]) wbkgd(wins[i], COLOR_PAIR(CP_CANVAS));
+
     wbkgd(stdscr, COLOR_PAIR(CP_CANVAS));
     werase(stdscr);
     wrefresh(stdscr);

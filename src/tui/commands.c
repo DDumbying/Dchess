@@ -337,9 +337,14 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strncmp(cmd, "theme ", 6) == 0) {
         int t = theme_from_name(cmd + 6);
         if (t < 0) {
+            char names[96] = "";
+            for (int i = 0; i < theme_count(); i++) {
+                strncat(names, theme_name(i), sizeof(names) - strlen(names) - 1);
+                if (i + 1 < theme_count())
+                    strncat(names, " | ", sizeof(names) - strlen(names) - 1);
+            }
             snprintf(state->status, sizeof(state->status),
-                     "Unknown theme '%s'. Use: classic | midnight | forest | contrast",
-                     cmd + 6);
+                     "Unknown theme '%.40s'. Use: %s", cmd + 6, names);
             return 1;
         }
         state->theme = t;
