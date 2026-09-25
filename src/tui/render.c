@@ -251,8 +251,8 @@ static void hfill(WINDOW *w, int r, int c, int len, chtype ch)
 static void parse_last_move(const TUIState *s, int *from, int *to)
 {
     *from = *to = -1;
-    if (s->game.move_count < 1) return;
-    Move m = s->game.move_made[s->game.move_count - 1];
+    Move m;
+    if (!game_last_move(&s->game, &m)) return;
     *from = FROM(m);
     *to   = TO(m);
 }

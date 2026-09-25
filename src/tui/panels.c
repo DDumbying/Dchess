@@ -176,7 +176,8 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
 
     const GameState *g = &state->game;
     int total = (g->move_count + 1) / 2;
-    if (total == 0) {
+    int from  = g->log_start / 2;           /* a FEN may start mid-game */
+    if (g->move_count <= g->log_start) {
         wattron(p, COLOR_PAIR(CP_HINT));
         mvw_clip(p, 1, 2, "no moves yet");
         wattroff(p, COLOR_PAIR(CP_HINT));
@@ -184,7 +185,7 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
     }
 
     int rows  = h - 2;
-    int first = total > rows ? total - rows : 0;
+    int first = total - from > rows ? total - rows : from;
     for (int m = first; m < total; m++) {
         int r = 1 + (m - first);
         int wi = 2 * m, bi = 2 * m + 1;
@@ -196,7 +197,7 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
         attr_t wa = (wi == g->move_count - 1) ? (COLOR_PAIR(CP_ACC_MOVES) | A_BOLD)
                                               : COLOR_PAIR(CP_INFO_VAL);
         wattron(p, wa);
-        mvw_clip(p, r, 6, "%s", g->move_history[wi]);
+        mvw_clip(p, r, 6, "%s", wi < g->log_start ? "..." : g->move_history[wi]);
         wattroff(p, wa);
 
         if (bi < g->move_count) {

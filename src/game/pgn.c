@@ -54,12 +54,14 @@ static void write_movetext(FILE *f, const GameState *g)
 {
     int col = 0;
 
-    for (int i = 0; i < g->move_count; i++) {
+    for (int i = g->log_start; i < g->move_count; i++) {
         char token[32];
         int n = 0;
 
         if (i % 2 == 0)
             n = snprintf(token, sizeof(token), "%d. %s", i / 2 + 1, g->move_history[i]);
+        else if (i == g->log_start)   /* game begins with Black to move */
+            n = snprintf(token, sizeof(token), "%d... %s", i / 2 + 1, g->move_history[i]);
         else
             n = snprintf(token, sizeof(token), "%s", g->move_history[i]);
 

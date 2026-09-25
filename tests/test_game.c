@@ -602,6 +602,21 @@ static void test_eval_perspective(void)
           timed.elapsed_ms >= 150 && timed.elapsed_ms < 2000);
 }
 
+static void test_last_move_after_fen(void)
+{
+    printf("== last move after loading a FEN ==\n");
+    GameState g;
+    game_reset(&g);
+    game_load_fen(&g, "4k3/8/8/8/8/8/4P3/4K3 w - - 0 12");
+
+    Move m = 0;
+    check("no move has been played since the FEN", game_last_move(&g, &m) == 0);
+
+    play(&g, "e2e4");
+    check("after one, it is that move",
+          game_last_move(&g, &m) == 1 && FROM(m) == e2 && TO(m) == e4);
+}
+
 int main(void)
 {
     init_attacks();
@@ -618,6 +633,7 @@ int main(void)
     test_undo_special_moves();
     test_undo_repeated();
     test_eval_perspective();
+    test_last_move_after_fen();
     test_find_move();
     test_load_fen();
     test_piece_at();

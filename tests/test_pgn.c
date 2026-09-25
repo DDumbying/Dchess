@@ -156,6 +156,31 @@ static void test_line_wrapping(void)
     check("it actually wrapped", longest > 0 && strchr(movetext + 3, '\n') != NULL);
 }
 
+static void test_mid_game_fen(void)
+{
+    printf("== a game loaded mid-way through ==\n");
+
+    GameState g;
+    game_reset(&g);
+    check("a move-12 FEN loads",
+          game_load_fen(&g, "4k3/8/8/8/8/8/4P3/4K3 w - - 0 12") == 1);
+    play(&g, "e2e4");
+    render(&g, NULL);
+    const char *mt = strstr(out, "]\n\n");
+    check("movetext continues from the FEN's move number",
+          mt && strncmp(mt + 3, "12. e4 *", 8) == 0);
+    if (mt && strncmp(mt + 3, "12. e4 *", 8) != 0)
+        printf("        movetext was: %.60s\n", mt + 3);
+
+    game_reset(&g);
+    game_load_fen(&g, "4k3/4p3/8/8/8/8/4P3/4K3 b - - 0 12");
+    play(&g, "e7e5");
+    render(&g, NULL);
+    mt = strstr(out, "]\n\n");
+    check("a Black-first game starts with the ellipsis form",
+          mt && strncmp(mt + 3, "12... e5 *", 10) == 0);
+}
+
 int main(void)
 {
     init_attacks();
@@ -164,6 +189,7 @@ int main(void)
     test_result_tokens();
     test_setup_position();
     test_line_wrapping();
+    test_mid_game_fen();
 
     if (failures) {
         printf("\n%d PGN test(s) FAILED.\n", failures);

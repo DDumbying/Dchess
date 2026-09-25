@@ -36,6 +36,9 @@ typedef struct {
     int  move_piece[MAX_MOVE_HISTORY];       /* piece index 0-11 that moved */
     int  move_time[MAX_MOVE_HISTORY];        /* seconds spent on that move */
     int  move_count;                         /* half-moves played */
+    int  log_start;                          /* first ply actually logged; a
+                                                FEN starting mid-game has
+                                                no record of earlier ones */
 
     /* Draw detection */
     int  halfmove_clock;                     /* plies since pawn move/capture */
@@ -88,6 +91,10 @@ void game_play(GameState *g, Move m);
 void game_update_status(GameState *g);
 
 void game_record_eval(GameState *g, int score_cp);
+
+/* The last move played, or 0 if none has been since the game or FEN
+ * began. */
+int game_last_move(const GameState *g, Move *m);
 
 /* The most recent evaluation still in the history. Returns 0 if none. */
 int game_last_eval(const GameState *g, int *score_cp);

@@ -109,6 +109,7 @@ void game_reset(GameState *g)
 {
     init_start_position(&g->pos);
     clear_progress(g, 0);
+    g->log_start = 0;
     g->start_fen[0] = '\0';
     g->clock_side = g->pos.side;
     record_position(g);
@@ -130,6 +131,7 @@ int game_load_fen(GameState *g, const char *fen)
     /* The FEN fullmove number counts move *pairs* from 1, so this is an
      * approximation of half-moves played, used only for display. */
     g->move_count = (fm - 1) * 2 + (g->pos.side == BLACK ? 1 : 0);
+    g->log_start  = g->move_count;
     g->clock_side = g->pos.side;
     record_position(g);
     return 1;
@@ -315,5 +317,12 @@ int game_last_eval(const GameState *g, int *score_cp)
 {
     if (g->eval_count <= 0) return 0;
     *score_cp = g->eval_history[g->eval_count - 1];
+    return 1;
+}
+
+int game_last_move(const GameState *g, Move *m)
+{
+    if (g->move_count <= g->log_start) return 0;
+    *m = g->move_made[g->move_count - 1];
     return 1;
 }
