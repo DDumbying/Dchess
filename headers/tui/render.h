@@ -13,7 +13,8 @@
  * theme_name()/theme_from_name()/theme_count(). */
 void init_colors(int theme);
 
-void render_all(WINDOW *board_win, WINDOW *info_win, WINDOW *eval_bar_win,
-                WINDOW *cmd_win, const TUIState *state);
+void mvw_clip(WINDOW *win, int row, int col, const char *fmt, ...);
+
+void render_all(WINDOW *board, WINDOW *side, WINDOW *cmd, const TUIState *state);
 
 #endif

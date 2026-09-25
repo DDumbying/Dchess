@@ -21,6 +21,7 @@ typedef struct {
     int      engine_depth;
     int      engine_side;
     char     last_eval[32];   /* formatted for display, e.g. "+0.34" */
+    SearchResult last_search; /* nodes == 0 until the first search */
 
     /* Cursor & selection */
     int      cursor_row;

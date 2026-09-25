@@ -1,4 +1,5 @@
 #include "tui/input.h"
+#include "tui/colors.h"
 #include "tui/render.h"
 #include <string.h>
 #include <ncurses.h>
@@ -36,12 +37,12 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
     const int prompt_col = 16;
 
     /* Redraw command bar */
-    wattron(win, COLOR_PAIR(7));
+    wattron(win, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
     if (*insert_mode)
         mvwprintw(win, 1, 1, " -- INSERT --  ");
     else
         mvwprintw(win, 1, 1, " -- NORMAL --  ");
-    wattroff(win, COLOR_PAIR(7));
+    wattroff(win, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
     for (int c = prompt_col; c < w - 1; c++) mvwaddch(win, 1, c, ' ');
     if (*insert_mode)
         mvwprintw(win, 1, prompt_col, "%.*s", w - prompt_col - 2, ibuf);

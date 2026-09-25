@@ -64,6 +64,7 @@ void tui_new_game(TUIState *state)
     cancel_engine_search(state);
 
     game_reset(&state->game);
+    memset(&state->last_search, 0, sizeof(state->last_search));
 
     state->selected  = 0;
     state->view_side = WHITE;
@@ -159,6 +160,7 @@ static void apply_engine_result(TUIState *state, SearchResult res)
     float eval_f = score_white / 100.0f;
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
     game_record_eval(&state->game, score_white);
+    state->last_search = res;
 
     game_play(&state->game, res.best_move);
 
