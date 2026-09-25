@@ -329,6 +329,8 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
 
 SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
     SearchResult best = {0, -INF, 0, 0};
+    struct timespec started;
+    clock_gettime(CLOCK_MONOTONIC, &started);
     node_count = 0;
     tt_ensure();
     memset(killers, 0, sizeof(killers));
@@ -401,5 +403,10 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
     }
 
     best.nodes = node_count;
+
+    struct timespec finished;
+    clock_gettime(CLOCK_MONOTONIC, &finished);
+    best.elapsed_ms = (finished.tv_sec - started.tv_sec) * 1000L
+                    + (finished.tv_nsec - started.tv_nsec) / 1000000L;
     return best;
 }

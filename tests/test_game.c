@@ -579,6 +579,13 @@ static void test_eval_perspective(void)
     SearchResult b = search(&g.pos, 3, 0);
     check("queen up, Black to move: still positive for White",
           eval_white_view(b.best_score, g.pos.side) > 500);
+
+    /* A 200 ms budget that cannot complete depth 64 must report ~200 ms. */
+    GameState t;
+    game_reset(&t);
+    SearchResult timed = search(&t.pos, 64, 200);
+    check("a search reports how long it took",
+          timed.elapsed_ms >= 150 && timed.elapsed_ms < 2000);
 }
 
 int main(void)
