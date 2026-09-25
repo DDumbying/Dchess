@@ -9,6 +9,7 @@ typedef struct {
     int  best_score;
     long nodes;
     int  depth_reached; /* deepest iteration fully completed */
+    long elapsed_ms;
 } SearchResult;
 
 /* Iterative deepening: searches depth 1, 2, 3, ... up to max_depth,

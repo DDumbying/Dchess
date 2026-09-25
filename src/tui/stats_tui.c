@@ -5,6 +5,28 @@
 
 #include "tui/stats_tui.h"
 #include "tui/colors.h"
+#include "tui/render.h"
+#include "tui/panels.h"
+
+/* The statistics screens draw with the active theme's pairs. */
+#define SCP_BORDER   CP_BORDER
+#define SCP_TITLE    CP_ACC_BOARD
+#define SCP_HEAD     CP_ACC_ENGINE
+#define SCP_BAR_WIN  CP_STATUS_OK
+#define SCP_BAR_LOSS CP_STATUS_ERR
+#define SCP_BAR_DRAW CP_ACC_CLOCK
+#define SCP_BAR_BG   CP_TRACK
+#define SCP_VAL      CP_INFO_VAL
+#define SCP_HINT     CP_HINT
+#define SCP_LABEL    CP_INFO_VAL
+#define SCP_GOOD     CP_STATUS_OK
+#define SCP_BAD      CP_STATUS_ERR
+#define SCP_NEUT     CP_ACC_CLOCK
+#define SCP_GRAPH_AX CP_HINT
+#define SCP_GRAPH_W  CP_STATUS_OK
+#define SCP_GRAPH_L  CP_STATUS_ERR
+#define SCP_GRAPH_D  CP_ACC_CLOCK
+#define SCP_GRAPH_BG CP_TRACK
 #include "tui/panel.h"
 #include "utils/stats.h"
 #include <ncurses.h>
@@ -13,63 +35,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-static int colors_inited = 0;
-
-static void init_stats_colors(void)
-{
-    if (colors_inited) return;
-    colors_inited = 1;
-
-    if (can_change_color()) {
-        init_color(SCOL_TEAL,  200, 700, 650);
-        init_color(SCOL_GOLD,  950, 820, 200);
-        init_color(SCOL_RUST,  800, 300, 200);
-        init_color(SCOL_SLATE, 400, 450, 500);
-        init_color(SCOL_MIST,  650, 700, 720);
-        init_color(SCOL_BARK,  120, 130, 140);
-        init_color(SCOL_LIME,  300, 850, 400);
-        init_color(SCOL_CORAL, 900, 400, 350);
-        init_color(SCOL_SKY,   350, 650, 950);
-
-        init_pair(SCP_BORDER,   SCOL_TEAL,  -1);
-        init_pair(SCP_TITLE,    SCOL_GOLD,  -1);
-        init_pair(SCP_HEAD,     SCOL_TEAL,  -1);
-        init_pair(SCP_BAR_WIN,  SCOL_TEAL,  -1);
-        init_pair(SCP_BAR_LOSS, SCOL_RUST,  -1);
-        init_pair(SCP_BAR_DRAW, SCOL_GOLD,  -1);
-        init_pair(SCP_BAR_BG,   SCOL_BARK,  SCOL_BARK);
-        init_pair(SCP_VAL,      SCOL_MIST,  -1);
-        init_pair(SCP_HINT,     SCOL_SLATE, -1);
-        init_pair(SCP_LABEL,    SCOL_MIST,  -1);
-        init_pair(SCP_GOOD,     SCOL_LIME,  -1);
-        init_pair(SCP_BAD,      SCOL_RUST,  -1);
-        init_pair(SCP_NEUT,     SCOL_GOLD,  -1);
-        init_pair(SCP_GRAPH_AX, SCOL_SLATE, -1);
-        init_pair(SCP_GRAPH_W,  SCOL_LIME,  -1);
-        init_pair(SCP_GRAPH_L,  SCOL_CORAL, -1);
-        init_pair(SCP_GRAPH_D,  SCOL_GOLD,  -1);
-        init_pair(SCP_GRAPH_BG, SCOL_BARK,  -1);
-    } else {
-        init_pair(SCP_BORDER,   COLOR_CYAN,   -1);
-        init_pair(SCP_TITLE,    COLOR_YELLOW, -1);
-        init_pair(SCP_HEAD,     COLOR_CYAN,   -1);
-        init_pair(SCP_BAR_WIN,  COLOR_CYAN,   -1);
-        init_pair(SCP_BAR_LOSS, COLOR_RED,    -1);
-        init_pair(SCP_BAR_DRAW, COLOR_YELLOW, -1);
-        init_pair(SCP_BAR_BG,   COLOR_BLACK,  COLOR_BLACK);
-        init_pair(SCP_VAL,      COLOR_WHITE,  -1);
-        init_pair(SCP_HINT,     COLOR_WHITE,  -1);
-        init_pair(SCP_LABEL,    COLOR_WHITE,  -1);
-        init_pair(SCP_GOOD,     COLOR_GREEN,  -1);
-        init_pair(SCP_BAD,      COLOR_RED,    -1);
-        init_pair(SCP_NEUT,     COLOR_YELLOW, -1);
-        init_pair(SCP_GRAPH_AX, COLOR_WHITE,  -1);
-        init_pair(SCP_GRAPH_W,  COLOR_GREEN,  -1);
-        init_pair(SCP_GRAPH_L,  COLOR_RED,    -1);
-        init_pair(SCP_GRAPH_D,  COLOR_YELLOW, -1);
-        init_pair(SCP_GRAPH_BG, COLOR_BLACK,  -1);
-    }
-}
 
 /* Shared drawing helpers  */
 
@@ -293,20 +258,13 @@ static void draw_history_graph(WINDOW *win, int row_top, int col_l,
 
 void draw_stats_overlay(WINDOW *win, const DchessStats *s)
 {
-    init_stats_colors();
     wclear(win);
 
     int wh, ww;
     getmaxyx(win, wh, ww);
 
-    wattron(win, COLOR_PAIR(SCP_BORDER));
-    box(win, ACS_VLINE, ACS_HLINE);
-    wattroff(win, COLOR_PAIR(SCP_BORDER));
-
-    wattron(win, COLOR_PAIR(SCP_TITLE) | A_BOLD);
-    const char *title = " dchess — Statistics ";
-    mvwprintw(win, 0, (ww - (int)strlen(title)) / 2, "%s", title);
-    wattroff(win, COLOR_PAIR(SCP_TITLE) | A_BOLD);
+    wbkgd(win, COLOR_PAIR(CP_CANVAS));
+    panel_frame(win, "dchess · statistics", CP_ACC_ENGINE);
 
     wattron(win, COLOR_PAIR(SCP_HINT));
     const char *hint = " press any key to resume game ";
@@ -522,6 +480,7 @@ void show_stats_overlay(const DchessStats *s)
     curs_set(0);
     start_color();
     use_default_colors();
+    init_colors(0);
 
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
@@ -544,7 +503,6 @@ void show_stats_overlay(const DchessStats *s)
  */
 void draw_stats_mini(WINDOW *parent, const DchessStats *s)
 {
-    init_stats_colors();
 
     int ph, pw;
     getmaxyx(parent, ph, pw);
@@ -565,17 +523,10 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
 
     WINDOW *shadow = panel_shadow(pop_h, pop_w, pop_r, pop_c);
     WINDOW *pop    = newwin(pop_h, pop_w, pop_r, pop_c);
+    wbkgd(pop, COLOR_PAIR(CP_CANVAS));
     keypad(pop, TRUE);
 
-    wattron(pop, COLOR_PAIR(SCP_BORDER));
-    box(pop, ACS_VLINE, ACS_HLINE);
-    wattroff(pop, COLOR_PAIR(SCP_BORDER));
-
-    /* Title */
-    wattron(pop, COLOR_PAIR(SCP_TITLE) | A_BOLD);
-    const char *title = " Statistics ";
-    mvwprintw(pop, 0, (pop_w - (int)strlen(title)) / 2, "%s", title);
-    wattroff(pop, COLOR_PAIR(SCP_TITLE) | A_BOLD);
+    panel_frame(pop, "statistics", CP_ACC_ENGINE);
 
     /* Dismiss hint */
     wattron(pop, COLOR_PAIR(SCP_HINT));

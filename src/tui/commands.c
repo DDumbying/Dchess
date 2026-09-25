@@ -53,6 +53,12 @@ void tui_undo(TUIState *state)
     for (int i = 0; i < needed; i++)
         game_undo(&state->game);
 
+    int cp;
+    if (game_last_eval(&state->game, &cp))
+        snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", cp / 100.0f);
+    else
+        snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
+
     state->selected = 0;
     memset(state->highlight, 0, sizeof(state->highlight));
     snprintf(state->status, sizeof(state->status),
@@ -64,6 +70,7 @@ void tui_new_game(TUIState *state)
     cancel_engine_search(state);
 
     game_reset(&state->game);
+    memset(&state->last_search, 0, sizeof(state->last_search));
 
     state->selected  = 0;
     state->view_side = WHITE;
@@ -155,12 +162,11 @@ static void apply_engine_result(TUIState *state, SearchResult res)
         return;
     }
 
-    /* Negamax reports for the side that just moved; flip so last_eval is
-     * always from White's point of view. */
-    int score_white = (state->game.pos.side == BLACK) ? res.best_score : -res.best_score;
+    int score_white = eval_white_view(res.best_score, state->game.pos.side);
     float eval_f = score_white / 100.0f;
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
-    game_record_eval(&state->game, res.best_score);
+    game_record_eval(&state->game, score_white);
+    state->last_search = res;
 
     game_play(&state->game, res.best_move);
 
@@ -330,6 +336,8 @@ int handle_command(TUIState *state, const char *cmd) {
         }
         state->selected = 0;
         memset(state->highlight, 0, sizeof(state->highlight));
+        memset(&state->last_search, 0, sizeof(state->last_search));
+        snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
         snprintf(state->status, sizeof(state->status), "Position loaded from FEN");
 
         if (!state->two_player && state->engine_side == state->game.pos.side)
@@ -339,9 +347,14 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strncmp(cmd, "theme ", 6) == 0) {
         int t = theme_from_name(cmd + 6);
         if (t < 0) {
+            char names[96] = "";
+            for (int i = 0; i < theme_count(); i++) {
+                strncat(names, theme_name(i), sizeof(names) - strlen(names) - 1);
+                if (i + 1 < theme_count())
+                    strncat(names, " | ", sizeof(names) - strlen(names) - 1);
+            }
             snprintf(state->status, sizeof(state->status),
-                     "Unknown theme '%s'. Use: classic | midnight | forest | contrast",
-                     cmd + 6);
+                     "Unknown theme '%.40s'. Use: %s", cmd + 6, names);
             return 1;
         }
         state->theme = t;
@@ -361,7 +374,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "eval") == 0) {
         SearchResult res = search(&state->game.pos, 1, 0);
-        snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", res.best_score/100.0f);
+        int score_white = eval_white_view(res.best_score, state->game.pos.side);
+        snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", score_white / 100.0f);
         snprintf(state->status, sizeof(state->status), "Eval: %s", state->last_eval);
         return 1;
     }

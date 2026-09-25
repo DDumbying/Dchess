@@ -6,3 +6,6 @@
 *.o
 *.swp
 .DS_Store
+
+# Visual brainstorming companion scratch files
+/.superpowers/

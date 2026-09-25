@@ -20,6 +20,7 @@
 #include "game/game.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
+#include "engine/search.h"
 #include "engine/move.h"
 #include "utils/bitboard.h"
 #include "utils/constants.h"
@@ -379,13 +380,27 @@ static void test_undo_restores_state(void)
     check("undo restores the previous halfmove clock", g.halfmove_clock == 2);
     check("and the move count", g.move_count == 2);
 
-    game_record_eval(&g, 42);
-    int evals = g.eval_count;
-    play(&g, "d2d4");
-    game_record_eval(&g, 99);
-    game_undo(&g);
-    check("undo drops the evaluation recorded for that ply",
-          g.eval_count == evals);
+    /* As the app records them: an evaluation, then the engine's move. */
+    GameState e;
+    game_reset(&e);
+    play(&e, "e2e4");                                  /* human: no eval */
+    game_record_eval(&e, 30); play(&e, "e7e5");        /* engine */
+    play(&e, "g1f3");                                  /* human: no eval */
+    game_record_eval(&e, 40); play(&e, "b8c6");        /* engine */
+    check("two engine moves, two evaluations", e.eval_count == 2);
+
+    game_undo(&e);
+    game_undo(&e);
+    check("undoing a move pair drops only the engine's evaluation",
+          e.eval_count == 1 && e.eval_history[0] == 30);
+
+    int cp = 0;
+    check("the latest remaining evaluation is reported",
+          game_last_eval(&e, &cp) == 1 && cp == 30);
+    game_undo(&e);
+    game_undo(&e);
+    check("with every move taken back there is none",
+          e.eval_count == 0 && game_last_eval(&e, &cp) == 0);
 
     /* A finished game comes back to life when the mating move is taken
      * back -- otherwise undo would leave the board playable but the
@@ -557,6 +572,51 @@ static void test_piece_at(void)
     check("reports -1 past the last square", game_piece_at(&g, 64) == -1);
 }
 
+static void test_eval_perspective(void)
+{
+    printf("== evaluation perspective ==\n");
+
+    check("a White-to-move score is already White's view",
+          eval_white_view(925, WHITE) == 925);
+    check("a Black-to-move score is negated",
+          eval_white_view(-895, BLACK) == 895);
+
+    /* White is a queen up; whoever is to move, White's view is positive. */
+    GameState g;
+    game_reset(&g);
+    game_load_fen(&g, "4k3/8/8/8/8/8/8/3QK3 w - - 0 1");
+    SearchResult w = search(&g.pos, 3, 0);
+    check("queen up, White to move: positive for White",
+          eval_white_view(w.best_score, g.pos.side) > 500);
+
+    game_load_fen(&g, "4k3/8/8/8/8/8/8/3QK3 b - - 0 1");
+    SearchResult b = search(&g.pos, 3, 0);
+    check("queen up, Black to move: still positive for White",
+          eval_white_view(b.best_score, g.pos.side) > 500);
+
+    /* A 200 ms budget that cannot complete depth 64 must report ~200 ms. */
+    GameState t;
+    game_reset(&t);
+    SearchResult timed = search(&t.pos, 64, 200);
+    check("a search reports how long it took",
+          timed.elapsed_ms >= 150 && timed.elapsed_ms < 2000);
+}
+
+static void test_last_move_after_fen(void)
+{
+    printf("== last move after loading a FEN ==\n");
+    GameState g;
+    game_reset(&g);
+    game_load_fen(&g, "4k3/8/8/8/8/8/4P3/4K3 w - - 0 12");
+
+    Move m = 0;
+    check("no move has been played since the FEN", game_last_move(&g, &m) == 0);
+
+    play(&g, "e2e4");
+    check("after one, it is that move",
+          game_last_move(&g, &m) == 1 && FROM(m) == e2 && TO(m) == e4);
+}
+
 int main(void)
 {
     init_attacks();
@@ -572,6 +632,8 @@ int main(void)
     test_undo_restores_state();
     test_undo_special_moves();
     test_undo_repeated();
+    test_eval_perspective();
+    test_last_move_after_fen();
     test_find_move();
     test_load_fen();
     test_piece_at();

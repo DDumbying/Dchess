@@ -1,6 +1,8 @@
 #include "tui/tui.h"
 #include "tui/render.h"
 #include "tui/colors.h"
+#include "tui/panels.h"
+#include "utils/dash.h"
 #include "tui/panel.h"
 #include "tui/input.h"
 #include "tui/commands.h"
@@ -50,15 +52,10 @@ static void build_game_over_panel(WINDOW *board_win, const TUIState *state,
 
     WINDOW *shadow = panel_shadow(ph, pw, pr, pc_col);
     WINDOW *pop    = newwin(ph, pw, pr, pc_col);
+    wbkgd(pop, COLOR_PAIR(CP_CANVAS));
     keypad(pop, TRUE);
 
-    wattron(pop, COLOR_PAIR(CP_BORDER));
-    box(pop, ACS_VLINE, ACS_HLINE);
-    wattroff(pop, COLOR_PAIR(CP_BORDER));
-
-    wattron(pop, COLOR_PAIR(CP_TITLE)|A_BOLD);
-    mvwprintw(pop, 0, (pw-11)/2, " GAME OVER ");
-    wattroff(pop, COLOR_PAIR(CP_TITLE)|A_BOLD);
+    panel_frame(pop, "game over", CP_ACC_BOARD);
 
     wattron(pop, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
     int rlen = (int)strlen(state->game.result);
@@ -324,7 +321,7 @@ void tui_cleanup(void) { endwin(); }
 
 /* The four windows the game is drawn into, plus the paint routine. */
 struct Screen {
-    WINDOW   *board, *info, *eval_bar, *cmd;
+    WINDOW   *board, *side, *cmd;
     TUIState *state;
 };
 
@@ -341,26 +338,24 @@ static void screen_build(Screen *sc)
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
 
-    const int cmd_h = 3;
-    int main_h = rows - cmd_h;
+    const int cmd_h = 4;
+    int main_h  = rows - cmd_h;
+    int side_w  = dash_side_width(cols);
+    int board_w = cols - side_w;
 
-    int info_w     = (cols >= 90) ? 32 : (cols >= 70) ? 26 : (cols >= 55) ? 20 : 0;
-    int eval_bar_w = (cols >= 55) ? 3 : 0;
-    int board_w    = cols - info_w - eval_bar_w;
+    sc->board = newwin(main_h, board_w, 0, 0);
+    sc->side  = side_w ? newwin(main_h, side_w, 0, board_w) : NULL;
+    sc->cmd   = newwin(cmd_h, cols, main_h, 0);
 
-    sc->board    = newwin(main_h, board_w, 0, info_w + eval_bar_w);
-    sc->info     = info_w     ? newwin(main_h, info_w,     0, 0)      : NULL;
-    sc->eval_bar = eval_bar_w ? newwin(main_h, eval_bar_w, 0, info_w) : NULL;
-    sc->cmd      = newwin(cmd_h, cols, main_h, 0);
+    WINDOW *wins[] = { sc->board, sc->side, sc->cmd };
+    for (int i = 0; i < 3; i++)
+        if (wins[i]) wbkgd(wins[i], COLOR_PAIR(CP_CANVAS));
 
-    wbkgd(stdscr, COLOR_PAIR(CP_CANVAS));
     werase(stdscr);
     wrefresh(stdscr);
 
     keypad(sc->board, TRUE);
     keypad(sc->cmd,   TRUE);
-
-    /* Wake up every 100ms even without input, so the clocks tick live. */
     wtimeout(sc->cmd, 100);
 }
 
@@ -377,11 +372,10 @@ static Screen screen_create(TUIState *state)
 
 static void screen_free_windows(Screen *sc)
 {
-    if (sc->board)    delwin(sc->board);
-    if (sc->eval_bar) delwin(sc->eval_bar);
-    if (sc->info)     delwin(sc->info);
-    if (sc->cmd)      delwin(sc->cmd);
-    sc->board = sc->info = sc->eval_bar = sc->cmd = NULL;
+    if (sc->board) delwin(sc->board);
+    if (sc->side)  delwin(sc->side);
+    if (sc->cmd)   delwin(sc->cmd);
+    sc->board = sc->side = sc->cmd = NULL;
 }
 
 static void screen_destroy(Screen *sc)
@@ -417,12 +411,12 @@ static void screen_draw_too_small(void)
 
 static void screen_paint(const Screen *sc)
 {
-    WINDOW *wins[] = { stdscr, sc->board, sc->info, sc->eval_bar, sc->cmd };
+    WINDOW *wins[] = { stdscr, sc->board, sc->side, sc->cmd };
     const int n = (int)(sizeof(wins) / sizeof(wins[0]));
 
     werase(stdscr);
     wnoutrefresh(stdscr);
-    render_all(sc->board, sc->info, sc->eval_bar, sc->cmd, sc->state);
+    render_all(sc->board, sc->side, sc->cmd, sc->state);
 
     for (int i = 0; i < n; i++) if (wins[i]) touchwin(wins[i]);
     for (int i = 0; i < n; i++) if (wins[i]) wnoutrefresh(wins[i]);
