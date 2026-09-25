@@ -155,12 +155,10 @@ static void apply_engine_result(TUIState *state, SearchResult res)
         return;
     }
 
-    /* Negamax reports for the side that just moved; flip so last_eval is
-     * always from White's point of view. */
-    int score_white = (state->game.pos.side == BLACK) ? res.best_score : -res.best_score;
+    int score_white = eval_white_view(res.best_score, state->game.pos.side);
     float eval_f = score_white / 100.0f;
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
-    game_record_eval(&state->game, res.best_score);
+    game_record_eval(&state->game, score_white);
 
     game_play(&state->game, res.best_move);
 
@@ -361,7 +359,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "eval") == 0) {
         SearchResult res = search(&state->game.pos, 1, 0);
-        snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", res.best_score/100.0f);
+        int score_white = eval_white_view(res.best_score, state->game.pos.side);
+        snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", score_white / 100.0f);
         snprintf(state->status, sizeof(state->status), "Eval: %s", state->last_eval);
         return 1;
     }

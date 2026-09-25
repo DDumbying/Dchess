@@ -93,6 +93,9 @@ int game_piece_at(const GameState *g, int sq);
 
 U64 game_hash(const GameState *g);
 
+/* Search scores are from the side to move's point of view. */
+int eval_white_view(int score_cp, int side_to_move);
+
 int game_can_undo(const GameState *g);
 
 /* Takes back exactly ONE ply and clears any game-over verdict. How many

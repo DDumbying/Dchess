@@ -114,10 +114,11 @@ The drop shadows stay.
 
 ## Changes this depends on
 
-1. **Eval perspective.** `eval_history` stores the raw search score, which is
-   from the point of view of the side that moved, while `last_eval` shows
-   White's point of view. The graph needs White's view, so the stored value is
-   normalised when it is recorded.
+1. **Eval perspective.** `search()` scores from the side to move's point of
+   view, and every consumer got the conversion wrong: `apply_engine_result()`
+   negated it in both cases (a queen up for White displayed as −9.25), the
+   `eval` command never converted it, and `eval_history` stored it raw. All
+   three now go through `eval_white_view()`.
 2. **Engine statistics.** The last search's depth, node count and elapsed time
    are kept in `TUIState` so the engine panel can read them. The time is
    measured around `search()` in the worker thread.

@@ -20,6 +20,7 @@
 #include "game/game.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
+#include "engine/search.h"
 #include "engine/move.h"
 #include "utils/bitboard.h"
 #include "utils/constants.h"
@@ -557,6 +558,29 @@ static void test_piece_at(void)
     check("reports -1 past the last square", game_piece_at(&g, 64) == -1);
 }
 
+static void test_eval_perspective(void)
+{
+    printf("== evaluation perspective ==\n");
+
+    check("a White-to-move score is already White's view",
+          eval_white_view(925, WHITE) == 925);
+    check("a Black-to-move score is negated",
+          eval_white_view(-895, BLACK) == 895);
+
+    /* White is a queen up; whoever is to move, White's view is positive. */
+    GameState g;
+    game_reset(&g);
+    game_load_fen(&g, "4k3/8/8/8/8/8/8/3QK3 w - - 0 1");
+    SearchResult w = search(&g.pos, 3, 0);
+    check("queen up, White to move: positive for White",
+          eval_white_view(w.best_score, g.pos.side) > 500);
+
+    game_load_fen(&g, "4k3/8/8/8/8/8/8/3QK3 b - - 0 1");
+    SearchResult b = search(&g.pos, 3, 0);
+    check("queen up, Black to move: still positive for White",
+          eval_white_view(b.best_score, g.pos.side) > 500);
+}
+
 int main(void)
 {
     init_attacks();
@@ -572,6 +596,7 @@ int main(void)
     test_undo_restores_state();
     test_undo_special_moves();
     test_undo_repeated();
+    test_eval_perspective();
     test_find_move();
     test_load_fen();
     test_piece_at();

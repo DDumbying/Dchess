@@ -299,3 +299,8 @@ int game_undo(GameState *g)
 
     return 1;
 }
+
+int eval_white_view(int score_cp, int side_to_move)
+{
+    return side_to_move == WHITE ? score_cp : -score_cp;
+}
