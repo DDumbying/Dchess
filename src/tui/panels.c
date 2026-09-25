@@ -2,6 +2,7 @@
 #include "tui/render.h"
 #include "tui/colors.h"
 #include "utils/dash.h"
+#include "utils/theme.h"
 #include "utils/constants.h"
 #include <string.h>
 #include <stdio.h>
@@ -77,11 +78,40 @@ static void fmt_clock(long cs, char *out, size_t n)
     snprintf(out, n, "%02ld:%02ld.%02ld", m, s, c);
 }
 
+static void draw_eval_graph(WINDOW *p, int top, int left, int rows, int cols,
+                            const GameState *g)
+{
+    static const wchar_t BLOCKS[9] = {
+        L' ', L'▁', L'▂', L'▃', L'▄', L'▅', L'▆', L'▇', L'█',
+    };
+
+    int zero = top + rows - 1 - rows / 2;
+    for (int c = 0; c < cols; c++)
+        put_wc(p, zero, left + c, L'─', CP_HINT, 0);
+
+    int start = dash_graph_start(g->eval_count, cols);
+    for (int c = 0; c < cols && start + c < g->eval_count; c++) {
+        int fill = dash_graph_fill(g->eval_history[start + c], rows);
+        for (int r = 0; r < rows; r++) {          /* r = 0 is the bottom row */
+            int cell = fill - r * 8;
+            if (cell <= 0) continue;
+            if (cell > 8) cell = 8;
+            int pair = CP_RAMP_BASE + dash_ramp_index(r, rows, THEME_RAMP);
+            put_wc(p, top + rows - 1 - r, left + c, BLOCKS[cell], pair, 0);
+        }
+    }
+}
+
 static void draw_eval_panel(WINDOW *p, const TUIState *state)
 {
     panel_frame(p, "eval", CP_ACC_EVAL);
     int h, w;
     getmaxyx(p, h, w);
+
+    int rows = h - 3;   /* border top and bottom, and the value line */
+    int cols = w - 4;
+    if (rows >= 1 && cols >= 1)
+        draw_eval_graph(p, 1, 2, rows, cols, &state->game);
 
     float v = 0.0f;
     sscanf(state->last_eval, "%f", &v);
@@ -93,6 +123,18 @@ static void draw_eval_panel(WINDOW *p, const TUIState *state)
     wattron(p, COLOR_PAIR(CP_HINT));
     mvw_clip(p, h - 2, w - 2 - (int)strlen(who), "%s", who);
     wattroff(p, COLOR_PAIR(CP_HINT));
+}
+
+static void draw_bar(WINDOW *p, int row, int col, int width, int fill)
+{
+    for (int i = 0; i < width; i++) {
+        if (i < fill) {
+            int pair = CP_RAMP_BASE + dash_ramp_index(i, width, THEME_RAMP);
+            put_wc(p, row, col + i, L'█', pair, 0);
+        } else {
+            put_wc(p, row, col + i, L' ', CP_TRACK, 0);
+        }
+    }
 }
 
 static void draw_clock_panel(WINDOW *p, const TUIState *state)
@@ -118,6 +160,11 @@ static void draw_clock_panel(WINDOW *p, const TUIState *state)
         mvw_clip(p, rows[i].row, w - 2 - (int)strlen(t), "%s", t);
         wattroff(p, a);
     }
+
+    long total = w_cs + b_cs;
+    int  bar_w = w - 4;
+    draw_bar(p, 2, 2, bar_w, dash_bar_fill(w_cs, total, bar_w));
+    draw_bar(p, 4, 2, bar_w, dash_bar_fill(b_cs, total, bar_w));
 }
 
 static void draw_moves_panel(WINDOW *p, const TUIState *state)
