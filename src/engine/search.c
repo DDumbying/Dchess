@@ -4,6 +4,7 @@
 #include "engine/eval.h"
 #include "engine/hash.h"
 #include "utils/constants.h"
+#include "utils/bitboard.h"
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -45,17 +46,35 @@ static int deadline_passed(void) {
 static inline int time_check_due(void) { return (node_count & 2047) == 0; }
 static inline int cancel_check_due(void) { return (node_count & 511) == 0; }
 
-static int move_score(Move m) {
-    int flags = FLAGS(m);
-    if (flags & FLAG_CAPTURE) return 10000;
-    if (flags & FLAG_PROMOTION) return 9000;
+/* MVV-LVA: most valuable victim first, taken by the least valuable
+ * attacker. Indexed by piece type (P N B R Q K). */
+static const int ORDER_VALUE[6] = { 1, 3, 3, 5, 9, 20 };
+
+static int victim_type(const Position *pos, Move m)
+{
+    if (FLAGS(m) & FLAG_ENPASSANT) return 0;   /* target square is empty */
+
+    int to = TO(m);
+    int first = (pos->side == WHITE) ? 6 : 0;   /* the opponent's pieces */
+    for (int i = first; i < first + 6; i++)
+        if (GET_BIT(pos->bitboards[i], to)) return i - first;
     return 0;
 }
 
-static int cmp_moves(const void *a, const void *b) {
-    return move_score(*(Move*)b) - move_score(*(Move*)a);
-}
+static int move_score(const Position *pos, Move m)
+{
+    int flags = FLAGS(m);
+    int score = 0;
 
+    if (flags & FLAG_CAPTURE) {
+        int victim   = ORDER_VALUE[victim_type(pos, m)];
+        int attacker = ORDER_VALUE[PIECE(m) % 6];
+        score = 10000 + victim * 100 - attacker;
+    }
+    if (flags & FLAG_PROMO_Q) score += 9000;
+
+    return score;
+}
 /* Transposition table
  * Keyed by hash_position(). Content-addressed, so entries stay valid
  * across searches/games — a matching key means an identical position,
@@ -77,6 +96,11 @@ static TTEntry *tt = NULL;
 
 static void tt_ensure(void) {
     if (!tt) tt = calloc(TT_SIZE, sizeof(TTEntry));
+}
+
+void search_clear(void)
+{
+    if (tt) memset(tt, 0, (size_t)TT_SIZE * sizeof(TTEntry));
 }
 
 static TTEntry *tt_probe(U64 key) {
@@ -101,20 +125,26 @@ static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best) {
 /* Put the TT's remembered best move (if any) first, then sort the rest
  * captures-first. A verified-good move from a previous search is a much
  * stronger ordering hint than "is this a capture". */
-static void order_moves(MoveList *ml, Move tt_move) {
-    int start = 0;
-    if (tt_move) {
-        for (int i = 0; i < ml->count; i++) {
-            if (ml->moves[i] == tt_move) {
-                Move tmp = ml->moves[0];
-                ml->moves[0] = ml->moves[i];
-                ml->moves[i] = tmp;
-                start = 1;
-                break;
-            }
+static void order_moves(const Position *pos, MoveList *ml, Move tt_move)
+{
+    int score[MAX_MOVES];
+    for (int i = 0; i < ml->count; i++)
+        score[i] = (ml->moves[i] == tt_move) ? 1000000 : move_score(pos, ml->moves[i]);
+
+    /* Insertion sort: lists are ~35 long, and qsort's comparator cannot
+     * see the position the scores depend on. */
+    for (int i = 1; i < ml->count; i++) {
+        Move m = ml->moves[i];
+        int  v = score[i];
+        int  j = i - 1;
+        while (j >= 0 && score[j] < v) {
+            ml->moves[j + 1] = ml->moves[j];
+            score[j + 1]     = score[j];
+            j--;
         }
+        ml->moves[j + 1] = m;
+        score[j + 1]     = v;
     }
-    qsort(ml->moves + start, ml->count - start, sizeof(Move), cmp_moves);
 }
 
 /* Quiescence search caps how far it can run past the nominal search depth,
@@ -146,7 +176,7 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
 
     MoveList ml;
     generate_moves(pos, &ml);
-    qsort(ml.moves, ml.count, sizeof(Move), cmp_moves);
+    order_moves(pos, &ml, 0);
 
     int legal = 0;
     for (int i = 0; i < ml.count; i++) {
@@ -203,7 +233,7 @@ static int alpha_beta(Position *pos, int depth, int alpha, int beta) {
 
     MoveList ml;
     generate_moves(pos, &ml);
-    order_moves(&ml, tt_move);
+    order_moves(pos, &ml, tt_move);
 
     int legal = 0;
     int orig_alpha = alpha;
@@ -271,7 +301,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
         generate_moves(pos, &ml);
         U64 root_key = hash_position(pos);
         TTEntry *hit = tt_probe(root_key);
-        order_moves(&ml, hit ? hit->best : 0);
+        order_moves(pos, &ml, hit ? hit->best : 0);
 
         int alpha = -INF, beta = INF;
         Move iter_best_move  = 0;

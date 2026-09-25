@@ -25,4 +25,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms);
  * thread than search() itself. Safe to call when nothing is running. */
 void search_cancel(void);
 
+/* Forget everything the transposition table has learned. */
+void search_clear(void);
+
 #endif

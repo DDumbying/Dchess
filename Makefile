@@ -36,8 +36,12 @@ test: $(TEST_BIN)
 	done
 	@echo "All suites passed."
 
+# Not part of `make test`: it measures, it does not pass or fail.
+bench: build/bench
+	./build/bench $(DEPTH)
+
 clean:
 	rm -f $(TARGET)
 	rm -rf build
 
-.PHONY: all test clean
+.PHONY: all test bench clean
