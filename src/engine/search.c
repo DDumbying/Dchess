@@ -159,27 +159,33 @@ static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best) {
 /* Put the TT's remembered best move (if any) first, then sort the rest
  * captures-first. A verified-good move from a previous search is a much
  * stronger ordering hint than "is this a capture". */
-static void order_moves(const Position *pos, MoveList *ml, Move tt_move, int ply)
+static void score_moves(const Position *pos, const MoveList *ml,
+                        Move tt_move, int ply, int *score)
 {
-    int score[MAX_MOVES];
     for (int i = 0; i < ml->count; i++)
         score[i] = (ml->moves[i] == tt_move) ? SCORE_TT
                                              : move_score(pos, ml->moves[i], ply);
+}
 
-    /* Insertion sort: lists are ~35 long, and qsort's comparator cannot
-     * see the position the scores depend on. */
-    for (int i = 1; i < ml->count; i++) {
-        Move m = ml->moves[i];
-        int  v = score[i];
-        int  j = i - 1;
-        while (j >= 0 && score[j] < v) {
-            ml->moves[j + 1] = ml->moves[j];
-            score[j + 1]     = score[j];
-            j--;
-        }
-        ml->moves[j + 1] = m;
-        score[j + 1]     = v;
+/* Bring the best remaining move to slot i and return it. Most nodes cut
+ * off after a move or two, so sorting the whole list up front was mostly
+ * wasted. Takes the FIRST of equal scores and rotates rather than swaps,
+ * which yields exactly the order a stable sort would. */
+static Move pick_move(MoveList *ml, int *score, int i)
+{
+    int best = i;
+    for (int j = i + 1; j < ml->count; j++)
+        if (score[j] > score[best]) best = j;
+
+    Move m = ml->moves[best];
+    int  v = score[best];
+    for (int j = best; j > i; j--) {
+        ml->moves[j] = ml->moves[j - 1];
+        score[j]     = score[j - 1];
     }
+    ml->moves[i] = m;
+    score[i]     = v;
+    return m;
 }
 
 /* Quiescence search caps how far it can run past the nominal search depth,
@@ -211,20 +217,28 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
 
     MoveList ml;
     generate_moves(pos, &ml);
-    order_moves(pos, &ml, 0, -1);
+
+    /* When not in check, only noisy moves are searched here -- so drop the
+     * rest before paying to score them. In check, every evasion counts. */
+    if (!in_check) {
+        int n = 0;
+        for (int i = 0; i < ml.count; i++)
+            if (FLAGS(ml.moves[i]) & (FLAG_CAPTURE | FLAG_PROMOTION))
+                ml.moves[n++] = ml.moves[i];
+        ml.count = n;
+    }
+
+    int order[MAX_MOVES];
+    score_moves(pos, &ml, 0, -1, order);
 
     int legal = 0;
     for (int i = 0; i < ml.count; i++) {
-        int flags = FLAGS(ml.moves[i]);
-        /* When not in check, only look at noisy moves; when in check we
-         * must consider every legal reply to find real evasions. */
-        if (!in_check && !(flags & (FLAG_CAPTURE | FLAG_PROMOTION)))
-            continue;
+        Move m = pick_move(&ml, order, i);
 
         Position saved;
         memcpy(&saved, pos, sizeof(Position));
 
-        if (!make_move(pos, ml.moves[i])) {
+        if (!make_move(pos, m)) {
             memcpy(pos, &saved, sizeof(Position));
             continue;
         }
@@ -268,13 +282,16 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
 
     MoveList ml;
     generate_moves(pos, &ml);
-    order_moves(pos, &ml, tt_move, ply);
+    int order[MAX_MOVES];
+    score_moves(pos, &ml, tt_move, ply, order);
 
     int legal = 0;
     int orig_alpha = alpha;
     Move best_move = 0;
 
     for (int i = 0; i < ml.count; i++) {
+        pick_move(&ml, order, i);   /* lands in ml.moves[i] */
+
         Position saved;
         memcpy(&saved, pos, sizeof(Position));
 
@@ -339,7 +356,8 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
         generate_moves(pos, &ml);
         U64 root_key = hash_position(pos);
         TTEntry *hit = tt_probe(root_key);
-        order_moves(pos, &ml, hit ? hit->best : 0, 0);
+        int order[MAX_MOVES];
+        score_moves(pos, &ml, hit ? hit->best : 0, 0, order);
 
         int alpha = -INF, beta = INF;
         Move iter_best_move  = 0;
@@ -347,6 +365,8 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
         int  legal = 0;
 
         for (int i = 0; i < ml.count; i++) {
+            pick_move(&ml, order, i);
+
             Position saved;
             memcpy(&saved, pos, sizeof(Position));
 
