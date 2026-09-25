@@ -48,6 +48,9 @@ const char *theme_name(int theme);
 /* Case-insensitive. Returns -1 if no theme matches. */
 int theme_from_name(const char *name);
 
+/* 0xRRGGBB for an xterm-256 index, for direct-colour terminals. */
+int theme_rgb(int index);
+
 /* WCAG contrast ratio between two xterm-256 colours, 1.0 to 21.0. */
 double theme_contrast(int a, int b);
 

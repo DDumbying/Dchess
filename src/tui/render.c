@@ -72,63 +72,76 @@ static int fb_black_pc_fg(int bg)
     return (bg == COLOR_RED || bg == COLOR_MAGENTA) ? COLOR_BLACK : COLOR_RED;
 }
 
+/* Direct-colour terminals (COLORS beyond 256, e.g. TERM=xterm-direct)
+ * read a colour number as packed RGB, so palette index 235 would come out
+ * as the blue 0x0000EB. Those get the index converted to its RGB value. */
+static int direct_colour;
+
+static void set_pair(int id, int fg, int bg)
+{
+    if (direct_colour)
+        init_extended_pair(id, theme_rgb(fg), theme_rgb(bg));
+    else
+        init_pair(id, fg, bg);
+}
+
 static void init_palette_256(const Theme *t)
 {
     int bg = t->bg;
 
-    init_pair(CP_LIGHT,   t->sq_light, t->sq_light);
-    init_pair(CP_DARK,    t->sq_dark,  t->sq_dark);
-    init_pair(CP_W_LIGHT, t->pc_white, t->sq_light);
-    init_pair(CP_W_DARK,  t->pc_white, t->sq_dark);
-    init_pair(CP_B_LIGHT, t->pc_black, t->sq_light);
-    init_pair(CP_B_DARK,  t->pc_black, t->sq_dark);
+    set_pair(CP_LIGHT,   t->sq_light, t->sq_light);
+    set_pair(CP_DARK,    t->sq_dark,  t->sq_dark);
+    set_pair(CP_W_LIGHT, t->pc_white, t->sq_light);
+    set_pair(CP_W_DARK,  t->pc_white, t->sq_dark);
+    set_pair(CP_B_LIGHT, t->pc_black, t->sq_light);
+    set_pair(CP_B_DARK,  t->pc_black, t->sq_dark);
 
-    init_pair(CP_CURSOR,       t->pc_black, t->cursor);
-    init_pair(CP_CURSOR_PC,    t->pc_white, t->cursor);
-    init_pair(CP_CURSOR_PC_B,  t->pc_black, t->cursor);
-    init_pair(CP_SEL,          t->pc_black, t->sel);
-    init_pair(CP_SEL_PC,       t->pc_white, t->sel);
-    init_pair(CP_SEL_PC_B,     t->pc_black, t->sel);
-    init_pair(CP_MOVE_HI,      t->pc_black, t->movehi);
-    init_pair(CP_MOVE_HI_PC,   t->pc_white, t->movehi);
-    init_pair(CP_MOVE_HI_PC_B, t->pc_black, t->movehi);
-    init_pair(CP_CHECK_SQ,     t->pc_black, t->check);
-    init_pair(CP_CHECK_PC,     t->pc_white, t->check);
-    init_pair(CP_CHECK_PC_B,   t->pc_black, t->check);
+    set_pair(CP_CURSOR,       t->pc_black, t->cursor);
+    set_pair(CP_CURSOR_PC,    t->pc_white, t->cursor);
+    set_pair(CP_CURSOR_PC_B,  t->pc_black, t->cursor);
+    set_pair(CP_SEL,          t->pc_black, t->sel);
+    set_pair(CP_SEL_PC,       t->pc_white, t->sel);
+    set_pair(CP_SEL_PC_B,     t->pc_black, t->sel);
+    set_pair(CP_MOVE_HI,      t->pc_black, t->movehi);
+    set_pair(CP_MOVE_HI_PC,   t->pc_white, t->movehi);
+    set_pair(CP_MOVE_HI_PC_B, t->pc_black, t->movehi);
+    set_pair(CP_CHECK_SQ,     t->pc_black, t->check);
+    set_pair(CP_CHECK_PC,     t->pc_white, t->check);
+    set_pair(CP_CHECK_PC_B,   t->pc_black, t->check);
 
-    init_pair(CP_LMVL,   t->lm_light, t->lm_light);
-    init_pair(CP_LMVD,   t->lm_dark,  t->lm_dark);
-    init_pair(CP_W_LMVL, t->pc_white, t->lm_light);
-    init_pair(CP_W_LMVD, t->pc_white, t->lm_dark);
-    init_pair(CP_B_LMVL, t->pc_black, t->lm_light);
-    init_pair(CP_B_LMVD, t->pc_black, t->lm_dark);
+    set_pair(CP_LMVL,   t->lm_light, t->lm_light);
+    set_pair(CP_LMVD,   t->lm_dark,  t->lm_dark);
+    set_pair(CP_W_LMVL, t->pc_white, t->lm_light);
+    set_pair(CP_W_LMVD, t->pc_white, t->lm_dark);
+    set_pair(CP_B_LMVL, t->pc_black, t->lm_light);
+    set_pair(CP_B_LMVD, t->pc_black, t->lm_dark);
 
-    init_pair(CP_BORDER,     t->line, bg);
-    init_pair(CP_TITLE,      t->fg,   bg);
-    init_pair(CP_LINK,       t->dim,  bg);
-    init_pair(CP_LABEL,      t->dim,  bg);
-    init_pair(CP_INFO_HEAD,  t->acc_board, bg);
-    init_pair(CP_INFO_VAL,   t->fg,   bg);
-    init_pair(CP_STATUS_OK,  t->ok,   bg);
-    init_pair(CP_STATUS_ERR, t->err,  bg);
-    init_pair(CP_HINT,       t->dim,  bg);
-    init_pair(CP_CMD,        t->fg,   bg);
-    init_pair(CP_MOVE_W,     t->fg,   bg);
-    init_pair(CP_MOVE_B,     t->dim,  bg);
-    init_pair(CP_CAP_W,      t->fg,   bg);
-    init_pair(CP_CAP_B,      t->dim,  bg);
-    init_pair(CP_CANVAS,     t->fg,   bg);
-    init_pair(CP_SHADOW,     t->shadow, bg);
-    init_pair(CP_FRAME,      t->line, bg);
+    set_pair(CP_BORDER,     t->line, bg);
+    set_pair(CP_TITLE,      t->fg,   bg);
+    set_pair(CP_LINK,       t->dim,  bg);
+    set_pair(CP_LABEL,      t->dim,  bg);
+    set_pair(CP_INFO_HEAD,  t->acc_board, bg);
+    set_pair(CP_INFO_VAL,   t->fg,   bg);
+    set_pair(CP_STATUS_OK,  t->ok,   bg);
+    set_pair(CP_STATUS_ERR, t->err,  bg);
+    set_pair(CP_HINT,       t->dim,  bg);
+    set_pair(CP_CMD,        t->fg,   bg);
+    set_pair(CP_MOVE_W,     t->fg,   bg);
+    set_pair(CP_MOVE_B,     t->dim,  bg);
+    set_pair(CP_CAP_W,      t->fg,   bg);
+    set_pair(CP_CAP_B,      t->dim,  bg);
+    set_pair(CP_CANVAS,     t->fg,   bg);
+    set_pair(CP_SHADOW,     t->shadow, bg);
+    set_pair(CP_FRAME,      t->line, bg);
 
-    init_pair(CP_ACC_BOARD,  t->acc_board,  bg);
-    init_pair(CP_ACC_EVAL,   t->acc_eval,   bg);
-    init_pair(CP_ACC_CLOCK,  t->acc_clock,  bg);
-    init_pair(CP_ACC_MOVES,  t->acc_moves,  bg);
-    init_pair(CP_ACC_ENGINE, t->acc_engine, bg);
-    init_pair(CP_TRACK,      t->track, t->track);
+    set_pair(CP_ACC_BOARD,  t->acc_board,  bg);
+    set_pair(CP_ACC_EVAL,   t->acc_eval,   bg);
+    set_pair(CP_ACC_CLOCK,  t->acc_clock,  bg);
+    set_pair(CP_ACC_MOVES,  t->acc_moves,  bg);
+    set_pair(CP_ACC_ENGINE, t->acc_engine, bg);
+    set_pair(CP_TRACK,      t->track, t->track);
     for (int i = 0; i < THEME_RAMP; i++)
-        init_pair(CP_RAMP_BASE + i, t->ramp[i], bg);
+        set_pair(CP_RAMP_BASE + i, t->ramp[i], bg);
 }
 
 static void init_palette_8(const Theme *t)
@@ -197,6 +210,7 @@ void init_colors(int theme)
     use_default_colors();
 
     const Theme *t = theme_get(theme);
+    direct_colour = COLORS > 256;
     if (COLORS >= 256) init_palette_256(t);
     else               init_palette_8(t);
 

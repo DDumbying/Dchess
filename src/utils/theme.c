@@ -97,3 +97,10 @@ double theme_contrast(int a, int b)
     if (x < y) { double t = x; x = y; y = t; }
     return (x + 0.05) / (y + 0.05);
 }
+
+int theme_rgb(int index)
+{
+    int c[3];
+    xterm_rgb(index, c);
+    return (c[0] << 16) | (c[1] << 8) | c[2];
+}

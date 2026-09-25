@@ -95,11 +95,22 @@ static void test_cli_names(void)
     check("and the error lists the new names", strstr(a.error_msg, "gruvbox") != NULL);
 }
 
+static void test_rgb(void)
+{
+    printf("== 24-bit values for direct-colour terminals ==\n");
+    check("16 is black",                  theme_rgb(16)  == 0x000000);
+    check("231 is white",                 theme_rgb(231) == 0xffffff);
+    check("235, Gruvbox's background",    theme_rgb(235) == 0x262626);
+    check("137, a colour-cube entry",     theme_rgb(137) == 0xaf875f);
+    check("1, a system colour",           theme_rgb(1)   == 0x800000);
+}
+
 int main(void)
 {
     test_registry();
     test_contrast();
     test_cli_names();
+    test_rgb();
 
     if (failures) {
         printf("\n%d theme test(s) FAILED.\n", failures);
