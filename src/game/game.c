@@ -243,10 +243,13 @@ void game_update_status(GameState *g)
     }
 }
 
+/* Recorded just before the engine plays, so it belongs to that move. */
 void game_record_eval(GameState *g, int score_cp)
 {
-    if (g->eval_count < MAX_MOVE_HISTORY)
-        g->eval_history[g->eval_count++] = score_cp;
+    if (g->eval_count >= MAX_MOVE_HISTORY) return;
+    g->eval_history[g->eval_count] = score_cp;
+    g->eval_ply[g->eval_count]     = g->move_count;
+    g->eval_count++;
 }
 
 int game_piece_at(const GameState *g, int sq)
@@ -287,7 +290,10 @@ int game_undo(GameState *g)
 
     if (g->move_count     > 0) g->move_count--;
     if (g->position_count > 0) g->position_count--;
-    if (g->eval_count     > 0) g->eval_count--;
+    /* Only engine moves carry an evaluation, so drop just the ones that
+     * belonged to the move taken back. */
+    while (g->eval_count > 0 && g->eval_ply[g->eval_count - 1] >= g->move_count)
+        g->eval_count--;
 
     /* A takeback resumes a finished game. */
     g->game_over = 0;
@@ -303,4 +309,11 @@ int game_undo(GameState *g)
 int eval_white_view(int score_cp, int side_to_move)
 {
     return side_to_move == WHITE ? score_cp : -score_cp;
+}
+
+int game_last_eval(const GameState *g, int *score_cp)
+{
+    if (g->eval_count <= 0) return 0;
+    *score_cp = g->eval_history[g->eval_count - 1];
+    return 1;
 }

@@ -53,6 +53,12 @@ void tui_undo(TUIState *state)
     for (int i = 0; i < needed; i++)
         game_undo(&state->game);
 
+    int cp;
+    if (game_last_eval(&state->game, &cp))
+        snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", cp / 100.0f);
+    else
+        snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
+
     state->selected = 0;
     memset(state->highlight, 0, sizeof(state->highlight));
     snprintf(state->status, sizeof(state->status),
@@ -330,6 +336,8 @@ int handle_command(TUIState *state, const char *cmd) {
         }
         state->selected = 0;
         memset(state->highlight, 0, sizeof(state->highlight));
+        memset(&state->last_search, 0, sizeof(state->last_search));
+        snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
         snprintf(state->status, sizeof(state->status), "Position loaded from FEN");
 
         if (!state->two_player && state->engine_side == state->game.pos.side)

@@ -380,13 +380,27 @@ static void test_undo_restores_state(void)
     check("undo restores the previous halfmove clock", g.halfmove_clock == 2);
     check("and the move count", g.move_count == 2);
 
-    game_record_eval(&g, 42);
-    int evals = g.eval_count;
-    play(&g, "d2d4");
-    game_record_eval(&g, 99);
-    game_undo(&g);
-    check("undo drops the evaluation recorded for that ply",
-          g.eval_count == evals);
+    /* As the app records them: an evaluation, then the engine's move. */
+    GameState e;
+    game_reset(&e);
+    play(&e, "e2e4");                                  /* human: no eval */
+    game_record_eval(&e, 30); play(&e, "e7e5");        /* engine */
+    play(&e, "g1f3");                                  /* human: no eval */
+    game_record_eval(&e, 40); play(&e, "b8c6");        /* engine */
+    check("two engine moves, two evaluations", e.eval_count == 2);
+
+    game_undo(&e);
+    game_undo(&e);
+    check("undoing a move pair drops only the engine's evaluation",
+          e.eval_count == 1 && e.eval_history[0] == 30);
+
+    int cp = 0;
+    check("the latest remaining evaluation is reported",
+          game_last_eval(&e, &cp) == 1 && cp == 30);
+    game_undo(&e);
+    game_undo(&e);
+    check("with every move taken back there is none",
+          e.eval_count == 0 && game_last_eval(&e, &cp) == 0);
 
     /* A finished game comes back to life when the mating move is taken
      * back -- otherwise undo would leave the board playable but the

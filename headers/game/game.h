@@ -60,6 +60,7 @@ typedef struct {
 
     /* Engine evaluation after each half-move, in centipawns */
     int  eval_history[MAX_MOVE_HISTORY];
+    int  eval_ply[MAX_MOVE_HISTORY];   /* the move each one was recorded for */
     int  eval_count;
 
     /* Undo stack, one entry per ply played, parallel to the move log. */
@@ -87,6 +88,9 @@ void game_play(GameState *g, Move m);
 void game_update_status(GameState *g);
 
 void game_record_eval(GameState *g, int score_cp);
+
+/* The most recent evaluation still in the history. Returns 0 if none. */
+int game_last_eval(const GameState *g, int *score_cp);
 
 /* Piece index 0-11 on `sq`, or -1. */
 int game_piece_at(const GameState *g, int sq);
