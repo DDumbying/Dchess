@@ -6,6 +6,7 @@
 #include "tui/stats_tui.h"
 #include "tui/colors.h"
 #include "tui/render.h"
+#include "tui/panels.h"
 
 /* The statistics screens draw with the active theme's pairs. */
 #define SCP_BORDER   CP_BORDER
@@ -262,14 +263,8 @@ void draw_stats_overlay(WINDOW *win, const DchessStats *s)
     int wh, ww;
     getmaxyx(win, wh, ww);
 
-    wattron(win, COLOR_PAIR(SCP_BORDER));
-    box(win, ACS_VLINE, ACS_HLINE);
-    wattroff(win, COLOR_PAIR(SCP_BORDER));
-
-    wattron(win, COLOR_PAIR(SCP_TITLE) | A_BOLD);
-    const char *title = " dchess — Statistics ";
-    mvwprintw(win, 0, (ww - (int)strlen(title)) / 2, "%s", title);
-    wattroff(win, COLOR_PAIR(SCP_TITLE) | A_BOLD);
+    wbkgd(win, COLOR_PAIR(CP_CANVAS));
+    panel_frame(win, "dchess · statistics", CP_ACC_ENGINE);
 
     wattron(win, COLOR_PAIR(SCP_HINT));
     const char *hint = " press any key to resume game ";
@@ -528,17 +523,10 @@ void draw_stats_mini(WINDOW *parent, const DchessStats *s)
 
     WINDOW *shadow = panel_shadow(pop_h, pop_w, pop_r, pop_c);
     WINDOW *pop    = newwin(pop_h, pop_w, pop_r, pop_c);
+    wbkgd(pop, COLOR_PAIR(CP_CANVAS));
     keypad(pop, TRUE);
 
-    wattron(pop, COLOR_PAIR(SCP_BORDER));
-    box(pop, ACS_VLINE, ACS_HLINE);
-    wattroff(pop, COLOR_PAIR(SCP_BORDER));
-
-    /* Title */
-    wattron(pop, COLOR_PAIR(SCP_TITLE) | A_BOLD);
-    const char *title = " Statistics ";
-    mvwprintw(pop, 0, (pop_w - (int)strlen(title)) / 2, "%s", title);
-    wattroff(pop, COLOR_PAIR(SCP_TITLE) | A_BOLD);
+    panel_frame(pop, "statistics", CP_ACC_ENGINE);
 
     /* Dismiss hint */
     wattron(pop, COLOR_PAIR(SCP_HINT));

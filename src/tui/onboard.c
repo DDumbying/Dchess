@@ -1,5 +1,6 @@
 #include "tui/onboard.h"
 #include "tui/colors.h"
+#include "tui/panels.h"
 #include "tui/panel.h"
 #include "tui/render.h"
 #include "tui/stats_tui.h"
@@ -129,6 +130,7 @@ int tui_onboarding(TUIState *state)
 
             shadow = panel_shadow(ph, pw, pr, pc);
             win    = newwin(ph, pw, pr, pc);
+            wbkgd(win, COLOR_PAIR(CP_CANVAS));
             keypad(win, TRUE);
 
             /* Every labeled row prints a fixed 16-char label (e.g.
@@ -144,16 +146,7 @@ int tui_onboarding(TUIState *state)
         }
 
         werase(win);
-        wattron(win, COLOR_PAIR(CP_BORDER));
-        box(win, 0, 0);
-        wattroff(win, COLOR_PAIR(CP_BORDER));
-
-        wattron(win, COLOR_PAIR(CP_TITLE) | A_BOLD);
-        const char *title = " dchess -- New Game ";
-        int title_col = (pw - (int)strlen(title)) / 2;
-        if (title_col < 1) title_col = 1;
-        mvwprintw(win, 0, title_col, "%s", title);
-        wattroff(win, COLOR_PAIR(CP_TITLE) | A_BOLD);
+        panel_frame(win, "dchess · new game", CP_ACC_BOARD);
 
         int diff_dim = (choice.side == SIDE_TWO_PLAYER);
 

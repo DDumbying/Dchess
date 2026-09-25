@@ -1,6 +1,7 @@
 #include "tui/tui.h"
 #include "tui/render.h"
 #include "tui/colors.h"
+#include "tui/panels.h"
 #include "utils/dash.h"
 #include "tui/panel.h"
 #include "tui/input.h"
@@ -51,15 +52,10 @@ static void build_game_over_panel(WINDOW *board_win, const TUIState *state,
 
     WINDOW *shadow = panel_shadow(ph, pw, pr, pc_col);
     WINDOW *pop    = newwin(ph, pw, pr, pc_col);
+    wbkgd(pop, COLOR_PAIR(CP_CANVAS));
     keypad(pop, TRUE);
 
-    wattron(pop, COLOR_PAIR(CP_BORDER));
-    box(pop, ACS_VLINE, ACS_HLINE);
-    wattroff(pop, COLOR_PAIR(CP_BORDER));
-
-    wattron(pop, COLOR_PAIR(CP_TITLE)|A_BOLD);
-    mvwprintw(pop, 0, (pw-11)/2, " GAME OVER ");
-    wattroff(pop, COLOR_PAIR(CP_TITLE)|A_BOLD);
+    panel_frame(pop, "game over", CP_ACC_BOARD);
 
     wattron(pop, COLOR_PAIR(CP_INFO_VAL)|A_BOLD);
     int rlen = (int)strlen(state->game.result);
