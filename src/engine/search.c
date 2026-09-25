@@ -61,7 +61,23 @@ static int victim_type(const Position *pos, Move m)
     return 0;
 }
 
-static int move_score(const Position *pos, Move m)
+/* Quiet moves that recently caused a cutoff at the same distance from the
+ * root, and how often each piece-to-square pair has done so anywhere.
+ * Cleared at the start of every search(), kept across its iterations. */
+static Move killers[MAX_DEPTH][2];
+static int  history[12][64];
+
+#define SCORE_TT        1000000
+#define SCORE_KILLER_1     8000
+#define SCORE_KILLER_2     7000
+#define SCORE_HISTORY_MAX  6999   /* below the killers */
+
+static int is_quiet(Move m)
+{
+    return !(FLAGS(m) & (FLAG_CAPTURE | FLAG_PROMOTION));
+}
+
+static int move_score(const Position *pos, Move m, int ply)
 {
     int flags = FLAGS(m);
     int score = 0;
@@ -73,7 +89,25 @@ static int move_score(const Position *pos, Move m)
     }
     if (flags & FLAG_PROMO_Q) score += 9000;
 
+    if (is_quiet(m) && ply >= 0) {
+        if (m == killers[ply][0]) return SCORE_KILLER_1;
+        if (m == killers[ply][1]) return SCORE_KILLER_2;
+        int h = history[PIECE(m)][TO(m)];
+        return h < SCORE_HISTORY_MAX ? h : SCORE_HISTORY_MAX;
+    }
+
     return score;
+}
+
+static void record_cutoff(Move m, int depth, int ply)
+{
+    if (!is_quiet(m) || ply < 0 || ply >= MAX_DEPTH) return;
+
+    if (killers[ply][0] != m) {
+        killers[ply][1] = killers[ply][0];
+        killers[ply][0] = m;
+    }
+    history[PIECE(m)][TO(m)] += depth * depth;
 }
 /* Transposition table
  * Keyed by hash_position(). Content-addressed, so entries stay valid
@@ -125,11 +159,12 @@ static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best) {
 /* Put the TT's remembered best move (if any) first, then sort the rest
  * captures-first. A verified-good move from a previous search is a much
  * stronger ordering hint than "is this a capture". */
-static void order_moves(const Position *pos, MoveList *ml, Move tt_move)
+static void order_moves(const Position *pos, MoveList *ml, Move tt_move, int ply)
 {
     int score[MAX_MOVES];
     for (int i = 0; i < ml->count; i++)
-        score[i] = (ml->moves[i] == tt_move) ? 1000000 : move_score(pos, ml->moves[i]);
+        score[i] = (ml->moves[i] == tt_move) ? SCORE_TT
+                                             : move_score(pos, ml->moves[i], ply);
 
     /* Insertion sort: lists are ~35 long, and qsort's comparator cannot
      * see the position the scores depend on. */
@@ -176,7 +211,7 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
 
     MoveList ml;
     generate_moves(pos, &ml);
-    order_moves(pos, &ml, 0);
+    order_moves(pos, &ml, 0, -1);
 
     int legal = 0;
     for (int i = 0; i < ml.count; i++) {
@@ -208,7 +243,7 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
     return alpha;
 }
 
-static int alpha_beta(Position *pos, int depth, int alpha, int beta) {
+static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     node_count++;
 
     if (search_aborted) return alpha; /* unwind quickly; result gets discarded */
@@ -233,7 +268,7 @@ static int alpha_beta(Position *pos, int depth, int alpha, int beta) {
 
     MoveList ml;
     generate_moves(pos, &ml);
-    order_moves(pos, &ml, tt_move);
+    order_moves(pos, &ml, tt_move, ply);
 
     int legal = 0;
     int orig_alpha = alpha;
@@ -249,10 +284,11 @@ static int alpha_beta(Position *pos, int depth, int alpha, int beta) {
         }
         legal++;
 
-        int score = -alpha_beta(pos, depth-1, -beta, -alpha);
+        int score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
         memcpy(pos, &saved, sizeof(Position));
 
         if (score >= beta) {
+            record_cutoff(ml.moves[i], depth, ply);
             tt_store(key, depth, beta, TT_BETA, ml.moves[i]);
             return beta;
         }
@@ -278,6 +314,8 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
     SearchResult best = {0, -INF, 0, 0};
     node_count = 0;
     tt_ensure();
+    memset(killers, 0, sizeof(killers));
+    memset(history, 0, sizeof(history));
     search_aborted = 0;
     atomic_store(&cancel_requested, 0);
 
@@ -301,7 +339,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
         generate_moves(pos, &ml);
         U64 root_key = hash_position(pos);
         TTEntry *hit = tt_probe(root_key);
-        order_moves(pos, &ml, hit ? hit->best : 0);
+        order_moves(pos, &ml, hit ? hit->best : 0, 0);
 
         int alpha = -INF, beta = INF;
         Move iter_best_move  = 0;
@@ -318,7 +356,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
             }
             legal++;
 
-            int score = -alpha_beta(pos, depth - 1, -beta, -alpha);
+            int score = -alpha_beta(pos, depth - 1, 1, -beta, -alpha);
             memcpy(pos, &saved, sizeof(Position));
 
             if (search_aborted) break; /* this iteration's numbers are unreliable */
