@@ -47,7 +47,7 @@ static void finished(GameState *g, const char *result)
 static Player prof(const char *name)
 {
     Player p = player_human();
-    snprintf(p.engine, sizeof(p.engine), "%s", name);
+    snprintf(p.name, sizeof(p.name), "%s", name);
     return p;
 }
 

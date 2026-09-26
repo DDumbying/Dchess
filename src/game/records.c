@@ -37,14 +37,14 @@ static SideKind kind_of(const Player *p)
 {
     if (p->kind == PLAYER_BUILTIN) return KIND_DCHESS;
     if (p->kind == PLAYER_UCI)     return KIND_ENGINE;
-    return p->engine[0] ? KIND_PROFILE : KIND_GUEST;
+    return p->name[0] ? KIND_PROFILE : KIND_GUEST;
 }
 
 static void side_name(const Player p[2], int side, char *buf, size_t n)
 {
     SideKind k = kind_of(&p[side]);
     if (k == KIND_PROFILE)
-        snprintf(buf, n, "%s", p[side].engine);
+        snprintf(buf, n, "%s", p[side].name);
     else if (k == KIND_GUEST && kind_of(&p[side ^ BLACK]) == KIND_GUEST)
         snprintf(buf, n, "Player %d", side == WHITE ? 1 : 2);
     else if (k == KIND_GUEST)
@@ -59,7 +59,7 @@ static void strength(const Player *p, const EngineList *e, char *buf, size_t n)
     if (p->kind == PLAYER_BUILTIN) {
         snprintf(buf, n, "%s", players_level_name(p->level));
     } else if (p->kind == PLAYER_UCI && e) {
-        const EngineEntry *x = engines_find(e, p->engine);
+        const EngineEntry *x = engines_find(e, p->name);
         if (x) engine_strength_label(x, buf, n);
     }
 }

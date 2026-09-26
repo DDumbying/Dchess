@@ -64,13 +64,13 @@ static void test_engines(void)
 
     check("--white Fake picks the registered engine",
           parse(&a, "--white Fake --black hard") == 0 &&
-          a.players[WHITE].kind == PLAYER_UCI && strcmp(a.players[WHITE].engine, "Fake") == 0 &&
+          a.players[WHITE].kind == PLAYER_UCI && strcmp(a.players[WHITE].name, "Fake") == 0 &&
           engine(&a.players[BLACK], DIFF_HARD));
 
     char *av[] = { "dchess", "--black", "Stockfish 1500" };
     check("a name with spaces, as one argument",
           cli_parse(3, av, &a) == 0 && a.players[BLACK].kind == PLAYER_UCI &&
-          strcmp(a.players[BLACK].engine, "Stockfish 1500") == 0);
+          strcmp(a.players[BLACK].name, "Stockfish 1500") == 0);
 
     check("an unknown name lists the registered ones",
           parse(&a, "--white Komodo") != 0 && strstr(a.error_msg, "Komodo") &&

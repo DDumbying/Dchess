@@ -43,14 +43,14 @@ static int cycle_index(const EngineList *l, const Player *p)
     if (p->kind == PLAYER_BUILTIN) return p->level + 1;
     if (p->kind == PLAYER_UCI)
         for (int i = 0; i < l->count; i++)
-            if (strcmp(l->e[i].name, p->engine) == 0) return i + 4;
+            if (strcmp(l->e[i].name, p->name) == 0) return i + 4;
     return 0;
 }
 
 static void choice_label(const EngineList *l, const Player *p, char *buf, size_t n)
 {
     player_label(p, buf, n);
-    const EngineEntry *e = p->kind == PLAYER_UCI ? engines_find(l, p->engine) : NULL;
+    const EngineEntry *e = p->kind == PLAYER_UCI ? engines_find(l, p->name) : NULL;
     if (e) {
         char s[48];
         size_t len = strlen(buf);

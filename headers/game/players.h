@@ -6,13 +6,14 @@
 
 typedef enum { PLAYER_HUMAN, PLAYER_BUILTIN, PLAYER_UCI } PlayerKind;
 
-/* level, depth and time_ms are for the built-in engine; engine names a registry entry. */
+/* level, depth and time_ms are for the built-in engine. name is a profile
+ * for a human (empty = Guest) or a registry entry for a UCI engine. */
 typedef struct {
     PlayerKind kind;
     int        level;     /* DIFF_EASY / DIFF_MEDIUM / DIFF_HARD */
     int        depth;
     int        time_ms;
-    char       engine[ENGINE_NAME_MAX + 1];
+    char       name[ENGINE_NAME_MAX + 1];
 } Player;
 
 /* Between two engines, so a person can follow the game. */
@@ -21,6 +22,7 @@ typedef struct {
 Player      player_human(void);
 Player      player_builtin(int level);
 Player      player_uci(const char *name);
+Player      player_profile(const char *name);
 int         players_level_from_name(const char *name);
 const char *players_level_name(int level);
 
@@ -36,9 +38,11 @@ int  players_should_start(const Player p[2], int side_to_move, int paused,
 int  players_stats_entry(const Player p[2], int *human_side, int *level);
 
 /* 1 applied, 0 not a player command, -1 invalid with a message in err.
- * `engines` resolves names after "engine"; NULL resolves none. */
+ * `engines` resolves names after "engine", `names` (active profile first)
+ * those after "human"; NULL resolves none. */
 int  players_apply_command(Player p[2], const char *cmd, char *err, size_t n,
-                           const EngineList *engines);
+                           const EngineList *engines,
+                           const char *const *names, int count);
 
 void player_label(const Player *p, char *buf, size_t n);
 void players_pgn_name(const Player p[2], int side, char *buf, size_t n);

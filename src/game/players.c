@@ -3,6 +3,7 @@
 #include "utils/constants.h"
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 Player player_human(void)
 {
@@ -19,10 +20,17 @@ Player player_builtin(int level)
     return p;
 }
 
+Player player_profile(const char *name)
+{
+    Player p = player_human();
+    snprintf(p.name, sizeof(p.name), "%s", name);
+    return p;
+}
+
 Player player_uci(const char *name)
 {
     Player p = { PLAYER_UCI, DIFF_MEDIUM, 0, 0, "" };
-    snprintf(p.engine, sizeof(p.engine), "%s", name);
+    snprintf(p.name, sizeof(p.name), "%s", name);
     return p;
 }
 
@@ -42,6 +50,11 @@ const char *players_level_name(int level)
 static int humans(const Player p[2])
 {
     return (p[WHITE].kind == PLAYER_HUMAN) + (p[BLACK].kind == PLAYER_HUMAN);
+}
+
+static int both_guests(const Player p[2])
+{
+    return humans(p) == 2 && !p[WHITE].name[0] && !p[BLACK].name[0];
 }
 
 int players_automated(const Player p[2], int side)
@@ -76,7 +89,8 @@ int players_stats_entry(const Player p[2], int *human_side, int *level)
 }
 
 int players_apply_command(Player p[2], const char *cmd, char *err, size_t n,
-                          const EngineList *engines)
+                          const EngineList *engines,
+                          const char *const *names, int count)
 {
     char line[128];
     snprintf(line, sizeof(line), "%s", cmd);
@@ -95,16 +109,32 @@ int players_apply_command(Player p[2], const char *cmd, char *err, size_t n,
     if (side < 0 || (line[5] != '\0' && line[5] != ' ')) return 0;
 
     const char *usage =
-        "Use: white|black human, or white|black engine [easy|medium|hard|name]";
+        "Use: white|black human [name|guest], or white|black engine [easy|medium|hard|name]";
     const char *rest = line + 5;
     while (*rest == ' ') rest++;
 
     if (strcmp(rest, "human") == 0) {
-        p[side] = player_human();
+        p[side] = count > 0 ? player_profile(names[0]) : player_human();
         return 1;
     }
     if (strncmp(rest, "human ", 6) == 0) {
-        snprintf(err, n, "A human has no level. %s", usage);
+        const char *arg = rest + 6;
+        while (*arg == ' ') arg++;
+        if (strcasecmp(arg, "guest") == 0) {
+            p[side] = player_human();
+            return 1;
+        }
+        for (int i = 0; i < count; i++)
+            if (strcmp(names[i], arg) == 0) {
+                p[side] = player_profile(arg);
+                return 1;
+            }
+        char list[160] = "";
+        for (int i = 0; i < count; i++) {
+            if (i) strncat(list, ", ", sizeof(list) - strlen(list) - 1);
+            strncat(list, names[i], sizeof(list) - strlen(list) - 1);
+        }
+        snprintf(err, n, "Unknown profile '%s'. Profiles: %s", arg, count ? list : "none");
         return -1;
     }
     if (strcmp(rest, "engine") == 0) {
@@ -133,9 +163,9 @@ int players_apply_command(Player p[2], const char *cmd, char *err, size_t n,
 void player_label(const Player *p, char *buf, size_t n)
 {
     if (p->kind == PLAYER_HUMAN)
-        snprintf(buf, n, "You");
+        snprintf(buf, n, "%s", p->name[0] ? p->name : "Guest");
     else if (p->kind == PLAYER_UCI)
-        snprintf(buf, n, "%s", p->engine);
+        snprintf(buf, n, "%s", p->name);
     else
         snprintf(buf, n, "dchess %s", players_level_name(p->level));
 }
@@ -143,7 +173,7 @@ void player_label(const Player *p, char *buf, size_t n)
 /* Two humans are told apart by number rather than both being "You". */
 static void side_name(const Player p[2], int side, char *buf, size_t n)
 {
-    if (humans(p) == 2)
+    if (both_guests(p))
         snprintf(buf, n, "Player %d", side == WHITE ? 1 : 2);
     else
         player_label(&p[side], buf, n);
@@ -152,13 +182,13 @@ static void side_name(const Player p[2], int side, char *buf, size_t n)
 void players_pgn_name(const Player p[2], int side, char *buf, size_t n)
 {
     if (p[side].kind == PLAYER_UCI)
-        snprintf(buf, n, "%s", p[side].engine);
+        snprintf(buf, n, "%s", p[side].name);
     else if (p[side].kind == PLAYER_BUILTIN)
         snprintf(buf, n, "dchess (%s)", players_level_name(p[side].level));
-    else if (humans(p) == 2)
+    else if (both_guests(p))
         snprintf(buf, n, "Player %d", side == WHITE ? 1 : 2);
     else
-        snprintf(buf, n, "Player");
+        player_label(&p[side], buf, n);
 }
 
 void players_matchup(const Player p[2], char *buf, size_t n)

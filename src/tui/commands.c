@@ -48,7 +48,7 @@ static void attach(TUIState *state, int side)
     if (p->kind == PLAYER_BUILTIN) {
         state->drivers[side] = opponent_builtin(p->depth, p->time_ms);
     } else if (p->kind == PLAYER_UCI) {
-        const EngineEntry *e = engines_find(&state->engines, p->engine);
+        const EngineEntry *e = engines_find(&state->engines, p->name);
         if (e) state->drivers[side] = opponent_uci(e);
     }
 }
@@ -89,7 +89,7 @@ static int same_player(const Player *a, const Player *b)
 {
     return a->kind == b->kind && a->level == b->level &&
            a->depth == b->depth && a->time_ms == b->time_ms &&
-           strcmp(a->engine, b->engine) == 0;
+           strcmp(a->name, b->name) == 0;
 }
 
 void tui_undo(TUIState *state)
@@ -320,7 +320,7 @@ int handle_command(TUIState *state, const char *cmd) {
 
     char err[128];
     Player before[2] = { state->players[WHITE], state->players[BLACK] };
-    int pc = players_apply_command(state->players, cmd, err, sizeof(err), &state->engines);
+    int pc = players_apply_command(state->players, cmd, err, sizeof(err), &state->engines, NULL, 0);
     if (pc < 0) {
         snprintf(state->status, sizeof(state->status), "%s", err);
         return 1;
