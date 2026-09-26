@@ -511,12 +511,15 @@ static void draw_board(WINDOW *win, const TUIState *state)
 void render_all(WINDOW *board, WINDOW *side, WINDOW *cmd, const TUIState *state)
 {
     werase(board);
-    panel_frame(board, "dchess", CP_ACC_BOARD);
+    char title[64];
+    players_matchup(state->players, title, sizeof(title));
+    panel_frame(board, title, CP_ACC_BOARD);
 
     int bh, bw;
     getmaxyx(board, bh, bw);
+    /* The link gives way to the matchup when both do not fit. */
     const char *brand = " github.com/DDumbying ";
-    if (bw > (int)strlen(brand) + 12) {
+    if (bw > (int)(strlen(title) + strlen(brand)) + 8) {
         wattron(board, COLOR_PAIR(CP_LINK));
         mvw_clip(board, 0, bw - (int)strlen(brand) - 2, "%s", brand);
         wattroff(board, COLOR_PAIR(CP_LINK));
