@@ -203,7 +203,7 @@ void players_pgn_name(const Player p[2], int side, char *buf, size_t n)
 
 void players_matchup(const Player p[2], char *buf, size_t n)
 {
-    char w[48], b[48];
+    char w[PLAYER_NAME_MAX + 1], b[PLAYER_NAME_MAX + 1];
     side_name(p, WHITE, w, sizeof(w));
     side_name(p, BLACK, b, sizeof(b));
     snprintf(buf, n, "%s vs %s", w, b);
@@ -211,7 +211,7 @@ void players_matchup(const Player p[2], char *buf, size_t n)
 
 void players_describe(const Player p[2], char *buf, size_t n)
 {
-    char w[48], b[48];
+    char w[PLAYER_NAME_MAX + 1], b[PLAYER_NAME_MAX + 1];
     side_name(p, WHITE, w, sizeof(w));
     side_name(p, BLACK, b, sizeof(b));
     snprintf(buf, n, "White: %s · Black: %s", w, b);

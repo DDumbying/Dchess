@@ -193,6 +193,72 @@ static void test_stats(void)
     check("legacy records feed the history", s.history_count == 2 && s.history[0].result == 1);
 }
 
+
+static int legacy_count(void)
+{
+    RecordList r;
+    int n = 0;
+    records_load(games, &r);
+    for (int i = 0; i < r.count; i++) n += r.r[i].legacy;
+    records_free(&r);
+    return n;
+}
+
+static void test_first_run_safety(void)
+{
+    printf("== first run safety ==\n");
+    ProfileList l;
+    DchessStats old;
+    memset(&old, 0, sizeof(old));
+    old.history_count = 2;
+    old.history[0] = (GameRecord){ 1700000000L, 1 };
+    old.history[1] = (GameRecord){ 1700000600L, -1 };
+
+    remove(games);
+    char blocker[512];
+    snprintf(blocker, sizeof(blocker), "%s/blocker", dir);
+    fclose(fopen(blocker, "w"));
+    setenv("XDG_CONFIG_HOME", blocker, 1);          /* profiles.conf cannot be saved */
+    profiles_first_run(&l, "saeed", &old, games);
+    profiles_first_run(&l, "saeed", &old, games);
+    check("an unsaved first run imports nothing", legacy_count() == 0);
+    setenv("XDG_CONFIG_HOME", dir, 1);
+    remove(blocker);
+
+    remove_conf();
+    profiles_first_run(&l, "saeed", &old, games);
+    remove_conf();
+    profiles_first_run(&l, "saeed", &old, games);
+    check("a reset profiles.conf does not import twice", legacy_count() == 2);
+
+    char path[512];
+    profiles_path(path, sizeof(path));
+    chmod(path, 0);
+    check("an unreadable profiles.conf is not a first run",
+          profiles_first_run(&l, "bob", &old, games) == 0);
+    chmod(path, 0644);
+    check("and is left alone", profiles_load(&l) == 1 && strcmp(l.p[0].name, "saeed") == 0);
+}
+
+
+static void test_unicode_names(void)
+{
+    printf("== unicode names ==\n");
+    char err[128];
+    ProfileList l = { .count = 0 }, back;
+    const char *ru = "Сергей Иванович";                        /* 15 characters, 29 bytes */
+    const char *ru24 = "ЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖ";               /* 24 characters, 48 bytes */
+    const char *ru25 = "ЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖ";              /* 25 characters */
+    remove_conf();
+    check("a Cyrillic name is accepted", profiles_add(&l, NULL, ru, err, sizeof(err)));
+    check("24 characters of 2 bytes each fit", profiles_add(&l, NULL, ru24, err, sizeof(err)));
+    check("25 characters do not", !profiles_add(&l, NULL, ru25, err, sizeof(err)));
+    profiles_save(&l);
+    check("they survive save and load",
+          profiles_load(&back) == 1 && back.count == 2 &&
+          strcmp(back.p[0].name, ru) == 0 && strcmp(back.p[1].name, ru24) == 0);
+}
+
 int main(void)
 {
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
@@ -205,6 +271,8 @@ int main(void)
     test_malformed();
     test_first_run();
     test_stats();
+    test_first_run_safety();
+    test_unicode_names();
 
     char cmd[600];
     snprintf(cmd, sizeof(cmd), "rm -rf %s", dir);

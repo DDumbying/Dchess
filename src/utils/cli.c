@@ -278,6 +278,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     args->menu          = 0;
     args->no_menu       = 0;
     args->theme         = 0;
+    args->theme_set     = 0;
     args->any_gameplay_flag = 0;
     args->error        = 0;
     args->error_msg[0] = '\0';
@@ -472,6 +473,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
                 return -1;
             }
             args->theme = t;
+            args->theme_set = 1;
             args->any_gameplay_flag = 1;
             continue;
         }

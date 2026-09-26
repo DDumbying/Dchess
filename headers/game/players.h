@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include "utils/engines.h"
 
+/* Bytes: a 24-character profile name in UTF-8, or a 40-byte engine name. */
+#define PLAYER_NAME_MAX 96
+
 typedef enum { PLAYER_HUMAN, PLAYER_BUILTIN, PLAYER_UCI } PlayerKind;
 
 /* level, depth and time_ms are for the built-in engine. name is a profile
@@ -13,7 +16,7 @@ typedef struct {
     int        level;     /* DIFF_EASY / DIFF_MEDIUM / DIFF_HARD */
     int        depth;
     int        time_ms;
-    char       name[ENGINE_NAME_MAX + 1];
+    char       name[PLAYER_NAME_MAX + 1];
 } Player;
 
 /* Between two engines, so a person can follow the game. */

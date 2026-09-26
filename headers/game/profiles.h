@@ -1,12 +1,13 @@
 #ifndef PROFILES_H
 #define PROFILES_H
+#include "game/players.h"
 #include "utils/engines.h"
 #include "utils/stats.h"
 #define PROFILES_MAX 32
 #define PROFILE_NAME_MAX 24
 typedef struct {
-    char name[PROFILE_NAME_MAX + 1];
-    char theme[24], white[48], black[48];
+    char name[PLAYER_NAME_MAX + 1];          /* at most PROFILE_NAME_MAX characters */
+    char theme[24], white[PLAYER_NAME_MAX + 1], black[PLAYER_NAME_MAX + 1];
     int  legacy_games, legacy_wins, legacy_losses, legacy_draws;
 } Profile;
 typedef struct { Profile p[PROFILES_MAX]; int count, active; } ProfileList;

@@ -116,6 +116,8 @@ static void test_profiles_cli(void)
           parse(&a, "--black guest") == 0 && human(&a.players[BLACK]) &&
           a.players[BLACK].name[0] == '\0' && !a.human_active[BLACK]);
     check("--white human is the active profile", parse(&a, "--white human") == 0 && a.human_active[WHITE]);
+    check("--theme marks the theme as chosen", parse(&a, "--theme btop") == 0 && a.theme_set);
+    check("otherwise it is not", parse(&a, "--white easy") == 0 && !a.theme_set);
     check("--white easy is still dchess", parse(&a, "--white easy") == 0 && engine(&a.players[WHITE], DIFF_EASY));
 
     char path[512], cmd[600];

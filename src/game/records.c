@@ -76,7 +76,7 @@ static void add_tag(PgnHeader *h, const char *k, const char *v)
 int records_append(const char *path, const GameState *g, const Player p[2],
                    const EngineList *engines)
 {
-    char w[48], b[48], ws[32], bs[32], tm[16], plies[16], secs[16];
+    char w[PLAYER_NAME_MAX + 1], b[PLAYER_NAME_MAX + 1], ws[32], bs[32], tm[16], plies[16], secs[16];
     side_name(p, WHITE, w, sizeof(w));
     side_name(p, BLACK, b, sizeof(b));
     strength(&p[WHITE], engines, ws, sizeof(ws));
@@ -191,19 +191,25 @@ int records_load(const char *path, RecordList *out)
 
     char line[1024], k[32], v[256];
     Record cur;
-    int have = 0, open = 0;
+    int have = 0, open = 0, in_tags = 0;
     while (fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\r\n")] = '\0';
-        if (!parse_tag(line, k, sizeof(k), v, sizeof(v))) continue;
-        if (!strcmp(k, "Event")) {
+        if (!parse_tag(line, k, sizeof(k), v, sizeof(v))) {
+            in_tags = 0;
+            continue;
+        }
+        /* A game starts at its first tag, so a broken Event line cannot
+         * fold one game into the one before. */
+        int starts = !in_tags || !strcmp(k, "Event");
+        in_tags = 1;
+        if (starts) {
             if (open) keep(out, &cur, have);
             memset(&cur, 0, sizeof(cur));
             cur.white_kind = cur.black_kind = KIND_GUEST;
             have = 0;
             open = 1;
-        } else if (open) {
-            set_field(&cur, k, v, &have);
         }
+        set_field(&cur, k, v, &have);
     }
     if (open) keep(out, &cur, have);
     fclose(f);
@@ -255,16 +261,27 @@ int records_rename(const char *path, const char *old, const char *new_name)
     }
 
     char line[1024], k[32], v[256];
-    int n = 0;
+    int n = 0, cont = 0;
     while (fgets(line, sizeof(line), in)) {
-        line[strcspn(line, "\r\n")] = '\0';
-        if (parse_tag(line, k, sizeof(k), v, sizeof(v)) && n < MAX_TAGS) {
-            memcpy(tags[n++], line, sizeof(line));
+        size_t len = strlen(line);
+        int whole = len && line[len - 1] == '\n';
+        /* Anything but a whole tag line is copied byte for byte, so long
+         * movetext lines come through unsplit. */
+        if (!cont && whole) {
+            line[strcspn(line, "\r\n")] = '\0';
+            if (parse_tag(line, k, sizeof(k), v, sizeof(v)) && n < MAX_TAGS) {
+                memcpy(tags[n++], line, sizeof(line));
+                continue;
+            }
+            flush_tags(out, tags, n, old, new_name);
+            n = 0;
+            fprintf(out, "%s\n", line);
             continue;
         }
         flush_tags(out, tags, n, old, new_name);
         n = 0;
-        fprintf(out, "%s\n", line);
+        fputs(line, out);
+        cont = !whole;
     }
     flush_tags(out, tags, n, old, new_name);
     free(tags);

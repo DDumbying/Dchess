@@ -46,10 +46,15 @@ void tui_remember_setup(TUIState *state)
 {
     if (!state->profiles.count) return;
     Profile *p = &state->profiles.p[state->profiles.active];
-    snprintf(p->theme, sizeof(p->theme), "%s", theme_name(state->theme));
+    if (state->theme_set)
+        snprintf(p->theme, sizeof(p->theme), "%s", theme_name(state->theme));
     player_word(&state->players[WHITE], p->white, sizeof(p->white));
     player_word(&state->players[BLACK], p->black, sizeof(p->black));
+    /* Saved with the file's own active profile: --profile is for one run. */
+    int run = state->profiles.active;
+    state->profiles.active = state->file_active;
     profiles_save(&state->profiles);
+    state->profiles.active = run;
 }
 
 void cancel_engine_search(TUIState *state)
@@ -425,7 +430,7 @@ int handle_command(TUIState *state, const char *cmd) {
         else
             pgn_default_path(path, sizeof(path));
 
-        char white[48], black[48];
+        char white[PLAYER_NAME_MAX + 1], black[PLAYER_NAME_MAX + 1];
         players_pgn_name(state->players, WHITE, white, sizeof(white));
         players_pgn_name(state->players, BLACK, black, sizeof(black));
         PgnHeader h = {

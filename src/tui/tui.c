@@ -19,6 +19,7 @@
 #include "utils/bitboard.h"
 #include "utils/stats.h"
 #include "utils/cli.h"
+#include "utils/theme.h"
 #include <ncurses.h>
 #include <string.h>
 #include <stdio.h>
@@ -287,9 +288,15 @@ void tui_init(TUIState *state, const CliArgs *args)
     records_path(games, sizeof(games));
     if (!profiles_load(&state->profiles))
         profiles_first_run(&state->profiles, getenv("USER"), &state->stats, games);
+    state->file_active = state->profiles.active;
     if (args && args->profile[0]) {
         int i = profiles_find(&state->profiles, args->profile);
         if (i >= 0) state->profiles.active = i;
+    }
+    state->theme_set = args ? args->theme_set : 0;
+    if (!state->theme_set && state->profiles.count) {
+        int t = theme_from_name(state->profiles.p[state->profiles.active].theme);
+        if (t >= 0) state->theme = t;
     }
     for (int s = WHITE; s <= BLACK; s++) {
         int active = args ? args->human_active[s] : s == WHITE;

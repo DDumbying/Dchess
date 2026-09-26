@@ -16,6 +16,8 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
+#include <limits.h>
+#include <wchar.h>
 
 enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_THEME, ROW_START, ROW_COUNT };
 enum { FOCUS_PROFILES, FOCUS_GAME };
@@ -104,6 +106,7 @@ static void apply_profile(TUIState *s, Launch *L)
 static void set_active(TUIState *s, Launch *L, int i)
 {
     s->profiles.active = i;
+    s->file_active = i;
     L->pcursor = i;
     profiles_save(&s->profiles);
     apply_profile(s, L);
@@ -305,8 +308,7 @@ static void draw(TUIState *s, Launch *L)
 /* Edits `buf` on the message row. 1 on Enter, 0 on Esc. */
 static int prompt(const char *label, char *buf, size_t size)
 {
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
+    int rows = getmaxy(stdscr);
     int len = (int)strlen(buf), col = 2 + (int)strlen(label);
     curs_set(1);
     for (;;) {
@@ -315,24 +317,37 @@ static int prompt(const char *label, char *buf, size_t size)
         attron(COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
         mvprintw(rows - 2, 2, "%s", label);
         attroff(COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
-        mvprintw(rows - 2, col, "%.*s", cols - col - 1, buf);
-        move(rows - 2, col + len);
+        mvprintw(rows - 2, col, "%s", buf);
         refresh();
-        int ch = getch();
-        if (ch == 27) { curs_set(0); return 0; }
-        if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) { curs_set(0); return 1; }
-        if (ch == KEY_BACKSPACE || ch == 127 || ch == 8) {
-            if (len) buf[--len] = '\0';
-        } else if (ch >= 32 && ch < 127 && len < (int)size - 1) {
-            buf[len++] = (char)ch;
+        wint_t ch;
+        int kind = get_wch(&ch);
+        if (kind == ERR) continue;
+        if (kind == OK && ch == 27) { curs_set(0); return 0; }
+        if ((kind == OK && (ch == '\n' || ch == '\r')) || (kind == KEY_CODE_YES && ch == KEY_ENTER)) {
+            curs_set(0);
+            return 1;
+        }
+        if ((kind == KEY_CODE_YES && ch == KEY_BACKSPACE) || (kind == OK && (ch == 127 || ch == 8))) {
+            while (len && ((unsigned char)buf[len - 1] & 0xC0) == 0x80) len--;   /* whole UTF-8 character */
+            if (len) len--;
             buf[len] = '\0';
+        } else if (kind == OK && ch >= 32 && ch != 127) {
+            char mb[MB_LEN_MAX];
+            mbstate_t st;
+            memset(&st, 0, sizeof(st));
+            size_t n = wcrtomb(mb, (wchar_t)ch, &st);
+            if (n != (size_t)-1 && len + (int)n < (int)size) {
+                memcpy(buf + len, mb, n);
+                len += (int)n;
+                buf[len] = '\0';
+            }
         }
     }
 }
 
 static void new_profile(TUIState *s, Launch *L)
 {
-    char name[PROFILE_NAME_MAX + 1] = "", err[96];
+    char name[PLAYER_NAME_MAX + 1] = "", err[96];
     if (!prompt("New profile: ", name, sizeof(name)) || !name[0]) { say(L, 0, "Cancelled"); return; }
     if (!profiles_add(&s->profiles, &s->engines, name, err, sizeof(err))) { say(L, 1, err); return; }
     set_active(s, L, s->profiles.count - 1);
@@ -343,7 +358,7 @@ static void new_profile(TUIState *s, Launch *L)
 static void rename_profile(TUIState *s, Launch *L)
 {
     int i = L->pcursor;
-    char name[PROFILE_NAME_MAX + 1], err[96];
+    char name[PLAYER_NAME_MAX + 1], err[96];
     snprintf(name, sizeof(name), "%s", s->profiles.p[i].name);
     if (!prompt("Rename to: ", name, sizeof(name))) { say(L, 0, "Cancelled"); return; }
     if (strcmp(name, s->profiles.p[i].name) == 0) return;
@@ -406,6 +421,7 @@ static int start(TUIState *s, Launch *L)
     chosen.players[WHITE] = L->sel[WHITE];
     chosen.players[BLACK] = L->sel[BLACK];
     chosen.theme = L->theme;
+    chosen.theme_set = 1;
     snprintf(chosen.profile, sizeof(chosen.profile), "%s", active_name(s));
     if (L->use_custom_fen && L->fen[0])
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", L->fen);

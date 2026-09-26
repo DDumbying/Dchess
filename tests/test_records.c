@@ -238,6 +238,67 @@ static void test_to_stats(void)
     records_free(&l);
 }
 
+
+static void test_rename_long_lines(void)
+{
+    printf("== rename keeps long lines ==\n");
+    fresh("long.pgn");
+    FILE *f = fopen(path, "w");
+    fputs("[Event \"x\"]\n[White \"saeed\"]\n[Black \"bob\"]\n[Result \"1-0\"]\n"
+          "[WhiteKind \"profile\"]\n[BlackKind \"guest\"]\n\n", f);
+    for (int i = 1; i <= 400; i++) fprintf(f, "%d. Nf3 Nf6 ", i);
+    fputs("1-0\n", f);
+    fclose(f);
+
+    records_rename(path, "saeed", "neo");
+    static char buf[16384];
+    f = fopen(path, "r");
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    int lines = 0;
+    for (char *p = buf; *p; p++) lines += *p == '\n';
+    check("the name is relabelled", strstr(buf, "[White \"neo\"]") != NULL);
+    check("a long movetext line is copied whole", lines == 8 && strstr(buf, "400. Nf3 Nf6 1-0\n"));
+}
+
+
+static void test_damaged_event(void)
+{
+    printf("== a damaged Event line ==\n");
+    fresh("event.pgn");
+    FILE *f = fopen(path, "w");
+    fputs("[Event \"a\"]\n[White \"saeed\"]\n[Black \"alice\"]\n[Result \"1-0\"]\n"
+          "[WhiteKind \"profile\"]\n[BlackKind \"profile\"]\n\n1-0\n\n"
+          "[Event \"b\"\n[White \"bob\"]\n[Black \"carol\"]\n[Result \"0-1\"]\n"
+          "[WhiteKind \"profile\"]\n[BlackKind \"profile\"]\n\n0-1\n", f);
+    fclose(f);
+    RecordList l;
+    records_load(path, &l);
+    check("both games load", l.count == 2);
+    check("neither overwrites the other",
+          l.count == 2 && strcmp(l.r[0].white, "saeed") == 0 && strcmp(l.r[1].white, "bob") == 0 &&
+          l.r[0].result == 1 && l.r[1].result == -1);
+    records_free(&l);
+}
+
+
+static void test_unicode_record(void)
+{
+    printf("== unicode names in records ==\n");
+    fresh("uni.pgn");
+    const char *ru24 = "ЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖЖ";
+    GameState g;
+    Player p[2] = { player_profile(ru24), player_builtin(DIFF_EASY) };
+    finished(&g, "Checkmate — White wins!");
+    records_append(path, &g, p, NULL);
+    RecordList l;
+    records_load(path, &l);
+    check("a 48-byte name is stored whole", l.count == 1 && strcmp(l.r[0].white, ru24) == 0);
+    check("and tallies", records_tally(&l, ru24).wins == 1);
+    records_free(&l);
+}
+
 int main(void)
 {
     init_attacks();
@@ -247,7 +308,10 @@ int main(void)
     test_tally();
     test_legacy();
     test_rename_spaces();
+    test_rename_long_lines();
     test_damaged();
+    test_damaged_event();
+    test_unicode_record();
     test_speed();
     test_to_stats();
 

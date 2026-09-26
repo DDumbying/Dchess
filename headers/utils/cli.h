@@ -15,7 +15,8 @@ typedef struct {
     int show_stats;     /* --stats flag    */
     int list_engines;   /* --engines flag */
     int list_profiles;  /* --profiles flag */
-    char profile[PROFILE_NAME_MAX + 1];   /* --profile, or empty */
+    char profile[PLAYER_NAME_MAX + 1];   /* --profile, or empty */
+    int theme_set;      /* --theme was given */
     int human_active[2];   /* this side is the active profile, resolved at startup */
     int show_help;      /* --help flag     */
     char fen[128];       /* --fen <string>: custom starting position, empty = standard start */

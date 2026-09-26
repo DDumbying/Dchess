@@ -29,8 +29,10 @@ static void set_err(char *err, size_t n, const char *msg)
 int profiles_check_name(const ProfileList *l, const EngineList *e, const char *name,
                         int skip, char *err, size_t n)
 {
-    size_t len = strlen(name);
-    if (len == 0 || len > PROFILE_NAME_MAX) {
+    size_t len = strlen(name), chars = 0;
+    for (const char *c = name; *c; c++)
+        chars += ((unsigned char)*c & 0xC0) != 0x80;   /* UTF-8 lead bytes */
+    if (len == 0 || chars > PROFILE_NAME_MAX || len > PLAYER_NAME_MAX) {
         set_err(err, n, "a name needs 1 to 24 characters");
         return 0;
     }
@@ -214,14 +216,26 @@ int profiles_save(const ProfileList *l)
     return rename(tmp, path) == 0;
 }
 
+static int has_legacy(const char *games, const char *name)
+{
+    RecordList r;
+    int found = 0;
+    records_load(games, &r);
+    for (int i = 0; i < r.count && !found; i++)
+        found = r.r[i].legacy && strcmp(r.r[i].white, name) == 0;
+    records_free(&r);
+    return found;
+}
+
 int profiles_first_run(ProfileList *l, const char *user, const DchessStats *old,
                        const char *games)
 {
     char path[512];
     if (!profiles_path(path, sizeof(path))) return 0;
     FILE *f = fopen(path, "r");
-    if (f) {
-        fclose(f);
+    if (f || errno != ENOENT) {
+        /* Only a missing file is a first run; an unreadable one is not. */
+        if (f) fclose(f);
         profiles_load(l);
         return 0;
     }
@@ -230,19 +244,21 @@ int profiles_first_run(ProfileList *l, const char *user, const DchessStats *old,
     if (!user || !profiles_add(l, NULL, user, NULL, 0))
         profiles_add(l, NULL, "player", NULL, 0);
 
-    if (old) {
-        Profile *p = &l->p[0];
+    Profile *p = &l->p[0];
+    if (old)
         for (int i = 0; i < 3; i++) {
             p->legacy_games  += old->games_played[i];
             p->legacy_wins   += old->wins[i];
             p->legacy_losses += old->losses[i];
             p->legacy_draws  += old->draws[i];
         }
+    /* Import only once the profile is safely saved, and only once ever. */
+    if (!profiles_save(l)) return 0;
+    if (old && games && !has_legacy(games, p->name)) {
         int n = old->history_count < DCHESS_MAX_HISTORY ? old->history_count : DCHESS_MAX_HISTORY;
-        for (int i = 0; games && i < n; i++)
+        for (int i = 0; i < n; i++)
             records_append_legacy(games, p->name, old->history[i].timestamp, old->history[i].result);
     }
-    profiles_save(l);
     return 1;
 }
 

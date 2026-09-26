@@ -9,7 +9,7 @@ typedef enum { KIND_PROFILE, KIND_GUEST, KIND_DCHESS, KIND_ENGINE } SideKind;
 
 typedef struct {
     char     date[11], time[9];
-    char     white[48], black[48];
+    char     white[PLAYER_NAME_MAX + 1], black[PLAYER_NAME_MAX + 1];
     SideKind white_kind, black_kind;
     char     white_strength[32], black_strength[32];
     int      result;          /* 1 white won, 0 draw, -1 black won */
