@@ -8,7 +8,8 @@
 #include "utils/cli.h"
 #include <ncurses.h>
 #include <time.h>
-#include <pthread.h>
+#include "game/players.h"
+#include "game/opponent.h"
 
 /* View and controller. The game itself lives in `game`, and the rules
  * logic belongs there, not here. */
@@ -18,10 +19,9 @@ typedef struct {
 
     char     status[256];
     char     last_cmd[64];
-    int      engine_depth;
-    int      engine_side;
     char     last_eval[32];   /* formatted for display, e.g. "+0.34" */
     SearchResult last_search; /* nodes == 0 until the first search */
+    char     last_search_by[32];   /* the engine behind last_search */
 
     /* Cursor & selection */
     int      cursor_row;
@@ -31,9 +31,15 @@ typedef struct {
     int      sel_col;
     int      highlight[8][8];
 
-    /* Game configuration from CLI */
-    int      player_side;   /* WHITE or BLACK  – the human's color */
-    int      difficulty;    /* DIFF_EASY / DIFF_MEDIUM / DIFF_HARD */
+    /* Who plays each side. Drivers are built by tui_attach_players(), not
+     * tui_init(), which runs twice and would leak the first set. */
+    Player    players[2];
+    Opponent *drivers[2];     /* NULL for a human */
+    Opponent *go_driver;      /* "go" on a human's turn */
+    Opponent *thinking;       /* the driver searching now, or NULL */
+    char      thinking_by[32];
+    int       paused;
+    long      last_move_ms;   /* monotonic; when an engine last moved */
 
     /* Persistent statistics */
     DchessStats stats;
@@ -41,10 +47,7 @@ typedef struct {
     /* 0 = normal (hjkl navigates), 1 = insert (type commands) */
     int  insert_mode;
 
-    /* Local two-player: no engine. */
-    int  two_player;
-
-    /* Side the board is drawn from; flips each move in two-player. */
+    /* Side the board is drawn from; turns each move between two humans. */
     int  view_side;
 
     /* Lets commands.c force a repaint so "Engine thinking..." appears
@@ -57,29 +60,6 @@ typedef struct {
 
     /* Index into the theme table; applied via init_colors(). */
     int theme;
-
-    /* Search budget in ms, paired with engine_depth. */
-    int time_limit_ms;
-
-    /* Background engine search. The worker only ever touches
-     * search_snapshot, a private copy, so the main thread can keep
-     * rendering the live game while a search is in flight.
-     *
-     * search_running is main-thread only. search_ready/search_result are
-     * the one cross-thread handoff and are guarded by search_mutex. */
-    pthread_t       search_thread;
-    pthread_mutex_t search_mutex;
-    int             search_running;
-    int             search_ready;
-    Position        search_snapshot;
-    int             search_depth_arg;     /* engine_depth, captured at kickoff */
-    int             search_time_limit_arg; /* time_limit_ms, captured at kickoff */
-    SearchResult    search_result;
-
-    /* Captured at kickoff. A result is only applied if the live position
-     * still hashes to this, so anything that changed the board
-     * mid-search invalidates it. */
-    U64             search_snapshot_hash;
 } TUIState;
 
 

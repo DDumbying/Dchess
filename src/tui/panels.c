@@ -225,25 +225,31 @@ static void engine_row(WINDOW *p, int row, const char *label, const char *value)
 
 static void draw_engine_panel(WINDOW *p, const TUIState *state)
 {
-    panel_frame(p, "engine", CP_ACC_ENGINE);
+    const char *by = state->thinking ? state->thinking_by : state->last_search_by;
+    char title[48];
+    if (by[0]) snprintf(title, sizeof(title), "engine · %s", by);
+    else       snprintf(title, sizeof(title), "engine");
+    panel_frame(p, title, CP_ACC_ENGINE);
 
-    if (state->two_player || state->engine_side < 0) {
-        wattron(p, COLOR_PAIR(CP_HINT));
-        mvw_clip(p, 1, 2, "no engine");
-        wattroff(p, COLOR_PAIR(CP_HINT));
-        return;
-    }
-    if (state->search_running) {
+    if (state->thinking) {
         wattron(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
         mvw_clip(p, 1, 2, "thinking...");
+        wattroff(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
+        return;
+    }
+    if (state->paused && players_automated(state->players, state->game.pos.side)) {
+        wattron(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
+        mvw_clip(p, 1, 2, "paused");
         wattroff(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
         return;
     }
 
     const SearchResult *r = &state->last_search;
     if (r->nodes == 0) {
+        int any = players_automated(state->players, WHITE) ||
+                  players_automated(state->players, BLACK);
         wattron(p, COLOR_PAIR(CP_HINT));
-        mvw_clip(p, 1, 2, "waiting");
+        mvw_clip(p, 1, 2, any ? "waiting" : "no engine");
         wattroff(p, COLOR_PAIR(CP_HINT));
         return;
     }

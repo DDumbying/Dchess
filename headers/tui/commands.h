@@ -4,32 +4,34 @@
 #include "tui/tui.h"
 #include <stddef.h>
 
-/* Returns 1 if command was handled, 0 if unknown */
+/* Returns -1 on quit, 1 otherwise. */
 int handle_command(TUIState *state, const char *cmd);
 
-/* Call once per main-loop iteration. Returns 1 if a finished search was
- * applied, in which case the caller should call game_update_status().
- * Non-blocking. */
-int poll_engine_search(TUIState *state);
+/* Call once per main-loop tick. Applies a finished search, or starts the
+ * side to move's engine when it is due. Returns 1 when a search came
+ * back, in which case the caller should call game_update_status(). */
+int drive_turn(TUIState *state);
 
-/* Discards whatever the search had found. Call before replacing the game
- * state, or a move computed for the previous position lands on the new
- * one. No-op when nothing is running. */
+/* Discards whatever is being searched. No-op when nothing is. */
 void cancel_engine_search(TUIState *state);
 
-/* Resets the game and the view, cancelling any search belonging to the
- * game being discarded. Used by both "new" and the game-over popup. */
+/* Builds a driver for every engine side. Call once the players are final;
+ * tui_release_players() frees them. */
+void tui_attach_players(TUIState *state);
+void tui_release_players(TUIState *state);
+
+/* Whether the person at the keyboard may move for the side to move. */
+int tui_can_move_by_hand(const TUIState *state);
+
+/* Keeps the players and clears any pause. Used by "new" and the game-over
+ * popup. */
 void tui_new_game(TUIState *state);
 
-/* One ply in two-player, otherwise as many as it takes to hand the turn
- * back to the human. Cancels any running search and deliberately does
- * not start a new one -- the engine moving again would undo the undo. */
+/* Takes back players_undo_plies() plies and starts nothing; pauses when
+ * both sides are engines, which would otherwise replay the move. */
 void tui_undo(TUIState *state);
 
-/* "Easy" / "Medium" / "Hard" for a DIFF_* constant. */
-const char *difficulty_label(int difficulty);
-
-/* "You play White | Medium difficulty" */
+/* "White: You · Black: dchess Medium" */
 void describe_setup(const TUIState *state, char *buf, size_t n);
 
 #endif
