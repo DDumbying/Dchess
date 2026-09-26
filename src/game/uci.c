@@ -415,12 +415,16 @@ static void feed(Uci *u, const char *p, ssize_t n)
     }
 }
 
+/* Bounded per call, so an engine that never stops talking cannot keep
+ * the caller from its deadlines. */
+#define UCI_PUMP_MAX (64 * 1024)
+
 static void pump(Uci *u)
 {
     char chunk[1024];
-    while (u->pid) {
+    for (int total = 0; u->pid && total < UCI_PUMP_MAX; ) {
         ssize_t r = read(u->from_fd, chunk, sizeof(chunk));
-        if (r > 0) { feed(u, chunk, r); continue; }
+        if (r > 0) { feed(u, chunk, r); total += (int)r; continue; }
         if (r == 0) { gone(u); return; }
         if (errno != EINTR) return;
     }
@@ -592,7 +596,9 @@ int uci_probe(const char *path, UciProbe *out, char *err, size_t n)
         struct pollfd pf = { from, POLLIN, 0 };
         poll(&pf, 1, 20);
         ssize_t r = -1;
-        while (!ok && (r = read(from, chunk, sizeof(chunk))) > 0) {
+        int total = 0;
+        while (!ok && total < UCI_PUMP_MAX && (r = read(from, chunk, sizeof(chunk))) > 0) {
+            total += (int)r;
             for (ssize_t i = 0; i < r && !ok; i++) {
                 if (chunk[i] != '\n') {
                     if (len < (int)sizeof(line) - 1) line[len++] = chunk[i];

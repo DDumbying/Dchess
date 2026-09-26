@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "engine/board.h"
 #include "engine/fen.h"
 #include "engine/make.h"
@@ -94,6 +95,12 @@ int main(int argc, char **argv)
         if (strcmp(line, "quit") == 0) break;
         if (strcmp(mode, "mute") == 0) continue;
 
+        if (strcmp(line, "uci") == 0 && strcmp(mode, "flood") == 0) {
+            /* Big writes, like yes(1), so the pipe never runs dry. */
+            static char block[65536];
+            for (size_t i = 0; i < sizeof(block); i++) block[i] = (i % 32 == 31) ? '\n' : 'f';
+            for (;;) if (write(1, block, sizeof(block)) < 0) return 1;
+        }
         if (strcmp(line, "uci") == 0) {
             say("id name Fake UCI");
             say("id author dchess tests");

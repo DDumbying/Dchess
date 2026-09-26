@@ -340,6 +340,9 @@ static void test_driver_failures(void)
     long t0 = now_ms();
     expect_failure("mute", "build/fake_uci", "Fake: no reply from engine", 12000);
     check("mute waits out the 10s handshake", now_ms() - t0 >= 9000);
+    t0 = now_ms();
+    expect_failure("flood", "build/fake_uci", "Fake: no reply from engine", 15000);
+    check("an engine flooding stdout still times out", now_ms() - t0 < 14000);
     check("no child process is left", no_children());
 }
 
@@ -415,6 +418,12 @@ static void test_probe_not_an_engine(void)
     check("/bin/true exits: could not start",
           !uci_probe("/bin/true", &p, err, sizeof(err)) &&
           strcmp(err, "could not start /bin/true") == 0);
+    mode("flood");
+    long t0 = now_ms();
+    check("an engine flooding stdout fails the probe",
+          !uci_probe("build/fake_uci", &p, err, sizeof(err)) &&
+          strcmp(err, "no reply from engine") == 0);
+    check("within about 5s", now_ms() - t0 < 7000);
     check("/bin/cat echoes but never says uciok",
           !uci_probe("/bin/cat", &p, err, sizeof(err)) &&
           strcmp(err, "no reply from engine") == 0);
