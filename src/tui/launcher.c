@@ -389,16 +389,7 @@ static void delete_profile(TUIState *s, Launch *L)
 
 static void show_stats(TUIState *s)
 {
-    int rows, cols;
-    getmaxyx(stdscr, rows, cols);
-    tui_refresh_stats(s);
-    WINDOW *sw = newwin(rows, cols, 0, 0);
-    keypad(sw, TRUE);
-    draw_stats_overlay(sw, &s->stats);
-    doupdate();
-    wgetch(sw);
-    delwin(sw);
-    clear();
+    stats_screen(s);
 }
 
 static void change_row(TUIState *s, Launch *L, int dir)

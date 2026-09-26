@@ -26,17 +26,7 @@ int main(int argc, char **argv)
     setlocale(LC_ALL, "");   /* required for ncurses unicode output */
 
     if (args.show_stats) {
-        DchessStats s;
-        ProfileList pl;
-        char games[512];
-        records_path(games, sizeof(games));
-        if (profiles_load(&pl) && pl.count) {
-            int i = args.profile[0] ? profiles_find(&pl, args.profile) : -1;
-            profiles_stats(&pl.p[i >= 0 ? i : pl.active], games, &s);
-        } else {
-            stats_load(&s);
-        }
-        show_stats_overlay(&s);   /* full TUI stats window */
+        stats_standalone(args.profile);
         return 0;
     }
 

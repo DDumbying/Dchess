@@ -562,8 +562,7 @@ void tui_run(TUIState *state)
         }
 
         if (ch == '\t') {   /* stats popup over the board */
-            tui_refresh_stats(state);
-            draw_stats_mini(sc.board, &state->stats);
+            stats_mini(sc.board, state);
             continue;        /* the next screen_paint() repaints underneath */
         }
 
