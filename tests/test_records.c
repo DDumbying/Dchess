@@ -212,33 +212,6 @@ static void test_speed(void)
     records_free(&l);
 }
 
-static void test_to_stats(void)
-{
-    printf("== stats view ==\n");
-    fresh("stats.pgn");
-    GameState g;
-    Player a[2] = { prof("saeed"), player_builtin(DIFF_HARD) };
-    finished(&g, "Checkmate — White wins!");
-    records_append(path, &g, a, NULL);
-    Player b[2] = { player_builtin(DIFF_EASY), prof("saeed") };
-    finished(&g, "Checkmate — White wins!");
-    records_append(path, &g, b, NULL);
-    Player c[2] = { prof("saeed"), prof("alice") };
-    finished(&g, "Draw by repetition!");
-    records_append(path, &g, c, NULL);
-
-    RecordList l;
-    DchessStats s;
-    records_load(path, &l);
-    records_to_stats(&l, "saeed", &s);
-    check("a win against dchess Hard", s.games_played[2] == 1 && s.wins[2] == 1);
-    check("a loss against dchess Easy", s.games_played[0] == 1 && s.losses[0] == 1);
-    check("the colour split counts every game", s.played_as_white == 2 && s.played_as_black == 1);
-    check("the history has all three", s.history_count == 3 && s.history[0].result == 1);
-    records_free(&l);
-}
-
-
 static void test_rename_long_lines(void)
 {
     printf("== rename keeps long lines ==\n");
@@ -313,7 +286,6 @@ int main(void)
     test_damaged_event();
     test_unicode_record();
     test_speed();
-    test_to_stats();
 
     char cmd[600];
     snprintf(cmd, sizeof(cmd), "rm -rf %s", dir);

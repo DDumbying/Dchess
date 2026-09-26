@@ -94,7 +94,6 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
             char games[512];
             records_path(games, sizeof(games));
             records_append(games, &state->game, state->players, &state->engines);
-            tui_refresh_stats(state);
             break;
         }
 
@@ -281,13 +280,14 @@ void tui_init(TUIState *state, const CliArgs *args)
     state->cursor_row = 6;
     state->cursor_col = 4;
 
-    stats_load(&state->stats);
+    DchessStats old;
+    stats_load(&old);
     engines_load(&state->engines);
 
     char games[512];
     records_path(games, sizeof(games));
     if (!profiles_load(&state->profiles))
-        profiles_first_run(&state->profiles, getenv("USER"), &state->stats, games);
+        profiles_first_run(&state->profiles, getenv("USER"), &old, games);
     state->file_active = state->profiles.active;
     if (args && args->profile[0]) {
         int i = profiles_find(&state->profiles, args->profile);
@@ -303,7 +303,6 @@ void tui_init(TUIState *state, const CliArgs *args)
         if (active && state->players[s].kind == PLAYER_HUMAN && state->profiles.count)
             state->players[s] = player_profile(state->profiles.p[state->profiles.active].name);
     }
-    tui_refresh_stats(state);
     snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
 
     char setup[128];

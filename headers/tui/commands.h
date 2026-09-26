@@ -31,9 +31,6 @@ void tui_new_game(TUIState *state);
  * both sides are engines, which would otherwise replay the move. */
 void tui_undo(TUIState *state);
 
-/* The active profile's numbers into state->stats. */
-void tui_refresh_stats(TUIState *state);
-
 /* Saves the theme and White/Black setup into the active profile. */
 void tui_remember_setup(TUIState *state);
 

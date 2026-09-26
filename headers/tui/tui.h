@@ -47,9 +47,6 @@ typedef struct {
     int       cli_setup;      /* players came from flags; the launcher keeps them */
     char      engine_error[400];   /* the last engine failure, until the next search */
 
-    /* Persistent statistics */
-    DchessStats stats;
-
     /* 0 = normal (hjkl navigates), 1 = insert (type commands) */
     int  insert_mode;
 

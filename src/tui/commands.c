@@ -32,17 +32,6 @@ void describe_setup(const TUIState *state, char *buf, size_t n)
     players_describe(state->players, buf, n);
 }
 
-void tui_refresh_stats(TUIState *state)
-{
-    char games[512];
-    if (!state->profiles.count) {
-        stats_load(&state->stats);
-        return;
-    }
-    records_path(games, sizeof(games));
-    profiles_stats(&state->profiles.p[state->profiles.active], games, &state->stats);
-}
-
 void tui_remember_setup(TUIState *state)
 {
     if (!state->profiles.count) return;
