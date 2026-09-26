@@ -4,6 +4,7 @@
 #include "engine/board.h"
 #include "engine/fen.h"
 #include "utils/theme.h"
+#include "utils/engines.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,11 +62,16 @@ void cli_help(void)
         "          Two people at one keyboard; no engine. The board flips\n"
         "          after each move so the next player faces their own pieces.\n"
         "\n"
-        "    --white <human|easy|medium|hard>\n"
-        "    --black <human|easy|medium|hard>\n"
+        "    --white <human|easy|medium|hard|engine>\n"
+        "    --black <human|easy|medium|hard|engine>\n"
         "          Choose who plays one side. Overrides -c, -d and -2.\n"
         "          Give both an engine level to watch it play itself:\n"
         "            dchess --white hard --black easy\n"
+        "          An engine is a name from engines.conf, e.g.\n"
+        "            dchess --white \"Stockfish 1500\" --black hard\n"
+        "\n"
+        "    --engines\n"
+        "          List the registered UCI engines and exit.\n"
         "\n"
         "    --fen <string>\n"
         "          Start from a custom position instead of the standard setup.\n"
@@ -120,9 +126,10 @@ void cli_help(void)
         "    pause / resume\n"
         "                Hold and restart the engines (Space does both)\n"
         "    white|black human\n"
-        "    white|black engine [easy|medium|hard]\n"
+        "    white|black engine [easy|medium|hard|name]\n"
         "                Change who plays a side, mid-game\n"
         "    swap        Exchange the two players\n"
+        "    engines     List the registered UCI engines\n"
         "    depth N     Change search depth (1–8) mid-game\n"
         "    eval        Show the current position evaluation\n"
         "    fen         Show the current position as a FEN string\n"
@@ -157,6 +164,48 @@ void cli_version(void)
     exit(0);
 }
 
+/* Only a value that is not a built-in word reads the registry, so a
+ * broken engines.conf never stops an ordinary start. */
+static int known_engine(const char *name, char *err, size_t n)
+{
+    EngineList l;
+    engines_load(&l);
+    if (engines_find(&l, name)) return 1;
+    if (!l.count) {
+        snprintf(err, n, "Unknown player '%s'. Use: human | easy | medium | hard "
+                         "(no engines registered)", name);
+        return 0;
+    }
+    char names[160] = "";
+    for (int i = 0; i < l.count; i++) {
+        if (i) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+        strncat(names, l.e[i].name, sizeof(names) - strlen(names) - 1);
+    }
+    snprintf(err, n, "Unknown player '%s'. Use: human | easy | medium | hard, "
+                     "or an engine: %s", name, names);
+    return 0;
+}
+
+void cli_list_engines(void)
+{
+    EngineList l;
+    char path[512];
+    int have = engines_path(path, sizeof(path));
+    engines_load(&l);
+    if (!l.count) {
+        printf("No engines registered%s%s.\n", have ? " in " : "", have ? path : "");
+        printf("Add one from the start menu with the e key.\n");
+        exit(0);
+    }
+    printf("  %-24s %-18s %s\n", "NAME", "STRENGTH", "PATH");
+    for (int i = 0; i < l.count; i++) {
+        char s[48];
+        engine_strength_label(&l.e[i], s, sizeof(s));
+        printf("  %-24s %-18s %s\n", l.e[i].name, s, l.e[i].path);
+    }
+    exit(0);
+}
+
 /* Parser ──────────────────────────────────────────────────────────────── */
 int cli_parse(int argc, char **argv, CliArgs *args)
 {
@@ -171,6 +220,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     Player chosen[2];
     args->show_version = 0;
     args->show_stats   = 0;
+    args->list_engines = 0;
     args->show_help    = 0;
     args->fen[0]        = '\0';
     args->menu          = 0;
@@ -198,6 +248,12 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         /* --stats / -s ─────────────────────────────────────────────── */
         if (strcmp(a, "--stats") == 0 || strcmp(a, "-s") == 0) {
             args->show_stats = 1;
+            return 0;
+        }
+
+        /* --engines ─────────────────────────────────────────────────── */
+        if (strcmp(a, "--engines") == 0) {
+            args->list_engines = 1;
             return 0;
         }
 
@@ -271,9 +327,9 @@ int cli_parse(int argc, char **argv, CliArgs *args)
                 chosen[side] = player_human();
             } else if (lv >= 0) {
                 chosen[side] = player_builtin(lv);
+            } else if (known_engine(val, args->error_msg, sizeof(args->error_msg))) {
+                chosen[side] = player_uci(val);
             } else {
-                snprintf(args->error_msg, sizeof(args->error_msg),
-                         "Unknown player '%s'. Use: human | easy | medium | hard", val);
                 args->error = 1;
                 return -1;
             }

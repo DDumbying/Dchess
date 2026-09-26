@@ -6,6 +6,9 @@
 #include <string.h>
 #include "utils/cli.h"
 #include "utils/constants.h"
+#include "utils/engines.h"
+#include <stdlib.h>
+#include <unistd.h>
 
 static int failures = 0;
 
@@ -30,6 +33,60 @@ static int parse(CliArgs *a, const char *line)
 
 static int human(const Player *p)             { return p->kind == PLAYER_HUMAN; }
 static int engine(const Player *p, int level) { return p->kind == PLAYER_BUILTIN && p->level == level; }
+
+static char dir[] = "/tmp/dchess-cli-XXXXXX";
+
+static void add(EngineList *l, const char *name, const char *path)
+{
+    char err[128];
+    EngineEntry e;
+    memset(&e, 0, sizeof(e));
+    snprintf(e.name, sizeof(e.name), "%s", name);
+    snprintf(e.path, sizeof(e.path), "%s", path);
+    e.limit_ms = 1000;
+    engines_add(l, &e, err, sizeof(err));
+}
+
+static void test_engines(void)
+{
+    printf("== engines ==\n");
+    CliArgs a;
+    if (!mkdtemp(dir)) return;
+    setenv("XDG_CONFIG_HOME", dir, 1);
+
+    check("with no registry, a name is an error that says so",
+          parse(&a, "--white Fake") != 0 && strstr(a.error_msg, "no engines registered") != NULL);
+
+    EngineList l = { .count = 0 };
+    add(&l, "Stockfish 1500", "stockfish");
+    add(&l, "Fake", "build/fake_uci");
+    engines_save(&l);
+
+    check("--white Fake picks the registered engine",
+          parse(&a, "--white Fake --black hard") == 0 &&
+          a.players[WHITE].kind == PLAYER_UCI && strcmp(a.players[WHITE].engine, "Fake") == 0 &&
+          engine(&a.players[BLACK], DIFF_HARD));
+
+    char *av[] = { "dchess", "--black", "Stockfish 1500" };
+    check("a name with spaces, as one argument",
+          cli_parse(3, av, &a) == 0 && a.players[BLACK].kind == PLAYER_UCI &&
+          strcmp(a.players[BLACK].engine, "Stockfish 1500") == 0);
+
+    check("an unknown name lists the registered ones",
+          parse(&a, "--white Komodo") != 0 && strstr(a.error_msg, "Komodo") &&
+          strstr(a.error_msg, "Stockfish 1500") && strstr(a.error_msg, "Fake"));
+    check("'hard' still means the built-in engine",
+          parse(&a, "--white hard") == 0 && engine(&a.players[WHITE], DIFF_HARD));
+    check("--engines asks for the list", parse(&a, "--engines") == 0 && a.list_engines);
+    check("and is off otherwise", parse(&a, "") == 0 && !a.list_engines);
+
+    char path[512], sub[512];
+    engines_path(path, sizeof(path));
+    remove(path);
+    snprintf(sub, sizeof(sub), "%s/dchess", dir);
+    rmdir(sub);
+    rmdir(dir);
+}
 
 int main(void)
 {
@@ -68,6 +125,8 @@ int main(void)
     check("a bad value is an error",
           parse(&a, "--white wizard") != 0 && a.error && strstr(a.error_msg, "wizard"));
     check("a missing value is an error", parse(&a, "--black") != 0 && a.error);
+
+    test_engines();
 
     if (failures) {
         printf("\n%d CLI test(s) FAILED.\n", failures);

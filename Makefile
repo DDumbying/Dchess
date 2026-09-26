@@ -28,7 +28,7 @@ build:
 build/%: tests/%.c $(CORE_SRC) | build
 	$(CC) $(CFLAGS) -Itests $< $(CORE_SRC) -o $@ $(LDFLAGS)
 
-test: $(TEST_BIN)
+test: build/fake_uci $(TEST_BIN)
 	@for t in $(TEST_BIN); do \
 		echo "── $$t ──"; \
 		./$$t || exit 1; \

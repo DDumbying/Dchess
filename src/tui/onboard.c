@@ -4,6 +4,7 @@
 #include "tui/panel.h"
 #include "tui/render.h"
 #include "tui/stats_tui.h"
+#include "tui/engines_tui.h"
 #include "engine/board.h"
 #include "engine/fen.h"
 #include "utils/cli.h"
@@ -19,24 +20,43 @@
 
 enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_THEME, ROW_START, ROW_COUNT };
 
-/* Each player row cycles You, then the engine at each level. */
-#define WHO_COUNT 4
-
 typedef struct {
-    int  who[2];          /* 0 = You, 1 + DIFF_* = the engine */
-    int  use_custom_fen;
-    char fen[128];
-    int  theme;
+    Player sel[2];
+    int    use_custom_fen;
+    char   fen[128];
+    int    theme;
 } OnboardChoice;
 
-static Player who_player(int who)
+/* You, dchess Easy/Medium/Hard, then every registry entry in file order. */
+static int cycle_count(const EngineList *l) { return 4 + l->count; }
+
+static Player cycle_player(const EngineList *l, int i)
 {
-    return who == 0 ? player_human() : player_builtin(who - 1);
+    if (i == 0) return player_human();
+    if (i <= 3) return player_builtin(i - 1);
+    return player_uci(l->e[i - 4].name);
 }
 
-static int player_who(const Player *p)
+/* An entry that no longer exists maps to You. */
+static int cycle_index(const EngineList *l, const Player *p)
 {
-    return p->kind == PLAYER_HUMAN ? 0 : p->level + 1;
+    if (p->kind == PLAYER_BUILTIN) return p->level + 1;
+    if (p->kind == PLAYER_UCI)
+        for (int i = 0; i < l->count; i++)
+            if (strcmp(l->e[i].name, p->engine) == 0) return i + 4;
+    return 0;
+}
+
+static void choice_label(const EngineList *l, const Player *p, char *buf, size_t n)
+{
+    player_label(p, buf, n);
+    const EngineEntry *e = p->kind == PLAYER_UCI ? engines_find(l, p->engine) : NULL;
+    if (e) {
+        char s[48];
+        size_t len = strlen(buf);
+        engine_strength_label(e, s, sizeof(s));
+        snprintf(buf + len, n - len, " · %s", s);
+    }
 }
 
 /* Simple inline text prompt on the given row of `win`. Returns 1 with
@@ -82,8 +102,9 @@ static int prompt_fen(WINDOW *win, int row, int col, int width, char *out, size_
 int tui_onboarding(TUIState *state)
 {
     OnboardChoice choice;
-    choice.who[WHITE] = player_who(&state->players[WHITE]);
-    choice.who[BLACK] = player_who(&state->players[BLACK]);
+    for (int s = WHITE; s <= BLACK; s++)
+        choice.sel[s] = cycle_player(&state->engines,
+                                     cycle_index(&state->engines, &state->players[s]));
     choice.use_custom_fen = 0;
     choice.fen[0]         = '\0';
     choice.theme          = state->theme;
@@ -148,9 +169,8 @@ int tui_onboarding(TUIState *state)
 
         const char *row_name[2] = { "White:          ", "Black:          " };
         for (int side = WHITE; side <= BLACK; side++) {
-            Player p = who_player(choice.who[side]);
-            char label[32];
-            player_label(&p, label, sizeof(label));
+            char label[96];
+            choice_label(&state->engines, &choice.sel[side], label, sizeof(label));
             int on = (cursor_row == (side == WHITE ? ROW_WHITE : ROW_BLACK));
             if (on) wattron(win, A_REVERSE);
             mvwprintw(win, 2 + side * 2, 3, "%s%-*.*s", row_name[side],
@@ -184,8 +204,8 @@ int tui_onboarding(TUIState *state)
         int hint_w = pw - 4;
         if (hint_w < 1) hint_w = 1;
         wattron(win, COLOR_PAIR(CP_HINT));
-        mvwprintw(win, ph - 3, 2, "%-.*s", hint_w, "up/down: move    left/right: change    s: view stats");
-        mvwprintw(win, ph - 2, 2, "%-.*s", hint_w, "enter: select    esc: quit");
+        mvwprintw(win, ph - 3, 2, "%-.*s", hint_w, "↑↓ move   ←→ change   e engines   s stats");
+        mvwprintw(win, ph - 2, 2, "%-.*s", hint_w, "enter select   esc quit");
         wattroff(win, COLOR_PAIR(CP_HINT));
 
         wrefresh(win);
@@ -201,7 +221,9 @@ int tui_onboarding(TUIState *state)
             case KEY_LEFT: case 'h':
                 if (cursor_row == ROW_WHITE || cursor_row == ROW_BLACK) {
                     int s = (cursor_row == ROW_WHITE) ? WHITE : BLACK;
-                    choice.who[s] = (choice.who[s] + WHO_COUNT - 1) % WHO_COUNT;
+                    int c = cycle_count(&state->engines);
+                    int i = cycle_index(&state->engines, &choice.sel[s]);
+                    choice.sel[s] = cycle_player(&state->engines, (i + c - 1) % c);
                 }
                 else if (cursor_row == ROW_POSITION)
                     choice.use_custom_fen = !choice.use_custom_fen;
@@ -213,7 +235,9 @@ int tui_onboarding(TUIState *state)
             case KEY_RIGHT: case 'l':
                 if (cursor_row == ROW_WHITE || cursor_row == ROW_BLACK) {
                     int s = (cursor_row == ROW_WHITE) ? WHITE : BLACK;
-                    choice.who[s] = (choice.who[s] + 1) % WHO_COUNT;
+                    int c = cycle_count(&state->engines);
+                    int i = cycle_index(&state->engines, &choice.sel[s]);
+                    choice.sel[s] = cycle_player(&state->engines, (i + 1) % c);
                 }
                 else if (cursor_row == ROW_POSITION)
                     choice.use_custom_fen = !choice.use_custom_fen;
@@ -221,6 +245,15 @@ int tui_onboarding(TUIState *state)
                     choice.theme = (choice.theme + 1) % theme_count();
                     init_colors(choice.theme); /* live preview */
                 }
+                break;
+            case 'e': case 'E':
+                engines_screen(&state->engines);
+                engines_load(&state->engines);
+                for (int s = WHITE; s <= BLACK; s++)
+                    choice.sel[s] = cycle_player(&state->engines,
+                                                 cycle_index(&state->engines, &choice.sel[s]));
+                werase(stdscr);
+                refresh();
                 break;
             case 's': case 'S': {
                 int srows, scols;
@@ -267,8 +300,8 @@ done:
 
     CliArgs chosen;
     memset(&chosen, 0, sizeof(chosen));
-    chosen.players[WHITE] = who_player(choice.who[WHITE]);
-    chosen.players[BLACK] = who_player(choice.who[BLACK]);
+    chosen.players[WHITE] = choice.sel[WHITE];
+    chosen.players[BLACK] = choice.sel[BLACK];
     chosen.theme        = choice.theme;
     if (choice.use_custom_fen && choice.fen[0])
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", choice.fen);
