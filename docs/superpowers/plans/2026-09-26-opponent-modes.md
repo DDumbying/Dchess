@@ -15,7 +15,7 @@
 - The build must produce **zero warnings** under `gcc -O2 -Wall`.
 - Tests link only `CORE_SRC` (`src/engine`, `src/game`, `src/utils`). `players.c` and `opponent.c` must not include ncurses or anything under `tui/`.
 - Keep comments sparse, around 5–10% of lines, in the repo's style: short, and saying why, not what.
-- Never mention Claude or AI in code, comments, docs or commit messages. Commits carry **no** `Co-Authored-By` trailer.
+- Commits carry **no** `Co-Authored-By` trailer.
 - The commit style is conventional: `feat:`, `fix:`, `docs:`, `test:`, with an optional scope such as `feat(tui):`.
 - The auto-play delay between two engines is `PLAYERS_AUTOPLAY_DELAY_MS` = **500**.
 - Names:

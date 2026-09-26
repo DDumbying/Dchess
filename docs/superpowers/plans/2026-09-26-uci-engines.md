@@ -18,7 +18,7 @@
 - The build must produce **zero warnings** under `gcc -O2 -Wall`. `CFLAGS` has `-D_XOPEN_SOURCE=600`, so use `pipe` with `fcntl(FD_CLOEXEC)`, not `pipe2`.
 - Tests link only `CORE_SRC` (`src/engine`, `src/game`, `src/utils`). `engines.c` and `uci.c` must not include ncurses or anything under `tui/`.
 - Keep comments sparse, around 5–10% of lines, in the repo's style: short, and saying why, not what.
-- Never mention Claude or AI in code, comments, docs or commit messages. Commits carry **no** `Co-Authored-By` trailer.
+- Commits carry **no** `Co-Authored-By` trailer.
 - The commit style is conventional: `feat:`, `fix:`, `docs:`, `test:`, with an optional scope such as `feat(tui):`.
 - **Registry file:** `$XDG_CONFIG_HOME/dchess/engines.conf`, else `~/.config/dchess/engines.conf`. At most 32 entries.
 - **Names:** 1–40 characters, unique, and never `easy`, `medium`, `hard` or `human` (case-insensitive).

@@ -20,7 +20,7 @@
 - Side column: hidden below 60 columns, 26 wide from 60, 34 wide from 110.
 - Eval graph clamps to **±500 centipawns**.
 - Default theme is `gruvbox`; the others are `tokyonight`, `btop`, `catppuccin`. Old names are rejected.
-- Commit messages carry no AI attribution lines. Comments stay sparse (the repo runs at roughly 5-10% comment lines).
+- Commit messages carry no attribution trailers. Comments stay sparse (the repo runs at roughly 5-10% comment lines).
 
 ## Review Focus
 
