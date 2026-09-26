@@ -1,5 +1,6 @@
 #include "game/profiles.h"
 #include "game/records.h"
+#include "utils/cli.h"
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -243,4 +244,29 @@ int profiles_first_run(ProfileList *l, const char *user, const DchessStats *old,
     }
     profiles_save(l);
     return 1;
+}
+
+void profiles_stats(const Profile *p, const char *games, DchessStats *out)
+{
+    RecordList r;
+    records_load(games, &r);
+    records_to_stats(&r, p->name, out);
+    /* Until the stats page knows other opponents, people and engines
+     * count under Medium so the totals add up. */
+    RecordTally t = records_tally(&r, p->name);
+    for (int i = 0; i < 3; i++) {
+        t.games  -= out->games_played[i];
+        t.wins   -= out->wins[i];
+        t.losses -= out->losses[i];
+        t.draws  -= out->draws[i];
+    }
+    records_free(&r);
+    out->games_played[DIFF_MEDIUM] += t.games;
+    out->wins[DIFF_MEDIUM]         += t.wins;
+    out->losses[DIFF_MEDIUM]       += t.losses;
+    out->draws[DIFF_MEDIUM]        += t.draws;
+    out->games_played[DIFF_MEDIUM] += p->legacy_games;
+    out->wins[DIFF_MEDIUM]         += p->legacy_wins;
+    out->losses[DIFF_MEDIUM]       += p->legacy_losses;
+    out->draws[DIFF_MEDIUM]        += p->legacy_draws;
 }

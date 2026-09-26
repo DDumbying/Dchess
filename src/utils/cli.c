@@ -138,6 +138,7 @@ void cli_help(void)
         "    white|black engine [easy|medium|hard|name]\n"
         "                Change who plays a side, mid-game\n"
         "    swap        Exchange the two players\n"
+        "    resign      Resign for the human side and end the game\n"
         "    engines     List the registered UCI engines\n"
         "    depth N     Change search depth (1–8) mid-game\n"
         "    eval        Show the current position evaluation\n"

@@ -170,6 +170,16 @@ void player_label(const Player *p, char *buf, size_t n)
         snprintf(buf, n, "dchess %s", players_level_name(p->level));
 }
 
+void player_word(const Player *p, char *buf, size_t n)
+{
+    if (p->kind == PLAYER_BUILTIN)
+        snprintf(buf, n, "%s", p->level == DIFF_EASY ? "easy" : p->level == DIFF_HARD ? "hard" : "medium");
+    else if (p->name[0])
+        snprintf(buf, n, "%s", p->name);
+    else
+        snprintf(buf, n, "guest");
+}
+
 /* Two humans are told apart by number rather than both being "You". */
 static void side_name(const Player p[2], int side, char *buf, size_t n)
 {

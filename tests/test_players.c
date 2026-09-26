@@ -275,6 +275,18 @@ static void test_profile_players(void)
           p[WHITE].name[0] == '\0');
 }
 
+
+static void test_player_word(void)
+{
+    printf("== setup words ==\n");
+    char buf[64];
+    Player a = player_profile("saeed"), g = player_human(), e = E(DIFF_HARD), u = player_uci("Stockfish 1500");
+    player_word(&a, buf, sizeof(buf)); check("a profile is its name", strcmp(buf, "saeed") == 0);
+    player_word(&g, buf, sizeof(buf)); check("a guest is 'guest'", strcmp(buf, "guest") == 0);
+    player_word(&e, buf, sizeof(buf)); check("dchess Hard is 'hard'", strcmp(buf, "hard") == 0);
+    player_word(&u, buf, sizeof(buf)); check("an engine is its name", strcmp(buf, "Stockfish 1500") == 0);
+}
+
 int main(void)
 {
     test_constructors();
@@ -286,6 +298,7 @@ int main(void)
     test_labels();
     test_uci_players();
     test_profile_players();
+    test_player_word();
 
     if (failures) {
         printf("\n%d player test(s) FAILED.\n", failures);

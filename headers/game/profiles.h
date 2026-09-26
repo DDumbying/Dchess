@@ -25,6 +25,9 @@ int  profiles_find(const ProfileList *l, const char *name);
 /* Names with the active one first, for players_apply_command. */
 int  profiles_names(const ProfileList *l, const char **out, int max);
 /* No profiles.conf yet: create `user` (or "player"), import `old`, save. */
+/* The profile's records plus its legacy totals, for the stats screens.
+ * Legacy games and games against people or engines count under Medium. */
+void profiles_stats(const Profile *p, const char *games, DchessStats *out);
 int  profiles_first_run(ProfileList *l, const char *user, const DchessStats *old,
                         const char *games);
 #endif

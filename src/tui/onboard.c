@@ -302,6 +302,11 @@ done:
     memset(&chosen, 0, sizeof(chosen));
     chosen.players[WHITE] = choice.sel[WHITE];
     chosen.players[BLACK] = choice.sel[BLACK];
+    for (int s = WHITE; s <= BLACK; s++)
+        chosen.human_active[s] = choice.sel[s].kind == PLAYER_HUMAN && !choice.sel[s].name[0];
+    if (state->profiles.count)
+        snprintf(chosen.profile, sizeof(chosen.profile), "%s",
+                 state->profiles.p[state->profiles.active].name);
     chosen.theme        = choice.theme;
     if (choice.use_custom_fen && choice.fen[0])
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", choice.fen);

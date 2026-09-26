@@ -7,6 +7,7 @@
 #include "engine/fen.h"
 #include "game/pgn.h"
 #include "game/uci.h"
+#include "game/records.h"
 #include "tui/render.h"
 #include "utils/theme.h"
 #include "utils/constants.h"
@@ -28,6 +29,27 @@ static long now_ms(void)
 void describe_setup(const TUIState *state, char *buf, size_t n)
 {
     players_describe(state->players, buf, n);
+}
+
+void tui_refresh_stats(TUIState *state)
+{
+    char games[512];
+    if (!state->profiles.count) {
+        stats_load(&state->stats);
+        return;
+    }
+    records_path(games, sizeof(games));
+    profiles_stats(&state->profiles.p[state->profiles.active], games, &state->stats);
+}
+
+void tui_remember_setup(TUIState *state)
+{
+    if (!state->profiles.count) return;
+    Profile *p = &state->profiles.p[state->profiles.active];
+    snprintf(p->theme, sizeof(p->theme), "%s", theme_name(state->theme));
+    player_word(&state->players[WHITE], p->white, sizeof(p->white));
+    player_word(&state->players[BLACK], p->black, sizeof(p->black));
+    profiles_save(&state->profiles);
 }
 
 void cancel_engine_search(TUIState *state)
@@ -318,9 +340,27 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
 
+    if (strcmp(cmd, "resign") == 0) {
+        int side = state->game.pos.side;
+        if (players_automated(state->players, side)) side ^= BLACK;
+        if (state->game.game_over || players_automated(state->players, side)) {
+            snprintf(state->status, sizeof(state->status),
+                     state->game.game_over ? "The game is already over" : "No human side to resign");
+            return 1;
+        }
+        cancel_engine_search(state);
+        state->game.game_over = 1;
+        snprintf(state->game.result, sizeof(state->game.result), "%s resigns — %s wins",
+                 side == WHITE ? "White" : "Black", side == WHITE ? "Black" : "White");
+        snprintf(state->status, sizeof(state->status), "%s", state->game.result);
+        return 1;
+    }
+
     char err[128];
+    const char *names[PROFILES_MAX];
+    int nn = profiles_names(&state->profiles, names, PROFILES_MAX);
     Player before[2] = { state->players[WHITE], state->players[BLACK] };
-    int pc = players_apply_command(state->players, cmd, err, sizeof(err), &state->engines, NULL, 0);
+    int pc = players_apply_command(state->players, cmd, err, sizeof(err), &state->engines, names, nn);
     if (pc < 0) {
         snprintf(state->status, sizeof(state->status), "%s", err);
         return 1;
@@ -458,7 +498,7 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "stats") == 0) {
-        stats_load(&state->stats);
+        tui_refresh_stats(state);
         int total = state->stats.games_played[0] +
                     state->stats.games_played[1] +
                     state->stats.games_played[2];
@@ -473,7 +513,7 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
-                 "e2e4 go stop pause resume undo new swap flip depth N eval fen pgn "
+                 "e2e4 go stop pause resume undo new resign swap flip depth N eval fen pgn "
                  "loadfen stats engines quit | white|black human|engine [level|name]");
         return 1;
     }

@@ -45,6 +45,8 @@ int  players_apply_command(Player p[2], const char *cmd, char *err, size_t n,
                            const char *const *names, int count);
 
 void player_label(const Player *p, char *buf, size_t n);
+/* The word --white/--black take for this player: a name, guest, or a level. */
+void player_word(const Player *p, char *buf, size_t n);
 void players_pgn_name(const Player p[2], int side, char *buf, size_t n);
 void players_matchup(const Player p[2], char *buf, size_t n);
 void players_describe(const Player p[2], char *buf, size_t n);

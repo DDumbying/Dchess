@@ -41,6 +41,7 @@ typedef struct {
     int       paused;
     long      last_move_ms;   /* monotonic; when an engine last moved */
     EngineList engines;       /* engines.conf, as of the last load */
+    ProfileList profiles;
     char      engine_error[400];   /* the last engine failure, until the next search */
 
     /* Persistent statistics */
