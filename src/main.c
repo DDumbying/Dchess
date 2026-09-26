@@ -3,6 +3,7 @@
 #include "utils/bitboard.h"
 #include "utils/cli.h"
 #include "utils/stats.h"
+#include "game/records.h"
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,12 +20,22 @@ int main(int argc, char **argv)
 
     if (args.show_help)    cli_help();     /* exits */
     if (args.show_version) cli_version();  /* exits */
+    if (args.list_engines) cli_list_engines();   /* exits */
+    if (args.list_profiles) cli_list_profiles(); /* exits */
 
     setlocale(LC_ALL, "");   /* required for ncurses unicode output */
 
     if (args.show_stats) {
         DchessStats s;
-        stats_load(&s);
+        ProfileList pl;
+        char games[512];
+        records_path(games, sizeof(games));
+        if (profiles_load(&pl) && pl.count) {
+            int i = args.profile[0] ? profiles_find(&pl, args.profile) : -1;
+            profiles_stats(&pl.p[i >= 0 ? i : pl.active], games, &s);
+        } else {
+            stats_load(&s);
+        }
         show_stats_overlay(&s);   /* full TUI stats window */
         return 0;
     }

@@ -2,15 +2,21 @@
 #define PLAYERS_H
 
 #include <stddef.h>
+#include "utils/engines.h"
 
-typedef enum { PLAYER_HUMAN, PLAYER_BUILTIN } PlayerKind;
+/* Bytes: a 24-character profile name in UTF-8, or a 40-byte engine name. */
+#define PLAYER_NAME_MAX 96
 
-/* level, depth and time_ms mean nothing for a human. */
+typedef enum { PLAYER_HUMAN, PLAYER_BUILTIN, PLAYER_UCI } PlayerKind;
+
+/* level, depth and time_ms are for the built-in engine. name is a profile
+ * for a human (empty = Guest) or a registry entry for a UCI engine. */
 typedef struct {
     PlayerKind kind;
     int        level;     /* DIFF_EASY / DIFF_MEDIUM / DIFF_HARD */
     int        depth;
     int        time_ms;
+    char       name[PLAYER_NAME_MAX + 1];
 } Player;
 
 /* Between two engines, so a person can follow the game. */
@@ -18,6 +24,8 @@ typedef struct {
 
 Player      player_human(void);
 Player      player_builtin(int level);
+Player      player_uci(const char *name);
+Player      player_profile(const char *name);
 int         players_level_from_name(const char *name);
 const char *players_level_name(int level);
 
@@ -32,10 +40,16 @@ int  players_should_start(const Player p[2], int side_to_move, int paused,
 /* 1 when exactly one side is human and the other is the built-in engine. */
 int  players_stats_entry(const Player p[2], int *human_side, int *level);
 
-/* 1 applied, 0 not a player command, -1 invalid with a message in err. */
-int  players_apply_command(Player p[2], const char *cmd, char *err, size_t n);
+/* 1 applied, 0 not a player command, -1 invalid with a message in err.
+ * `engines` resolves names after "engine", `names` (active profile first)
+ * those after "human"; NULL resolves none. */
+int  players_apply_command(Player p[2], const char *cmd, char *err, size_t n,
+                           const EngineList *engines,
+                           const char *const *names, int count);
 
 void player_label(const Player *p, char *buf, size_t n);
+/* The word --white/--black take for this player: a name, guest, or a level. */
+void player_word(const Player *p, char *buf, size_t n);
 void players_pgn_name(const Player p[2], int side, char *buf, size_t n);
 void players_matchup(const Player p[2], char *buf, size_t n);
 void players_describe(const Player p[2], char *buf, size_t n);

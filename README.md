@@ -34,9 +34,11 @@ One of these nerdy things built out of passion — to actually understand how `C
 - ncurses interface with Unicode chess pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
 - Board scales to fill available terminal size
 - Four built-in color themes (classic/midnight/forest/contrast), switchable
-  from the onboarding screen (live preview), the CLI, or an in-game command
-- Interactive onboarding screen — pick side, difficulty, starting position,
-  and theme visually; CLI flags remain available as a scriptable alternative
+  from the launcher (live preview), the CLI, or an in-game command
+- Launcher dashboard — profiles with their records, recent games, a win-rate
+  sparkline, and the new-game setup; CLI flags remain a scriptable alternative
+- Profiles — each person keeps their own history and remembered settings;
+  every finished game is saved to `~/.local/share/dchess/games.pgn`
 - FEN import/export — start from, view, or load any position, not just the
   standard setup
 - The engine thinks in a background thread — the clock, redraws, and
@@ -80,13 +82,16 @@ OPTIONS
         medium – depth 5, up to 3s   (balanced)  [default]
         hard   – depth 8, up to 5s   (challenging, slower)
   -2, --two-player                Local two-player mode — no engine, board flips after each move
-  --white <human|easy|medium|hard>
-  --black <human|easy|medium|hard>
+  --white <human|guest|profile|easy|medium|hard|engine>
+  --black <human|guest|profile|easy|medium|hard|engine>
                                   Choose who plays a side; overrides -c, -d and -2
+  --profile <name>                Play as this profile for this run
+  --profiles                      List the profiles with their records and exit
+  --engines                       List the registered UCI engines and exit
   --fen <string>                  Start from a custom FEN position instead of the standard setup
-  -m, --menu                      Show the onboarding screen to pick options visually,
+  -m, --menu                      Show the launcher to pick options visually,
                                    even if other flags were given
-  --no-menu                       Skip onboarding and start immediately (classic instant-start)
+  --no-menu                       Skip the launcher and start immediately (classic instant-start)
   --theme <name>                  Color theme: classic | midnight | forest | contrast
                                    (default: classic)
   -s, --stats                     Show statistics in a full TUI screen and exit
@@ -94,27 +99,35 @@ OPTIONS
   -h, --help                      Show help and exit
 
 EXAMPLES
-  dchess                          Onboarding screen (pick side/difficulty/position visually)
+  dchess                          Launcher (profiles, recent games, new game)
   dchess --no-menu                Start immediately with defaults (white, medium)
   dchess --color black            Play as black, no menu
   dchess --difficulty hard        Hard mode, no menu
   dchess -c black -d easy         Black side, easy difficulty, no menu
   dchess --fen "<FEN string>"     Start from a custom position
-  dchess --menu -d hard           Onboarding screen, pre-filled to hard difficulty
+  dchess --menu -d hard           Launcher, pre-filled to hard difficulty
   dchess --theme midnight         Start with the midnight color theme
   dchess --two-player             Local two-player, board flips each turn
   dchess --white hard --black easy
                                   Watch the engine play itself
+  dchess --white "Stockfish 1500" --black hard
+                                  A registered UCI engine against dchess
   dchess --stats                  View your stats
 ```
 
-Running `dchess` with no arguments shows an interactive onboarding
-screen (side / difficulty / starting position / theme) so you don't need
-to remember flags. Pressing `s` from that screen shows your stats; `ESC`
+Running `dchess` with no arguments shows the launcher: your profiles
+(Tab to focus; `n` new, `r` rename, `d` delete, ↑↓ switch), recent games,
+and the new game setup, so you don't need to remember flags. Pressing `s`
+shows the active profile's stats; `ESC`
 quits dchess entirely rather than starting a game. Passing any gameplay
 flag (`--color`, `--difficulty`, `--two-player`, `--fen`, `--theme`) skips
 it and starts immediately, so scripts and muscle-memory invocations keep
 working exactly as before.
+
+Pressing `e` opens the Engines screen, where you add a UCI engine by its path
+(dchess starts it and reads its name), set its strength (time per move or
+depth, plus an Elo cap when the engine supports one), test it, or delete it.
+Registered engines then appear in the White and Black choices.
 
 ## Build
 
@@ -151,9 +164,10 @@ flip        turn the board around
 pause / resume
             hold and restart the engines (Space does both)
 white|black human
-white|black engine [easy|medium|hard]
+white|black engine [easy|medium|hard|name]
             change who plays a side, mid-game
 swap        exchange the two players
+engines     list the registered UCI engines
 depth N     change search depth (1–8) mid-game
 eval        show current position evaluation
 fen         show the current position as a FEN string

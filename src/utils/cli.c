@@ -4,6 +4,9 @@
 #include "engine/board.h"
 #include "engine/fen.h"
 #include "utils/theme.h"
+#include "utils/engines.h"
+#include "game/records.h"
+#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,27 +64,39 @@ void cli_help(void)
         "          Two people at one keyboard; no engine. The board flips\n"
         "          after each move so the next player faces their own pieces.\n"
         "\n"
-        "    --white <human|easy|medium|hard>\n"
-        "    --black <human|easy|medium|hard>\n"
-        "          Choose who plays one side. Overrides -c, -d and -2.\n"
+        "    --white <human|guest|profile|easy|medium|hard|engine>\n"
+        "    --black <human|guest|profile|easy|medium|hard|engine>\n"
+        "          Choose who plays one side: a profile name, guest, a level\n"
+        "          or an engine. Overrides -c, -d and -2.\n"
         "          Give both an engine level to watch it play itself:\n"
         "            dchess --white hard --black easy\n"
+        "          An engine is a name from engines.conf, e.g.\n"
+        "            dchess --white \"Stockfish 1500\" --black hard\n"
+        "\n"
+        "    --profile <name>\n"
+        "          Play as this profile for this run.\n"
+        "\n"
+        "    --profiles\n"
+        "          List the profiles with their records and exit.\n"
+        "\n"
+        "    --engines\n"
+        "          List the registered UCI engines and exit.\n"
         "\n"
         "    --fen <string>\n"
         "          Start from a custom position instead of the standard setup.\n"
         "          Takes a full FEN string (quote it if your shell needs that).\n"
         "\n"
         "    -m, --menu\n"
-        "          Show the interactive onboarding screen to pick the players/\n"
+        "          Show the launcher to pick the players/\n"
         "          starting position visually, even if other flags were given.\n"
         "\n"
         "    --no-menu\n"
-        "          Skip the onboarding screen and start immediately, even with\n"
+        "          Skip the launcher and start immediately, even with\n"
         "          no other flags given (restores the classic instant-start).\n"
         "\n"
         "    --theme <name>\n"
         "          Color theme: gruvbox | tokyonight | btop | catppuccin\n"
-        "          (default: gruvbox). Also changeable from the onboarding\n"
+        "          (default: gruvbox). Also changeable from the launcher\n"
         "          screen or the in-game 'theme <name>' command.\n"
         "\n"
         "    -s, --stats\n"
@@ -94,7 +109,7 @@ void cli_help(void)
         "          Show this help page and exit.\n"
         "\n"
         "  EXAMPLES\n"
-        "    dchess                          Onboarding screen (pick options visually)\n"
+        "    dchess                          Launcher (profiles, recent games)\n"
         "    dchess --no-menu                Start immediately (white, medium)\n"
         "    dchess --color black            Play as black, no menu\n"
         "    dchess --difficulty hard        Play on hard difficulty, no menu\n"
@@ -120,9 +135,11 @@ void cli_help(void)
         "    pause / resume\n"
         "                Hold and restart the engines (Space does both)\n"
         "    white|black human\n"
-        "    white|black engine [easy|medium|hard]\n"
+        "    white|black engine [easy|medium|hard|name]\n"
         "                Change who plays a side, mid-game\n"
         "    swap        Exchange the two players\n"
+        "    resign      Resign for the human side and end the game\n"
+        "    engines     List the registered UCI engines\n"
         "    depth N     Change search depth (1–8) mid-game\n"
         "    eval        Show the current position evaluation\n"
         "    fen         Show the current position as a FEN string\n"
@@ -157,6 +174,85 @@ void cli_version(void)
     exit(0);
 }
 
+/* Only a value that is not a built-in word reads the registry, so a
+ * broken engines.conf never stops an ordinary start. */
+static int known_engine(const char *name, char *err, size_t n)
+{
+    EngineList l;
+    engines_load(&l);
+    if (engines_find(&l, name)) return 1;
+    if (!l.count) {
+        snprintf(err, n, "Unknown player '%s'. Use: human | easy | medium | hard "
+                         "(no engines registered)", name);
+        return 0;
+    }
+    char names[160] = "";
+    for (int i = 0; i < l.count; i++) {
+        if (i) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+        strncat(names, l.e[i].name, sizeof(names) - strlen(names) - 1);
+    }
+    snprintf(err, n, "Unknown player '%s'. Use: human | easy | medium | hard, "
+                     "or an engine: %s", name, names);
+    return 0;
+}
+
+static int known_profile(const char *name, char *err, size_t n)
+{
+    ProfileList l;
+    profiles_load(&l);
+    if (profiles_find(&l, name) >= 0) return 1;
+    char names[160] = "";
+    for (int i = 0; i < l.count; i++) {
+        if (i) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+        strncat(names, l.p[i].name, sizeof(names) - strlen(names) - 1);
+    }
+    snprintf(err, n, "Unknown profile '%s'. Profiles: %s", name, l.count ? names : "none yet");
+    return 0;
+}
+
+void cli_list_profiles(void)
+{
+    ProfileList l;
+    RecordList r;
+    char games[512];
+    profiles_load(&l);
+    records_path(games, sizeof(games));
+    records_load(games, &r);
+    if (!l.count) {
+        printf("No profiles yet. One is created the first time dchess starts.\n");
+        exit(0);
+    }
+    printf("  %-26s %s\n", "PROFILE", "W-D-L");
+    for (int i = 0; i < l.count; i++) {
+        const Profile *p = &l.p[i];
+        RecordTally t = records_tally(&r, p->name);
+        printf("  %s %-24s %d-%d-%d\n", i == l.active ? "*" : " ", p->name,
+               t.wins + p->legacy_wins, t.draws + p->legacy_draws, t.losses + p->legacy_losses);
+    }
+    records_free(&r);
+    exit(0);
+}
+
+void cli_list_engines(void)
+{
+    EngineList l;
+    char path[512];
+    int have = engines_path(path, sizeof(path));
+    engines_load(&l);
+    if (!l.count) {
+        printf("No engines registered%s%s.\n", have ? " in " : "", have ? path : "");
+        printf("Add one from the start menu with the e key.\n");
+        exit(0);
+    }
+    printf("  %-24s %-18s %s\n", "NAME", "STRENGTH", "PATH");
+    for (int i = 0; i < l.count; i++) {
+        char s[48];
+        engine_strength_label(&l.e[i], s, sizeof(s));
+        printf("  %-24s %-18s %s\n", l.e[i].name, s, l.e[i].path);
+    }
+    exit(0);
+}
+
 /* Parser ──────────────────────────────────────────────────────────────── */
 int cli_parse(int argc, char **argv, CliArgs *args)
 {
@@ -171,11 +267,18 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     Player chosen[2];
     args->show_version = 0;
     args->show_stats   = 0;
+    args->list_engines = 0;
+    args->list_profiles = 0;
+    args->profile[0] = '\0';
+    args->human_active[WHITE] = 1;
+    args->human_active[BLACK] = 0;
+    int chosen_active[2] = { 0, 0 };
     args->show_help    = 0;
     args->fen[0]        = '\0';
     args->menu          = 0;
     args->no_menu       = 0;
     args->theme         = 0;
+    args->theme_set     = 0;
     args->any_gameplay_flag = 0;
     args->error        = 0;
     args->error_msg[0] = '\0';
@@ -198,6 +301,31 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         /* --stats / -s ─────────────────────────────────────────────── */
         if (strcmp(a, "--stats") == 0 || strcmp(a, "-s") == 0) {
             args->show_stats = 1;
+            return 0;
+        }
+
+        /* --engines ─────────────────────────────────────────────────── */
+        if (strcmp(a, "--profiles") == 0) {
+            args->list_profiles = 1;
+            return 0;
+        }
+        if (strcmp(a, "--profile") == 0) {
+            if (i + 1 >= argc) {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Option '--profile' requires a profile name");
+                args->error = 1;
+                return -1;
+            }
+            const char *val = argv[++i];
+            if (!known_profile(val, args->error_msg, sizeof(args->error_msg))) {
+                args->error = 1;
+                return -1;
+            }
+            snprintf(args->profile, sizeof(args->profile), "%s", val);
+            continue;
+        }
+        if (strcmp(a, "--engines") == 0) {
+            args->list_engines = 1;
             return 0;
         }
 
@@ -267,13 +395,20 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             }
             const char *val = argv[++i];
             int lv = players_level_from_name(val);
+            char perr[256];
+            chosen_active[side] = 0;
             if (strcmp(val, "human") == 0) {
+                chosen[side] = player_human();
+                chosen_active[side] = 1;
+            } else if (strcasecmp(val, "guest") == 0) {
                 chosen[side] = player_human();
             } else if (lv >= 0) {
                 chosen[side] = player_builtin(lv);
+            } else if (known_profile(val, perr, sizeof(perr))) {
+                chosen[side] = player_profile(val);
+            } else if (known_engine(val, args->error_msg, sizeof(args->error_msg))) {
+                chosen[side] = player_uci(val);
             } else {
-                snprintf(args->error_msg, sizeof(args->error_msg),
-                         "Unknown player '%s'. Use: human | easy | medium | hard", val);
                 args->error = 1;
                 return -1;
             }
@@ -338,6 +473,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
                 return -1;
             }
             args->theme = t;
+            args->theme_set = 1;
             args->any_gameplay_flag = 1;
             continue;
         }
@@ -349,14 +485,21 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         return -1;
     }
 
+    /* The human side is the active profile; with -2, White is. */
+    args->human_active[WHITE] = args->human_active[BLACK] = 0;
     if (two) {
         args->players[WHITE] = args->players[BLACK] = player_human();
+        args->human_active[WHITE] = 1;
     } else {
         args->players[colour]         = player_human();
         args->players[colour ^ BLACK] = player_builtin(level);
+        args->human_active[colour]    = 1;
     }
     for (int s = WHITE; s <= BLACK; s++)
-        if (chosen_set[s]) args->players[s] = chosen[s];
+        if (chosen_set[s]) {
+            args->players[s] = chosen[s];
+            args->human_active[s] = chosen_active[s];
+        }
 
     return 0;
 }

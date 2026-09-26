@@ -11,11 +11,16 @@ typedef struct {
     const char *site;
     const char *white;
     const char *black;
+    const char *extra[16][2];   /* more tag pairs, after Result */
+    int         extra_count;
 } PgnHeader;
 
 /* Write `g` as PGN. Returns 0 on success, or a negative errno-style code
  * if the file could not be opened or written. */
 int pgn_write(const GameState *g, const PgnHeader *h, const char *path);
+
+/* As pgn_write, but adds the game to the end of the file. */
+int pgn_append(const GameState *g, const PgnHeader *h, const char *path);
 
 /* Default destination: ~/.local/share/dchess/games/<date>-<time>.pgn,
  * creating the directory if needed. Returns 0 on success. */

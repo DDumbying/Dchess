@@ -21,7 +21,7 @@ typedef struct {
     char     last_cmd[64];
     char     last_eval[32];   /* formatted for display, e.g. "+0.34" */
     SearchResult last_search; /* nodes == 0 until the first search */
-    char     last_search_by[32];   /* the engine behind last_search */
+    char     last_search_by[48];   /* the engine behind last_search */
 
     /* Cursor & selection */
     int      cursor_row;
@@ -37,9 +37,15 @@ typedef struct {
     Opponent *drivers[2];     /* NULL for a human */
     Opponent *go_driver;      /* "go" on a human's turn */
     Opponent *thinking;       /* the driver searching now, or NULL */
-    char      thinking_by[32];
+    char      thinking_by[48];
     int       paused;
     long      last_move_ms;   /* monotonic; when an engine last moved */
+    EngineList engines;       /* engines.conf, as of the last load */
+    ProfileList profiles;
+    int       file_active;    /* active profile as saved; --profile does not change it */
+    int       theme_set;      /* theme chosen by flag or launcher, so it is remembered */
+    int       cli_setup;      /* players came from flags; the launcher keeps them */
+    char      engine_error[400];   /* the last engine failure, until the next search */
 
     /* Persistent statistics */
     DchessStats stats;

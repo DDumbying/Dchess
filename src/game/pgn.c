@@ -83,11 +83,8 @@ static void write_movetext(FILE *f, const GameState *g)
     fputc('\n', f);
 }
 
-int pgn_write(const GameState *g, const PgnHeader *h, const char *path)
+static int emit(FILE *f, const GameState *g, const PgnHeader *h)
 {
-    FILE *f = fopen(path, "w");
-    if (!f) return -1;
-
     char date[16];
     today(date, sizeof(date));
 
@@ -98,6 +95,8 @@ int pgn_write(const GameState *g, const PgnHeader *h, const char *path)
     fprintf(f, "[White \"%s\"]\n",  h && h->white ? h->white : "White");
     fprintf(f, "[Black \"%s\"]\n",  h && h->black ? h->black : "Black");
     fprintf(f, "[Result \"%s\"]\n", result_token(g));
+    for (int i = 0; h && i < h->extra_count && i < 16; i++)
+        fprintf(f, "[%s \"%s\"]\n", h->extra[i][0], h->extra[i][1]);
 
     /* A game that did not start from the standard position is unreadable
      * without these two. */
@@ -112,4 +111,19 @@ int pgn_write(const GameState *g, const PgnHeader *h, const char *path)
     int ok = (ferror(f) == 0);
     if (fclose(f) != 0 || !ok) return -2;
     return 0;
+}
+
+int pgn_write(const GameState *g, const PgnHeader *h, const char *path)
+{
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+    return emit(f, g, h);
+}
+
+int pgn_append(const GameState *g, const PgnHeader *h, const char *path)
+{
+    FILE *f = fopen(path, "a");
+    if (!f) return -1;
+    if (ftell(f) > 0) fputc('\n', f);
+    return emit(f, g, h);
 }

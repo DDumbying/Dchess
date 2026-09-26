@@ -7,7 +7,8 @@
 #include "tui/input.h"
 #include "tui/commands.h"
 #include "tui/stats_tui.h"
-#include "tui/onboard.h"
+#include "tui/launcher.h"
+#include "game/records.h"
 #include "engine/board.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
@@ -18,6 +19,7 @@
 #include "utils/bitboard.h"
 #include "utils/stats.h"
 #include "utils/cli.h"
+#include "utils/theme.h"
 #include <ncurses.h>
 #include <string.h>
 #include <stdio.h>
@@ -86,20 +88,15 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
     WINDOW *pop, *shadow;
     build_game_over_panel(screen_board(sc), state, &pop, &shadow);
 
-    /* Only games against the built-in engine have a place in the stats. */
-    {
-        int human, level;
-        if (players_stats_entry(state->players, &human, &level)) {
-            int result = 0;
-            const char *r = state->game.result;
-            if (strstr(r, "White wins"))      result = (human == WHITE) ? 1 : -1;
-            else if (strstr(r, "Black wins")) result = (human == BLACK) ? 1 : -1;
-            int total_secs = state->game.white_clock + state->game.black_clock;
-            stats_record(&state->stats, level, result, human,
-                         state->game.move_count, total_secs);
-            stats_save(&state->stats);
+    /* Recorded once, and only when a profile played. */
+    for (int s = WHITE; s <= BLACK; s++)
+        if (state->players[s].kind == PLAYER_HUMAN && state->players[s].name[0]) {
+            char games[512];
+            records_path(games, sizeof(games));
+            records_append(games, &state->game, state->players, &state->engines);
+            tui_refresh_stats(state);
+            break;
         }
-    }
 
     while (1) {
         int ch = wgetch(pop);
@@ -268,6 +265,7 @@ void tui_init(TUIState *state, const CliArgs *args)
     state->show_onboarding = args ?
         (args->menu || (!args->any_gameplay_flag && !args->no_menu)) : 0;
     state->theme = args ? args->theme : 0;
+    state->cli_setup = args ? args->any_gameplay_flag : 0;
 
     /* Starting position: a custom FEN if one was given (and it is still
      * valid -- cli_parse() already validated it, but a FEN chosen via the
@@ -284,6 +282,28 @@ void tui_init(TUIState *state, const CliArgs *args)
     state->cursor_col = 4;
 
     stats_load(&state->stats);
+    engines_load(&state->engines);
+
+    char games[512];
+    records_path(games, sizeof(games));
+    if (!profiles_load(&state->profiles))
+        profiles_first_run(&state->profiles, getenv("USER"), &state->stats, games);
+    state->file_active = state->profiles.active;
+    if (args && args->profile[0]) {
+        int i = profiles_find(&state->profiles, args->profile);
+        if (i >= 0) state->profiles.active = i;
+    }
+    state->theme_set = args ? args->theme_set : 0;
+    if (!state->theme_set && state->profiles.count) {
+        int t = theme_from_name(state->profiles.p[state->profiles.active].theme);
+        if (t >= 0) state->theme = t;
+    }
+    for (int s = WHITE; s <= BLACK; s++) {
+        int active = args ? args->human_active[s] : s == WHITE;
+        if (active && state->players[s].kind == PLAYER_HUMAN && state->profiles.count)
+            state->players[s] = player_profile(state->profiles.p[state->profiles.active].name);
+    }
+    tui_refresh_stats(state);
     snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
 
     char setup[128];
@@ -498,9 +518,9 @@ void tui_run(TUIState *state)
 
     init_colors(state->theme);
 
-    if (state->show_onboarding && !tui_onboarding(state)) {
+    if (state->show_onboarding && !tui_launcher(state)) {
         endwin();
-        return; /* the player quit from the onboarding screen */
+        return; /* the player quit from the launcher */
     }
     init_colors(state->theme); /* re-apply the theme actually confirmed */
 
@@ -517,6 +537,7 @@ void tui_run(TUIState *state)
     state->redraw_ctx     = &sc;
 
     tui_attach_players(state);
+    tui_remember_setup(state);
 
     char cmd_buf[256];
 
@@ -541,7 +562,7 @@ void tui_run(TUIState *state)
         }
 
         if (ch == '\t') {   /* stats popup over the board */
-            stats_load(&state->stats);
+            tui_refresh_stats(state);
             draw_stats_mini(sc.board, &state->stats);
             continue;        /* the next screen_paint() repaints underneath */
         }

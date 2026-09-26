@@ -226,7 +226,7 @@ static void engine_row(WINDOW *p, int row, const char *label, const char *value)
 static void draw_engine_panel(WINDOW *p, const TUIState *state)
 {
     const char *by = state->thinking ? state->thinking_by : state->last_search_by;
-    char title[48];
+    char title[64];
     if (by[0]) snprintf(title, sizeof(title), "engine · %s", by);
     else       snprintf(title, sizeof(title), "engine");
     panel_frame(p, title, CP_ACC_ENGINE);
@@ -235,6 +235,12 @@ static void draw_engine_panel(WINDOW *p, const TUIState *state)
         wattron(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
         mvw_clip(p, 1, 2, "thinking...");
         wattroff(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
+        return;
+    }
+    if (state->engine_error[0]) {
+        wattron(p, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
+        mvw_clip(p, 1, 2, "failed");
+        wattroff(p, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
         return;
     }
     if (state->paused && players_automated(state->players, state->game.pos.side)) {
