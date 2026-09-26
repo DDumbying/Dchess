@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <wchar.h>
 
 enum { FOCUS_OPP, FOCUS_RECENT };
 
@@ -22,17 +23,22 @@ typedef struct {
 
 static const char *BARS[] = { "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" };
 
-/* Prints at most `width` characters of UTF-8 text. */
+/* Prints UTF-8 text in at most `width` terminal columns (CJK counts two). */
 static void put_clip(WINDOW *w, int row, int col, int width, const char *s)
 {
-    int chars = 0;
+    mbstate_t st;
+    memset(&st, 0, sizeof(st));
     const char *end = s;
+    int used = 0;
     while (*end) {
-        if (((unsigned char)*end & 0xC0) != 0x80) {
-            if (chars == width) break;
-            chars++;
-        }
-        end++;
+        wchar_t wc;
+        size_t n = mbrtowc(&wc, end, strlen(end), &st);
+        if (n == (size_t)-1 || n == (size_t)-2 || n == 0) break;
+        int cw = wcwidth(wc);
+        if (cw < 0) cw = 1;
+        if (used + cw > width) break;
+        used += cw;
+        end += n;
     }
     mvwprintw(w, row, col, "%.*s", (int)(end - s), s);
 }
@@ -134,9 +140,9 @@ static void draw_opponents(Page *pg, int h, int w, int y, int x)
     WINDOW *p = panel(h, w, y, x, "opponents", pg->focus == FOCUS_OPP ? CP_ACC_MOVES : CP_HINT);
     if (!p) return;
     const StatsView *v = &pg->v;
-    int name_w = w - 34 > 10 ? w - 34 : 10, rows = h - 3;
+    int name_w = w - 35 > 10 ? w - 35 : 10, rows = h - 3;
     wattron(p, COLOR_PAIR(CP_HINT));
-    mvwprintw(p, 1, 2, "%-*s %5s  %-9s %4s %5s", name_w, "OPPONENT", "GAMES", "W-D-L", "WIN", "LAST");
+    mvwprintw(p, 1, 2, "%-*s %5s  %-11s %4s %5s", name_w, "OPPONENT", "GAMES", "W-D-L", "WIN", "LAST");
     wattroff(p, COLOR_PAIR(CP_HINT));
     if (pg->opp_top > v->opp_count - rows) pg->opp_top = v->opp_count - rows > 0 ? v->opp_count - rows : 0;
     for (int i = 0; i < rows && pg->opp_top + i < v->opp_count; i++) {
@@ -146,10 +152,10 @@ static void draw_opponents(Page *pg, int h, int w, int y, int x)
         if (o->last) age(o->last, when, sizeof(when));
         else snprintf(when, sizeof(when), "-");
         put_clip(p, 2 + i, 2, name_w, o->name);
-        mvwprintw(p, 2 + i, 3 + name_w, "%5d  %-9s", o->games, wdl);
+        mvwprintw(p, 2 + i, 3 + name_w, "%5d  %-11s", o->games, wdl);
         int wp = pct(o->wins, o->games);
-        colored(p, pct_pair(wp), 0, 2 + i, 18 + name_w, "%3d%%", wp);
-        wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 2 + i, 24 + name_w, "%4s", when); wattroff(p, COLOR_PAIR(CP_HINT));
+        colored(p, pct_pair(wp), 0, 2 + i, 22 + name_w, "%3d%%", wp);
+        wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 2 + i, 27 + name_w, "%5s", when); wattroff(p, COLOR_PAIR(CP_HINT));
     }
     if (!v->opp_count) {
         wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 2, 2, "no games yet"); wattroff(p, COLOR_PAIR(CP_HINT));
@@ -267,11 +273,13 @@ static void run(ProfileList *profiles, int start)
     records_load(games, &pg.rec);
     rebuild(&pg);
     keypad(stdscr, TRUE);
+    int resized = 0;
 
     for (;;) {
         draw(&pg);
         int ch = getch();
         int n = profiles->count;
+        if (ch == KEY_RESIZE) resized = 1;
         if (ch == 27 || ch == 'q') break;
         if (ch == '\t') pg.focus = pg.focus == FOCUS_OPP ? FOCUS_RECENT : FOCUS_OPP;
         else if ((ch == KEY_LEFT || ch == 'h') && n > 1) { pg.index = (pg.index + n - 1) % n; rebuild(&pg); }
@@ -286,6 +294,8 @@ static void run(ProfileList *profiles, int start)
     }
     records_free(&pg.rec);
     clear();
+    /* The caller's own layout also needs rebuilding. */
+    if (resized) ungetch(KEY_RESIZE);
 }
 
 void stats_screen(TUIState *s)
