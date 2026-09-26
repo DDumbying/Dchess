@@ -80,9 +80,10 @@ OPTIONS
         medium – depth 5, up to 3s   (balanced)  [default]
         hard   – depth 8, up to 5s   (challenging, slower)
   -2, --two-player                Local two-player mode — no engine, board flips after each move
-  --white <human|easy|medium|hard>
-  --black <human|easy|medium|hard>
+  --white <human|easy|medium|hard|engine>
+  --black <human|easy|medium|hard|engine>
                                   Choose who plays a side; overrides -c, -d and -2
+  --engines                       List the registered UCI engines and exit
   --fen <string>                  Start from a custom FEN position instead of the standard setup
   -m, --menu                      Show the onboarding screen to pick options visually,
                                    even if other flags were given
@@ -105,6 +106,8 @@ EXAMPLES
   dchess --two-player             Local two-player, board flips each turn
   dchess --white hard --black easy
                                   Watch the engine play itself
+  dchess --white "Stockfish 1500" --black hard
+                                  A registered UCI engine against dchess
   dchess --stats                  View your stats
 ```
 
@@ -151,9 +154,10 @@ flip        turn the board around
 pause / resume
             hold and restart the engines (Space does both)
 white|black human
-white|black engine [easy|medium|hard]
+white|black engine [easy|medium|hard|name]
             change who plays a side, mid-game
 swap        exchange the two players
+engines     list the registered UCI engines
 depth N     change search depth (1–8) mid-game
 eval        show current position evaluation
 fen         show the current position as a FEN string

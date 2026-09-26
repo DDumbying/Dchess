@@ -19,6 +19,7 @@ int main(int argc, char **argv)
 
     if (args.show_help)    cli_help();     /* exits */
     if (args.show_version) cli_version();  /* exits */
+    if (args.list_engines) cli_list_engines();   /* exits */
 
     setlocale(LC_ALL, "");   /* required for ncurses unicode output */
 

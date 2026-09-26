@@ -12,6 +12,7 @@ typedef struct {
     Player players[2];  /* by colour; from -c/-d/-2, then --white/--black */
     int show_version;   /* --version flag */
     int show_stats;     /* --stats flag    */
+    int list_engines;   /* --engines flag */
     int show_help;      /* --help flag     */
     char fen[128];       /* --fen <string>: custom starting position, empty = standard start */
     int menu;            /* --menu flag: force the interactive onboarding screen */
@@ -34,5 +35,8 @@ int  cli_time_limit_for_difficulty(int difficulty);
 
 void cli_help(void);
 void cli_version(void);
+
+/* Prints the registered UCI engines and exits. */
+void cli_list_engines(void);
 
 #endif /* CLI_H */
