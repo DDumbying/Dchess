@@ -140,7 +140,7 @@ ending.
 
 ## Code
 
-### `src/utils/profiles.c` (core)
+### `src/game/profiles.c` (core; in `game/` because first run writes legacy records)
 
 ```c
 #define PROFILES_MAX 32
