@@ -276,10 +276,14 @@ void tui_init(TUIState *state, const CliArgs *args)
     pthread_mutex_init(&state->search_mutex, NULL);
 
     /* Apply CLI configuration */
-    state->player_side  = args ? args->player_side  : WHITE;
-    state->difficulty   = args ? args->difficulty   : DIFF_MEDIUM;
-    state->engine_depth = args ? args->engine_depth : 5;
-    state->two_player   = args ? args->two_player   : 0;
+    const Player *pl = args ? args->players : NULL;
+    int w_human = !pl || pl[WHITE].kind == PLAYER_HUMAN;
+    int b_human =  pl && pl[BLACK].kind == PLAYER_HUMAN;
+    state->two_player   = w_human && b_human;
+    state->player_side  = (!w_human && b_human) ? BLACK : WHITE;
+    state->difficulty   = pl ? pl[state->player_side == WHITE ? BLACK : WHITE].level
+                             : DIFF_MEDIUM;
+    state->engine_depth = cli_depth_for_difficulty(state->difficulty);
     state->time_limit_ms = cli_time_limit_for_difficulty(state->difficulty);
     state->show_onboarding = args ?
         (args->menu || (!args->any_gameplay_flag && !args->no_menu)) : 0;

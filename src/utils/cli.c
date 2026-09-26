@@ -58,6 +58,13 @@ void cli_help(void)
         "            hard   – depth 8, up to 5s   (challenging, slower)\n"
         "\n"
         "    -2, --two-player\n"
+        "          Two people at one keyboard; no engine.\n"
+        "\n"
+        "    --white <human|easy|medium|hard>\n"
+        "    --black <human|easy|medium|hard>\n"
+        "          Choose who plays one side. Overrides -c, -d and -2.\n"
+        "          Give both an engine level to watch it play itself:\n"
+        "            dchess --white hard --black easy\n"
         "          Local two-player mode. No engine. Board flips after each move\n"
         "          so the next player faces their own pieces.\n"
         "\n"
@@ -144,13 +151,17 @@ void cli_version(void)
 int cli_parse(int argc, char **argv, CliArgs *args)
 {
     /* defaults */
-    args->player_side  = WHITE;
-    args->difficulty   = DIFF_MEDIUM;
-    args->engine_depth = diff_to_depth[DIFF_MEDIUM];
+    args->players[WHITE] = player_human();
+    args->players[BLACK] = player_builtin(DIFF_MEDIUM);
+
+    /* -c, -d and -2 shape the game; --white and --black then override
+     * their side whatever the order they came in. */
+    int colour = WHITE, level = DIFF_MEDIUM, two = 0;
+    int chosen_set[2] = { 0, 0 };
+    Player chosen[2];
     args->show_version = 0;
     args->show_stats   = 0;
     args->show_help    = 0;
-    args->two_player   = 0;
     args->fen[0]        = '\0';
     args->menu          = 0;
     args->no_menu       = 0;
@@ -190,9 +201,9 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             }
             const char *val = argv[++i];
             if (strcmp(val, "white") == 0 || strcmp(val, "w") == 0) {
-                args->player_side = WHITE;
+                colour = WHITE;
             } else if (strcmp(val, "black") == 0 || strcmp(val, "b") == 0) {
-                args->player_side = BLACK;
+                colour = BLACK;
             } else {
                 snprintf(args->error_msg, sizeof(args->error_msg),
                          "Unknown color '%s'. Use: white | black", val);
@@ -213,25 +224,50 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             }
             const char *val = argv[++i];
             if (strcmp(val, "easy") == 0 || strcmp(val, "e") == 0) {
-                args->difficulty   = DIFF_EASY;
+                level = DIFF_EASY;
             } else if (strcmp(val, "medium") == 0 || strcmp(val, "m") == 0) {
-                args->difficulty   = DIFF_MEDIUM;
+                level = DIFF_MEDIUM;
             } else if (strcmp(val, "hard") == 0 || strcmp(val, "h") == 0) {
-                args->difficulty   = DIFF_HARD;
+                level = DIFF_HARD;
             } else {
                 snprintf(args->error_msg, sizeof(args->error_msg),
                          "Unknown difficulty '%s'. Use: easy | medium | hard", val);
                 args->error = 1;
                 return -1;
             }
-            args->engine_depth = diff_to_depth[args->difficulty];
             args->any_gameplay_flag = 1;
             continue;
         }
 
         /* --two-player / -2 ────────────────────────────────────────── */
         if (strcmp(a, "--two-player") == 0 || strcmp(a, "-2") == 0) {
-            args->two_player = 1;
+            two = 1;
+            args->any_gameplay_flag = 1;
+            continue;
+        }
+
+        /* --white / --black ────────────────────────────────────────── */
+        if (strcmp(a, "--white") == 0 || strcmp(a, "--black") == 0) {
+            int side = (a[2] == 'w') ? WHITE : BLACK;
+            if (i + 1 >= argc) {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Option '%s' requires an argument: human|easy|medium|hard", a);
+                args->error = 1;
+                return -1;
+            }
+            const char *val = argv[++i];
+            int lv = players_level_from_name(val);
+            if (strcmp(val, "human") == 0) {
+                chosen[side] = player_human();
+            } else if (lv >= 0) {
+                chosen[side] = player_builtin(lv);
+            } else {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Unknown player '%s'. Use: human | easy | medium | hard", val);
+                args->error = 1;
+                return -1;
+            }
+            chosen_set[side] = 1;
             args->any_gameplay_flag = 1;
             continue;
         }
@@ -302,6 +338,15 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         args->error = 1;
         return -1;
     }
+
+    if (two) {
+        args->players[WHITE] = args->players[BLACK] = player_human();
+    } else {
+        args->players[colour]         = player_human();
+        args->players[colour ^ BLACK] = player_builtin(level);
+    }
+    for (int s = WHITE; s <= BLACK; s++)
+        if (chosen_set[s]) args->players[s] = chosen[s];
 
     return 0;
 }

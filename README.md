@@ -80,6 +80,9 @@ OPTIONS
         medium – depth 5, up to 3s   (balanced)  [default]
         hard   – depth 8, up to 5s   (challenging, slower)
   -2, --two-player                Local two-player mode — no engine, board flips after each move
+  --white <human|easy|medium|hard>
+  --black <human|easy|medium|hard>
+                                  Choose who plays a side; overrides -c, -d and -2
   --fen <string>                  Start from a custom FEN position instead of the standard setup
   -m, --menu                      Show the onboarding screen to pick options visually,
                                    even if other flags were given
@@ -100,6 +103,8 @@ EXAMPLES
   dchess --menu -d hard           Onboarding screen, pre-filled to hard difficulty
   dchess --theme midnight         Start with the midnight color theme
   dchess --two-player             Local two-player, board flips each turn
+  dchess --white hard --black easy
+                                  Watch the engine play itself
   dchess --stats                  View your stats
 ```
 

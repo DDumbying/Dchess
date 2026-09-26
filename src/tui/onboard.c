@@ -276,10 +276,12 @@ done:
 
     CliArgs chosen;
     memset(&chosen, 0, sizeof(chosen));
-    chosen.player_side  = (choice.side == BLACK) ? BLACK : WHITE;
-    chosen.two_player   = (choice.side == SIDE_TWO_PLAYER);
-    chosen.difficulty   = choice.difficulty;
-    chosen.engine_depth = cli_depth_for_difficulty(choice.difficulty);
+    if (choice.side == SIDE_TWO_PLAYER) {
+        chosen.players[WHITE] = chosen.players[BLACK] = player_human();
+    } else {
+        chosen.players[choice.side]         = player_human();
+        chosen.players[choice.side ^ BLACK] = player_builtin(choice.difficulty);
+    }
     chosen.theme        = choice.theme;
     if (choice.use_custom_fen && choice.fen[0])
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", choice.fen);
