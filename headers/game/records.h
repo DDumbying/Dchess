@@ -28,6 +28,8 @@ int  records_append(const char *path, const GameState *g, const Player p[2],
 int  records_append_legacy(const char *path, const char *profile, long timestamp, int result);
 int  records_load(const char *path, RecordList *out);   /* 0 if missing; skips bad games */
 void records_free(RecordList *l);
+/* Unix time of a record's Date and Time tags, or 0. */
+long records_time(const Record *r);
 int  records_rename(const char *path, const char *old_name, const char *new_name);
 
 /* Legacy records are excluded; add the profile's legacy line yourself. */

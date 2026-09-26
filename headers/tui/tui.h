@@ -42,6 +42,7 @@ typedef struct {
     long      last_move_ms;   /* monotonic; when an engine last moved */
     EngineList engines;       /* engines.conf, as of the last load */
     ProfileList profiles;
+    int       cli_setup;      /* players came from flags; the launcher keeps them */
     char      engine_error[400];   /* the last engine failure, until the next search */
 
     /* Persistent statistics */

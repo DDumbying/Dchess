@@ -322,7 +322,7 @@ int records_winrate(const RecordList *l, const char *who, float *out, int max)
     return n;
 }
 
-static long stamp(const Record *r)
+long records_time(const Record *r)
 {
     struct tm tm;
     memset(&tm, 0, sizeof(tm));
@@ -350,7 +350,7 @@ void records_to_stats(const RecordList *l, const char *who, DchessStats *out)
 
         if (seen++ >= skip) {
             GameRecord *h = &out->history[out->history_count++];
-            h->timestamp = stamp(r);
+            h->timestamp = records_time(r);
             h->result = o;
         }
         if (r->legacy) continue;

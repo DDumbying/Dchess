@@ -7,7 +7,7 @@
 #include "tui/input.h"
 #include "tui/commands.h"
 #include "tui/stats_tui.h"
-#include "tui/onboard.h"
+#include "tui/launcher.h"
 #include "game/records.h"
 #include "engine/board.h"
 #include "engine/movegen.h"
@@ -264,6 +264,7 @@ void tui_init(TUIState *state, const CliArgs *args)
     state->show_onboarding = args ?
         (args->menu || (!args->any_gameplay_flag && !args->no_menu)) : 0;
     state->theme = args ? args->theme : 0;
+    state->cli_setup = args ? args->any_gameplay_flag : 0;
 
     /* Starting position: a custom FEN if one was given (and it is still
      * valid -- cli_parse() already validated it, but a FEN chosen via the
@@ -510,9 +511,9 @@ void tui_run(TUIState *state)
 
     init_colors(state->theme);
 
-    if (state->show_onboarding && !tui_onboarding(state)) {
+    if (state->show_onboarding && !tui_launcher(state)) {
         endwin();
-        return; /* the player quit from the onboarding screen */
+        return; /* the player quit from the launcher */
     }
     init_colors(state->theme); /* re-apply the theme actually confirmed */
 
