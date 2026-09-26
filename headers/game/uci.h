@@ -2,6 +2,8 @@
 #define UCI_H
 
 #include "game/game.h"
+#include "game/opponent.h"
+#include "utils/engines.h"
 #include <stddef.h>
 
 /* Room for "position fen ..." plus MAX_MOVE_HISTORY moves. */
@@ -32,5 +34,22 @@ void uci_position_command(const GameState *g, char *buf, size_t n);
 /* Centipawns from the side to move's view; a mate is a large score, the
  * way search() reports one. */
 int  uci_info_score(const UciInfo *info);
+
+#define UCI_HANDSHAKE_TIMEOUT_MS 10000
+#define UCI_PROBE_TIMEOUT_MS      5000
+#define UCI_STOP_TIMEOUT_MS       2000
+
+typedef struct {
+    char name[64];
+    char author[64];
+    int  elo_supported, elo_min, elo_max;
+} UciProbe;
+
+/* The engine starts on the first opponent_start(). The entry is copied. */
+Opponent *opponent_uci(const EngineEntry *e);
+
+/* Starts the engine, waits for "uciok" and quits it again. Blocks for at
+ * most UCI_PROBE_TIMEOUT_MS. */
+int  uci_probe(const char *path, UciProbe *out, char *err, size_t n);
 
 #endif
