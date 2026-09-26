@@ -17,28 +17,26 @@
  * for these in this codebase, so each file that needs a few of them
  * redefines those (matches the existing convention in tui.c). */
 
-enum { ROW_SIDE, ROW_DIFFICULTY, ROW_POSITION, ROW_THEME, ROW_START, ROW_COUNT };
+enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_THEME, ROW_START, ROW_COUNT };
 
-/* choice.side: WHITE, BLACK, or SIDE_TWO_PLAYER (not a real "side",
- * just a third menu option alongside the two real ones). */
-#define SIDE_TWO_PLAYER 2
+/* Each player row cycles You, then the engine at each level. */
+#define WHO_COUNT 4
 
 typedef struct {
-    int  side;
-    int  difficulty;
+    int  who[2];          /* 0 = You, 1 + DIFF_* = the engine */
     int  use_custom_fen;
     char fen[128];
     int  theme;
 } OnboardChoice;
 
-static const char *side_label(int side)
+static Player who_player(int who)
 {
-    return side == WHITE ? "White" : side == BLACK ? "Black" : "Two-Player";
+    return who == 0 ? player_human() : player_builtin(who - 1);
 }
 
-static const char *diff_label(int d)
+static int player_who(const Player *p)
 {
-    return d == DIFF_EASY ? "Easy" : d == DIFF_HARD ? "Hard" : "Medium";
+    return p->kind == PLAYER_HUMAN ? 0 : p->level + 1;
 }
 
 /* Simple inline text prompt on the given row of `win`. Returns 1 with
@@ -84,10 +82,8 @@ static int prompt_fen(WINDOW *win, int row, int col, int width, char *out, size_
 int tui_onboarding(TUIState *state)
 {
     OnboardChoice choice;
-    int w_human = state->players[WHITE].kind == PLAYER_HUMAN;
-    int b_human = state->players[BLACK].kind == PLAYER_HUMAN;
-    choice.side       = (w_human && b_human) ? SIDE_TWO_PLAYER : (w_human ? WHITE : BLACK);
-    choice.difficulty = state->players[choice.side == BLACK ? WHITE : BLACK].level;
+    choice.who[WHITE] = player_who(&state->players[WHITE]);
+    choice.who[BLACK] = player_who(&state->players[BLACK]);
     choice.use_custom_fen = 0;
     choice.fen[0]         = '\0';
     choice.theme          = state->theme;
@@ -103,7 +99,7 @@ int tui_onboarding(TUIState *state)
     int label_w = 16;
     int content_w = 8, start_w = 8;
 
-    int cursor_row = ROW_SIDE;
+    int cursor_row = ROW_WHITE;
     int result = 1; /* 1 = start game, 0 = quit */
 
     while (1) {
@@ -136,7 +132,7 @@ int tui_onboarding(TUIState *state)
             keypad(win, TRUE);
 
             /* Every labeled row prints a fixed 16-char label (e.g.
-             * "Play as:        ") followed by a value field. Both must
+             * "White:          ") followed by a value field. Both must
              * fit inside the box: pw columns total, minus the border
              * (2 cols) minus the left margin (col 3 start, i.e. 2 cols in
              * from the border) leaves (pw - 4) interior columns to spend
@@ -150,18 +146,17 @@ int tui_onboarding(TUIState *state)
         werase(win);
         panel_frame(win, "dchess · new game", CP_ACC_BOARD);
 
-        int diff_dim = (choice.side == SIDE_TWO_PLAYER);
-
-        if (cursor_row == ROW_SIDE) wattron(win, A_REVERSE);
-        mvwprintw(win, 2, 3, "Play as:        %-*.*s", content_w, content_w, side_label(choice.side));
-        if (cursor_row == ROW_SIDE) wattroff(win, A_REVERSE);
-
-        if (diff_dim) wattron(win, A_DIM);
-        else if (cursor_row == ROW_DIFFICULTY) wattron(win, A_REVERSE);
-        mvwprintw(win, 4, 3, "Difficulty:     %-*.*s", content_w, content_w,
-                  diff_dim ? "n/a" : diff_label(choice.difficulty));
-        if (diff_dim) wattroff(win, A_DIM);
-        else if (cursor_row == ROW_DIFFICULTY) wattroff(win, A_REVERSE);
+        const char *row_name[2] = { "White:          ", "Black:          " };
+        for (int side = WHITE; side <= BLACK; side++) {
+            Player p = who_player(choice.who[side]);
+            char label[32];
+            player_label(&p, label, sizeof(label));
+            int on = (cursor_row == (side == WHITE ? ROW_WHITE : ROW_BLACK));
+            if (on) wattron(win, A_REVERSE);
+            mvwprintw(win, 2 + side * 2, 3, "%s%-*.*s", row_name[side],
+                      content_w, content_w, label);
+            if (on) wattroff(win, A_REVERSE);
+        }
 
         if (cursor_row == ROW_POSITION) wattron(win, A_REVERSE);
         {
@@ -199,20 +194,15 @@ int tui_onboarding(TUIState *state)
         switch (ch) {
             case KEY_UP: case 'k':
                 cursor_row = (cursor_row + ROW_COUNT - 1) % ROW_COUNT;
-                if (cursor_row == ROW_DIFFICULTY && diff_dim)
-                    cursor_row = (cursor_row + ROW_COUNT - 1) % ROW_COUNT;
                 break;
             case KEY_DOWN: case 'j':
                 cursor_row = (cursor_row + 1) % ROW_COUNT;
-                if (cursor_row == ROW_DIFFICULTY && diff_dim)
-                    cursor_row = (cursor_row + 1) % ROW_COUNT;
                 break;
             case KEY_LEFT: case 'h':
-                if (cursor_row == ROW_SIDE)
-                    choice.side = (choice.side == WHITE) ? SIDE_TWO_PLAYER :
-                                  (choice.side == SIDE_TWO_PLAYER ? BLACK : WHITE);
-                else if (cursor_row == ROW_DIFFICULTY && !diff_dim)
-                    choice.difficulty = (choice.difficulty + 3 - 1) % 3;
+                if (cursor_row == ROW_WHITE || cursor_row == ROW_BLACK) {
+                    int s = (cursor_row == ROW_WHITE) ? WHITE : BLACK;
+                    choice.who[s] = (choice.who[s] + WHO_COUNT - 1) % WHO_COUNT;
+                }
                 else if (cursor_row == ROW_POSITION)
                     choice.use_custom_fen = !choice.use_custom_fen;
                 else if (cursor_row == ROW_THEME) {
@@ -221,11 +211,10 @@ int tui_onboarding(TUIState *state)
                 }
                 break;
             case KEY_RIGHT: case 'l':
-                if (cursor_row == ROW_SIDE)
-                    choice.side = (choice.side == WHITE) ? BLACK :
-                                  (choice.side == BLACK ? SIDE_TWO_PLAYER : WHITE);
-                else if (cursor_row == ROW_DIFFICULTY && !diff_dim)
-                    choice.difficulty = (choice.difficulty + 1) % 3;
+                if (cursor_row == ROW_WHITE || cursor_row == ROW_BLACK) {
+                    int s = (cursor_row == ROW_WHITE) ? WHITE : BLACK;
+                    choice.who[s] = (choice.who[s] + 1) % WHO_COUNT;
+                }
                 else if (cursor_row == ROW_POSITION)
                     choice.use_custom_fen = !choice.use_custom_fen;
                 else if (cursor_row == ROW_THEME) {
@@ -278,12 +267,8 @@ done:
 
     CliArgs chosen;
     memset(&chosen, 0, sizeof(chosen));
-    if (choice.side == SIDE_TWO_PLAYER) {
-        chosen.players[WHITE] = chosen.players[BLACK] = player_human();
-    } else {
-        chosen.players[choice.side]         = player_human();
-        chosen.players[choice.side ^ BLACK] = player_builtin(choice.difficulty);
-    }
+    chosen.players[WHITE] = who_player(choice.who[WHITE]);
+    chosen.players[BLACK] = who_player(choice.who[BLACK]);
     chosen.theme        = choice.theme;
     if (choice.use_custom_fen && choice.fen[0])
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", choice.fen);
