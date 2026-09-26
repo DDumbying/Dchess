@@ -56,6 +56,12 @@ three are ignored for a human.
   | Two humans | 1 |
   | Two engines | 1 |
 
+- `int players_should_start(const Player p[2], int side_to_move, int paused, int game_over, long since_last_move_ms)`:
+  the start condition from **Turn flow**, step 2, apart from the driver
+  being idle.
+- `int players_stats_entry(const Player p[2], int *human_side, int *level)`:
+  1 when the game is recordable under **Stats**, with the human's colour and
+  the engine's level.
 - `int players_apply_command(Player p[2], const char *cmd, char *err, size_t n)`:
   returns 1 if `cmd` was a player command and it was applied, 0 if it was not a
   player command, and -1 with a message in `err` if it was one but invalid. It
@@ -81,6 +87,7 @@ typedef struct Opponent Opponent;
 Opponent *opponent_builtin(int depth, int time_ms);
 int  opponent_start (Opponent *, const Position *pos, U64 key);   /* non-blocking */
 int  opponent_poll  (Opponent *, SearchResult *out, U64 *key);    /* 1 once a result is ready */
+void opponent_stop  (Opponent *);   /* finish now; the next poll returns the best so far */
 void opponent_cancel(Opponent *);
 void opponent_free  (Opponent *);
 ```
@@ -89,8 +96,12 @@ void opponent_free  (Opponent *);
   running.
 - `opponent_poll` returns 0 before a start and while the search is running.
   Once it has returned 1 the driver is idle again.
+- `opponent_stop` makes the search finish now and waits for it. The next
+  `opponent_poll` returns the best move found so far, which is empty if the
+  first iteration had not completed.
 - `opponent_cancel` stops the search and waits for its thread. A search
-  cancelled this way produces no result.
+  cancelled this way produces no result. Both return promptly even when
+  called the instant after `start`, before the search has begun.
 - The key handed to `start` is returned with the result. The caller applies
   the move only if the live game still hashes to it.
 
@@ -127,8 +138,9 @@ result, and `go`). The main loop calls it on every 100 ms input tick:
 
 - `pause` and `resume`, and **Space** in normal mode, toggle `paused`.
   Pausing cancels the search in flight.
-- `stop` cancels the search and pauses. Without the pause, the next tick
-  would restart it.
+- `stop` makes the thinking engine play the best move it has found so far,
+  as it does today. If it had not completed its first iteration, no move is
+  played and the game pauses; otherwise the next tick would restart it.
 - `go` plays one move for the side to move, even when paused, so it works as
   a single step. On an engine's turn it uses that side's driver. On a human's
   turn it uses a built-in Medium driver kept for that purpose.
@@ -140,6 +152,8 @@ result, and `go`). The main loop calls it on every 100 ms input tick:
 - `depth N` sets `depth` on every built-in player and rebuilds their drivers.
 - `flip` only turns the board. Its old job, cycling the engine's side, is
   covered by the player commands.
+- A move typed or made with the cursor is refused while the side to move
+  is an engine, unless the game is paused.
 - When both sides are human, the board still turns to face the side to move
   after every move, as two-player mode does today.
 
@@ -201,12 +215,19 @@ does not change.
     unknown colour, a level given for `human`, and a non-player command
     returning 0.
   - `player_label`, `players_pgn_name` and `players_automated`.
+  - `players_should_start` for each condition, including the 500 ms delay
+    applying only between two engines.
+  - `players_stats_entry` for all four pairings.
 - **`tests/test_opponent.c`:**
   - the built-in driver finds a mate in one through start and poll;
   - the result carries the key it was started with;
-  - cancel returns promptly and produces no result;
+  - cancel returns promptly and produces no result, even straight after
+    start;
+  - stop returns promptly and the next poll returns a result;
   - poll before any start returns 0;
   - a second start while running is refused.
+- **`tests/test_cli.c`:** `--white` and `--black`, their override of `-c`,
+  `-d` and `-2` in either order, and a bad value.
 - **The existing suites and perft** still pass.
 - **tmux captures:**
   - you against the engine as each colour, where behaviour is unchanged;
