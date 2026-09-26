@@ -181,6 +181,42 @@ static void test_mid_game_fen(void)
           mt && strncmp(mt + 3, "12... e5 *", 10) == 0);
 }
 
+
+static int count_of(const char *needle)
+{
+    int n = 0;
+    for (const char *p = out; (p = strstr(p, needle)); p += strlen(needle)) n++;
+    return n;
+}
+
+static void test_extra_and_append(void)
+{
+    printf("== extra tags and append ==\n");
+    GameState g;
+    game_reset(&g);
+    play(&g, "e2e4");
+
+    PgnHeader h = { .white = "saeed", .black = "alice", .extra_count = 2,
+                    .extra = { { "WhiteKind", "profile" }, { "Seconds", "12" } } };
+    const char *path = "/tmp/dchess-test-append.pgn";
+    remove(path);
+    check("first append", pgn_append(&g, &h, path) == 0);
+    check("second append", pgn_append(&g, &h, path) == 0);
+
+    FILE *f = fopen(path, "r");
+    size_t n = f ? fread(out, 1, sizeof(out) - 1, f) : 0;
+    out[n] = '\0';
+    if (f) fclose(f);
+    remove(path);
+    check("both extra tags are written", has("[WhiteKind \"profile\"]") && has("[Seconds \"12\"]"));
+    check("two games in the file", count_of("[Event") == 2);
+    check("separated by a blank line", has("\n\n[Event"));
+
+    PgnHeader plain = { .white = "a", .black = "b" };
+    render(&g, &plain);
+    check("no extra tags when there are none", !has("[WhiteKind") && !has("[Seconds"));
+}
+
 int main(void)
 {
     init_attacks();
@@ -190,6 +226,7 @@ int main(void)
     test_setup_position();
     test_line_wrapping();
     test_mid_game_fen();
+    test_extra_and_append();
 
     if (failures) {
         printf("\n%d PGN test(s) FAILED.\n", failures);
