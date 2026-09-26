@@ -191,7 +191,7 @@ static void start_thinking(TUIState *state, Opponent *o, const char *by)
         snprintf(state->status, sizeof(state->status), "Could not start %s", by);
         return;
     }
-    if (!opponent_start(o, &state->game.pos, game_hash(&state->game))) return;
+    if (!opponent_start(o, &state->game)) return;
 
     state->thinking = o;
     snprintf(state->thinking_by, sizeof(state->thinking_by), "%s", by);
