@@ -124,37 +124,37 @@ static void test_commands(void)
     Player p[2] = { H(), E(DIFF_MEDIUM) };
 
     check("'black human' applies",
-          players_apply_command(p, "black human", err, sizeof(err)) == 1 &&
+          players_apply_command(p, "black human", err, sizeof(err), NULL) == 1 &&
           p[BLACK].kind == PLAYER_HUMAN);
     check("'white engine hard' applies",
-          players_apply_command(p, "white engine hard", err, sizeof(err)) == 1 &&
+          players_apply_command(p, "white engine hard", err, sizeof(err), NULL) == 1 &&
           p[WHITE].kind == PLAYER_BUILTIN && p[WHITE].level == DIFF_HARD);
     check("'black engine' defaults to medium",
-          players_apply_command(p, "black engine", err, sizeof(err)) == 1 &&
+          players_apply_command(p, "black engine", err, sizeof(err), NULL) == 1 &&
           p[BLACK].kind == PLAYER_BUILTIN && p[BLACK].level == DIFF_MEDIUM);
 
-    players_apply_command(p, "white human", err, sizeof(err));
+    players_apply_command(p, "white human", err, sizeof(err), NULL);
     check("'swap' exchanges the players",
-          players_apply_command(p, "swap", err, sizeof(err)) == 1 &&
+          players_apply_command(p, "swap", err, sizeof(err), NULL) == 1 &&
           p[WHITE].kind == PLAYER_BUILTIN && p[BLACK].kind == PLAYER_HUMAN);
 
     Player keep[2] = { p[WHITE], p[BLACK] };
     check("an unknown level is refused",
-          players_apply_command(p, "white engine expert", err, sizeof(err)) == -1 &&
+          players_apply_command(p, "white engine expert", err, sizeof(err), NULL) == -1 &&
           strstr(err, "expert") != NULL);
     check("a level for a human is refused",
-          players_apply_command(p, "black human hard", err, sizeof(err)) == -1);
+          players_apply_command(p, "black human hard", err, sizeof(err), NULL) == -1);
     check("a bare colour is refused",
-          players_apply_command(p, "white", err, sizeof(err)) == -1);
+          players_apply_command(p, "white", err, sizeof(err), NULL) == -1);
     check("an unknown role is refused",
-          players_apply_command(p, "white robot", err, sizeof(err)) == -1);
+          players_apply_command(p, "white robot", err, sizeof(err), NULL) == -1);
     check("refused commands change nothing", memcmp(keep, p, sizeof(keep)) == 0);
 
     check("an unknown colour is not a player command",
-          players_apply_command(p, "green human", err, sizeof(err)) == 0);
+          players_apply_command(p, "green human", err, sizeof(err), NULL) == 0);
     check("a move is not a player command",
-          players_apply_command(p, "b1c3", err, sizeof(err)) == 0);
-    check("nor is 'new'", players_apply_command(p, "new", err, sizeof(err)) == 0);
+          players_apply_command(p, "b1c3", err, sizeof(err), NULL) == 0);
+    check("nor is 'new'", players_apply_command(p, "new", err, sizeof(err), NULL) == 0);
 }
 
 static void test_labels(void)
@@ -194,6 +194,50 @@ static void test_labels(void)
           strcmp(buf, "White: You · Black: dchess Hard") == 0);
 }
 
+static void test_uci_players(void)
+{
+    printf("== UCI players ==\n");
+    char buf[64], err[128];
+    int side, level;
+
+    Player u = player_uci("Stockfish 1500");
+    check("a UCI player keeps its entry name",
+          u.kind == PLAYER_UCI && strcmp(u.engine, "Stockfish 1500") == 0);
+    Player hu[2] = { H(), u };
+    check("it is automated", players_automated(hu, BLACK));
+    player_label(&u, buf, sizeof(buf));
+    check("its label is the entry name", strcmp(buf, "Stockfish 1500") == 0);
+    players_pgn_name(hu, BLACK, buf, sizeof(buf));
+    check("and so is its PGN name", strcmp(buf, "Stockfish 1500") == 0);
+    players_matchup(hu, buf, sizeof(buf));
+    check("matchup: 'You vs Stockfish 1500'", strcmp(buf, "You vs Stockfish 1500") == 0);
+    check("games against it are not recorded yet", !players_stats_entry(hu, &side, &level));
+
+    EngineList reg;
+    memset(&reg, 0, sizeof(reg));
+    reg.count = 1;
+    snprintf(reg.e[0].name, sizeof(reg.e[0].name), "Stockfish 1500");
+    snprintf(reg.e[0].path, sizeof(reg.e[0].path), "stockfish");
+
+    Player p[2] = { H(), E(DIFF_MEDIUM) };
+    check("'white engine Stockfish 1500' picks the entry",
+          players_apply_command(p, "white engine Stockfish 1500", err, sizeof(err), &reg) == 1 &&
+          p[WHITE].kind == PLAYER_UCI && strcmp(p[WHITE].engine, "Stockfish 1500") == 0);
+    check("a level still means the built-in engine",
+          players_apply_command(p, "white engine hard", err, sizeof(err), &reg) == 1 &&
+          p[WHITE].kind == PLAYER_BUILTIN && p[WHITE].level == DIFF_HARD);
+    check("an unknown name is refused, naming it",
+          players_apply_command(p, "black engine Komodo", err, sizeof(err), &reg) == -1 &&
+          strstr(err, "Komodo") != NULL);
+    check("without a registry no name resolves",
+          players_apply_command(p, "black engine Stockfish 1500", err, sizeof(err), NULL) == -1);
+    check("trailing spaces are ignored",
+          players_apply_command(p, "black human  ", err, sizeof(err), NULL) == 1 &&
+          p[BLACK].kind == PLAYER_HUMAN);
+    check("a longer word is not a colour",
+          players_apply_command(p, "whitehorse", err, sizeof(err), NULL) == 0);
+}
+
 int main(void)
 {
     test_constructors();
@@ -203,6 +247,7 @@ int main(void)
     test_stats_entry();
     test_commands();
     test_labels();
+    test_uci_players();
 
     if (failures) {
         printf("\n%d player test(s) FAILED.\n", failures);

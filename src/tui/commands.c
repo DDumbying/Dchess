@@ -301,7 +301,7 @@ int handle_command(TUIState *state, const char *cmd) {
 
     char err[128];
     Player before[2] = { state->players[WHITE], state->players[BLACK] };
-    int pc = players_apply_command(state->players, cmd, err, sizeof(err));
+    int pc = players_apply_command(state->players, cmd, err, sizeof(err), NULL);
     if (pc < 0) {
         snprintf(state->status, sizeof(state->status), "%s", err);
         return 1;
