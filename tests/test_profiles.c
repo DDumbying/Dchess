@@ -172,28 +172,6 @@ static void test_first_run(void)
 }
 
 
-static void test_stats(void)
-{
-    printf("== stats view ==\n");
-    Profile p;
-    memset(&p, 0, sizeof(p));
-    snprintf(p.name, sizeof(p.name), "saeed");
-    p.legacy_games = 4; p.legacy_wins = 2; p.legacy_losses = 1; p.legacy_draws = 1;
-    remove(games);
-    records_append_legacy(games, "saeed", 1700000000L, 1);
-    FILE *f = fopen(games, "a");
-    fputs("\n[Event \"x\"]\n[White \"saeed\"]\n[Black \"alice\"]\n[Result \"1-0\"]\n"
-          "[WhiteKind \"profile\"]\n[BlackKind \"profile\"]\n\n1-0\n", f);
-    fclose(f);
-    DchessStats s;
-    profiles_stats(&p, games, &s);
-    int total = s.games_played[0] + s.games_played[1] + s.games_played[2];
-    int wins = s.wins[0] + s.wins[1] + s.wins[2];
-    check("legacy totals and a game against a person are counted", total == 5 && wins == 3);
-    check("legacy records feed the history", s.history_count == 2 && s.history[0].result == 1);
-}
-
-
 static int legacy_count(void)
 {
     RecordList r;
@@ -270,7 +248,6 @@ int main(void)
     test_rename_remove();
     test_malformed();
     test_first_run();
-    test_stats();
     test_first_run_safety();
     test_unicode_names();
 

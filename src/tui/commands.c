@@ -9,6 +9,7 @@
 #include "game/uci.h"
 #include "game/records.h"
 #include "tui/render.h"
+#include "tui/stats_tui.h"
 #include "utils/theme.h"
 #include "utils/constants.h"
 #include "utils/bitboard.h"
@@ -29,17 +30,6 @@ static long now_ms(void)
 void describe_setup(const TUIState *state, char *buf, size_t n)
 {
     players_describe(state->players, buf, n);
-}
-
-void tui_refresh_stats(TUIState *state)
-{
-    char games[512];
-    if (!state->profiles.count) {
-        stats_load(&state->stats);
-        return;
-    }
-    records_path(games, sizeof(games));
-    profiles_stats(&state->profiles.p[state->profiles.active], games, &state->stats);
 }
 
 void tui_remember_setup(TUIState *state)
@@ -503,17 +493,9 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "stats") == 0) {
-        tui_refresh_stats(state);
-        int total = state->stats.games_played[0] +
-                    state->stats.games_played[1] +
-                    state->stats.games_played[2];
-        int wins  = state->stats.wins[0] +
-                    state->stats.wins[1] +
-                    state->stats.wins[2];
-        snprintf(state->status, sizeof(state->status),
-                 "Stats: %d games, %d wins (%.0f%%) | run dchess --stats for full view",
-                 total, wins,
-                 total ? 100.0f * wins / total : 0.0f);
+        stats_screen(state);
+        state->status[0] = '\0';
+        if (state->request_redraw) state->request_redraw(state->redraw_ctx);
         return 1;
     }
     if (strcmp(cmd, "help") == 0) {

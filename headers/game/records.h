@@ -36,5 +36,4 @@ int  records_rename(const char *path, const char *old_name, const char *new_name
 RecordTally records_tally(const RecordList *l, const char *who);
 int  records_recent(const RecordList *l, const char *who, const Record **out, int max);
 int  records_winrate(const RecordList *l, const char *who, float *out, int max);
-void records_to_stats(const RecordList *l, const char *who, DchessStats *out);
 #endif
