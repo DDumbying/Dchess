@@ -6,6 +6,7 @@
 #include "engine/hash.h"
 #include "engine/fen.h"
 #include "game/pgn.h"
+#include "game/uci.h"
 #include "tui/render.h"
 #include "utils/theme.h"
 #include "utils/constants.h"
@@ -44,8 +45,12 @@ static void attach(TUIState *state, int side)
     state->drivers[side] = NULL;
 
     const Player *p = &state->players[side];
-    if (p->kind == PLAYER_BUILTIN)
+    if (p->kind == PLAYER_BUILTIN) {
         state->drivers[side] = opponent_builtin(p->depth, p->time_ms);
+    } else if (p->kind == PLAYER_UCI) {
+        const EngineEntry *e = engines_find(&state->engines, p->engine);
+        if (e) state->drivers[side] = opponent_uci(e);
+    }
 }
 
 void tui_attach_players(TUIState *state)
@@ -83,7 +88,8 @@ static int both_engines(const TUIState *state)
 static int same_player(const Player *a, const Player *b)
 {
     return a->kind == b->kind && a->level == b->level &&
-           a->depth == b->depth && a->time_ms == b->time_ms;
+           a->depth == b->depth && a->time_ms == b->time_ms &&
+           strcmp(a->engine, b->engine) == 0;
 }
 
 void tui_undo(TUIState *state)
@@ -122,6 +128,7 @@ void tui_new_game(TUIState *state)
     memset(&state->last_search, 0, sizeof(state->last_search));
     state->last_search_by[0] = '\0';
     state->paused = 0;
+    state->engine_error[0] = '\0';
 
     state->selected  = 0;
     state->view_side = WHITE;
@@ -188,11 +195,15 @@ static void apply_engine_result(TUIState *state, SearchResult res, const char *b
 static void start_thinking(TUIState *state, Opponent *o, const char *by)
 {
     if (!o) {
-        snprintf(state->status, sizeof(state->status), "Could not start %s", by);
+        /* Pausing stops the next tick from trying again at once. */
+        state->paused = 1;
+        snprintf(state->status, sizeof(state->status),
+                 "Could not start %s — paused", by);
         return;
     }
     if (!opponent_start(o, &state->game)) return;
 
+    state->engine_error[0] = '\0';
     state->thinking = o;
     snprintf(state->thinking_by, sizeof(state->thinking_by), "%s", by);
     snprintf(state->status, sizeof(state->status), "%s thinking...", by);
@@ -205,7 +216,15 @@ int drive_turn(TUIState *state)
         SearchResult res;
         U64 key;
         if (!opponent_poll(state->thinking, &res, &key)) return 0;
+        const char *err = opponent_error(state->thinking);
         state->thinking = NULL;
+
+        if (err) {
+            snprintf(state->engine_error, sizeof(state->engine_error), "%s", err);
+            state->paused = 1;
+            snprintf(state->status, sizeof(state->status), "%s — paused", err);
+            return 1;
+        }
 
         /* A result for a board that has since changed would move a piece
          * that is no longer there. The next tick searches again. */
@@ -220,7 +239,7 @@ int drive_turn(TUIState *state)
                               state->game.game_over, now_ms() - state->last_move_ms))
         return 0;
 
-    char by[32];
+    char by[48];
     player_label(&state->players[side], by, sizeof(by));
     start_thinking(state, state->drivers[side], by);
     return 0;
@@ -287,7 +306,7 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strcmp(cmd, "go") == 0) {
         if (state->game.game_over) return 1;
         int side = state->game.pos.side;
-        char by[32];
+        char by[48];
         if (state->drivers[side]) {
             player_label(&state->players[side], by, sizeof(by));
             start_thinking(state, state->drivers[side], by);
@@ -301,12 +320,13 @@ int handle_command(TUIState *state, const char *cmd) {
 
     char err[128];
     Player before[2] = { state->players[WHITE], state->players[BLACK] };
-    int pc = players_apply_command(state->players, cmd, err, sizeof(err), NULL);
+    int pc = players_apply_command(state->players, cmd, err, sizeof(err), &state->engines);
     if (pc < 0) {
         snprintf(state->status, sizeof(state->status), "%s", err);
         return 1;
     }
     if (pc > 0) {
+        state->engine_error[0] = '\0';
         for (int side = WHITE; side <= BLACK; side++)
             if (!same_player(&before[side], &state->players[side]))
                 attach(state, side);
@@ -316,6 +336,20 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
 
+    if (strcmp(cmd, "engines") == 0) {
+        if (!state->engines.count) {
+            snprintf(state->status, sizeof(state->status),
+                     "No engines registered — add one with e in the start menu");
+            return 1;
+        }
+        char names[200] = "";
+        for (int i = 0; i < state->engines.count; i++) {
+            if (i) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+            strncat(names, state->engines.e[i].name, sizeof(names) - strlen(names) - 1);
+        }
+        snprintf(state->status, sizeof(state->status), "Engines: %s", names);
+        return 1;
+    }
     if (strncmp(cmd, "depth ", 6) == 0) {
         int d = atoi(cmd + 6);
         if (d < 1 || d > 8) {
@@ -440,7 +474,7 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
                  "e2e4 go stop pause resume undo new swap flip depth N eval fen pgn "
-                 "loadfen stats quit | white|black human|engine [level]");
+                 "loadfen stats engines quit | white|black human|engine [level|name]");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;

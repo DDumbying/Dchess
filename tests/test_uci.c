@@ -360,6 +360,16 @@ static void test_driver_edges(void)
           wait_result(o, &r, &key, 3000) && r.best_move == 0 && opponent_error(o) == NULL);
     opponent_free(o);
 
+    mode("mute");
+    game_reset(&g);
+    o = opponent_uci(&e);
+    opponent_start(o, &g);
+    long t0 = now_ms();
+    opponent_cancel(o);
+    check("cancel during the handshake returns at once", now_ms() - t0 < 500);
+    check("and leaves nothing to poll", !opponent_poll(o, &r, &key));
+    opponent_free(o);
+
     mode("chatty");
     game_reset(&g);
     o = opponent_uci(&e);

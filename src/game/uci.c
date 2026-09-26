@@ -483,6 +483,19 @@ static int uci_poll(Opponent *o, SearchResult *out, U64 *key)
     return 1;
 }
 
+/* Sends "stop" and drains the engine up to its bestmove. */
+static void halt(Uci *u)
+{
+    if (!say(u, "stop")) return;
+    long until = now_ms() + UCI_STOP_TIMEOUT_MS;
+    while (u->pid && u->state == U_SEARCHING && now_ms() < until) {
+        struct pollfd pf = { u->from_fd, POLLIN, 0 };
+        poll(&pf, 1, 20);
+        pump(u);
+    }
+    if (u->state == U_SEARCHING) fail(u, "did not stop");
+}
+
 static void uci_stop(Opponent *o)
 {
     Uci *u = (Uci *)o;
@@ -503,21 +516,16 @@ static void uci_stop(Opponent *o)
         u->done = 1;
         return;
     }
-    if (!say(u, "stop")) return;
-    until = now_ms() + UCI_STOP_TIMEOUT_MS;
-    while (u->pid && u->state == U_SEARCHING && now_ms() < until) {
-        struct pollfd pf = { u->from_fd, POLLIN, 0 };
-        poll(&pf, 1, 20);
-        pump(u);
-    }
-    if (u->state == U_SEARCHING) fail(u, "did not stop");
+    halt(u);
 }
 
+/* Unlike stop, never waits on a handshake: nobody wants the move. */
 static void uci_cancel(Opponent *o)
 {
     Uci *u = (Uci *)o;
     if (!u->busy) return;
-    uci_stop(o);
+    u->pending = 0;
+    if (!u->done && u->state == U_SEARCHING) halt(u);
     u->busy = 0;
     u->done = 0;
 }

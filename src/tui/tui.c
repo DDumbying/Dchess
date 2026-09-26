@@ -284,6 +284,7 @@ void tui_init(TUIState *state, const CliArgs *args)
     state->cursor_col = 4;
 
     stats_load(&state->stats);
+    engines_load(&state->engines);
     snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
 
     char setup[128];
