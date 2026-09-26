@@ -2,6 +2,7 @@
 #define CLI_H
 
 #include "game/players.h"
+#include "game/profiles.h"
 
 /* Difficulty maps to engine search depth. */
 #define DIFF_EASY   0    /* depth 2  */
@@ -13,6 +14,9 @@ typedef struct {
     int show_version;   /* --version flag */
     int show_stats;     /* --stats flag    */
     int list_engines;   /* --engines flag */
+    int list_profiles;  /* --profiles flag */
+    char profile[PROFILE_NAME_MAX + 1];   /* --profile, or empty */
+    int human_active[2];   /* this side is the active profile, resolved at startup */
     int show_help;      /* --help flag     */
     char fen[128];       /* --fen <string>: custom starting position, empty = standard start */
     int menu;            /* --menu flag: force the interactive onboarding screen */
@@ -38,5 +42,8 @@ void cli_version(void);
 
 /* Prints the registered UCI engines and exits. */
 void cli_list_engines(void);
+
+/* Prints each profile with its record and exits. */
+void cli_list_profiles(void);
 
 #endif /* CLI_H */

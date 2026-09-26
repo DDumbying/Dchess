@@ -7,6 +7,7 @@
 #include "utils/cli.h"
 #include "utils/constants.h"
 #include "utils/engines.h"
+#include "game/profiles.h"
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -88,6 +89,41 @@ static void test_engines(void)
     rmdir(dir);
 }
 
+
+static void test_profiles_cli(void)
+{
+    printf("== profiles ==\n");
+    static char pdir[] = "/tmp/dchess-cli-prof-XXXXXX";
+    char err[128];
+    CliArgs a;
+    if (!mkdtemp(pdir)) return;
+    setenv("XDG_CONFIG_HOME", pdir, 1);
+    ProfileList l = { .count = 0 };
+    profiles_add(&l, NULL, "saeed", err, sizeof(err));
+    profiles_add(&l, NULL, "alice", err, sizeof(err));
+    profiles_save(&l);
+
+    check("the default human side is the active profile",
+          parse(&a, "") == 0 && a.human_active[WHITE] && !a.human_active[BLACK]);
+    check("--profile alice", parse(&a, "--profile alice") == 0 && strcmp(a.profile, "alice") == 0);
+    check("an unknown --profile lists the profiles",
+          parse(&a, "--profile bob") != 0 && strstr(a.error_msg, "saeed") && strstr(a.error_msg, "alice"));
+    check("--profiles asks for the list", parse(&a, "--profiles") == 0 && a.list_profiles);
+    check("--white alice is that profile",
+          parse(&a, "--white alice") == 0 && human(&a.players[WHITE]) &&
+          strcmp(a.players[WHITE].name, "alice") == 0 && !a.human_active[WHITE]);
+    check("--black guest is a guest",
+          parse(&a, "--black guest") == 0 && human(&a.players[BLACK]) &&
+          a.players[BLACK].name[0] == '\0' && !a.human_active[BLACK]);
+    check("--white human is the active profile", parse(&a, "--white human") == 0 && a.human_active[WHITE]);
+    check("--white easy is still dchess", parse(&a, "--white easy") == 0 && engine(&a.players[WHITE], DIFF_EASY));
+
+    char path[512], cmd[600];
+    profiles_path(path, sizeof(path));
+    snprintf(cmd, sizeof(cmd), "rm -rf %s", pdir);
+    if (system(cmd) != 0) printf("  (could not clean %s)\n", pdir);
+}
+
 int main(void)
 {
     CliArgs a;
@@ -127,6 +163,7 @@ int main(void)
     check("a missing value is an error", parse(&a, "--black") != 0 && a.error);
 
     test_engines();
+    test_profiles_cli();
 
     if (failures) {
         printf("\n%d CLI test(s) FAILED.\n", failures);

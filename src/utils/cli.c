@@ -5,6 +5,8 @@
 #include "engine/fen.h"
 #include "utils/theme.h"
 #include "utils/engines.h"
+#include "game/records.h"
+#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,13 +64,20 @@ void cli_help(void)
         "          Two people at one keyboard; no engine. The board flips\n"
         "          after each move so the next player faces their own pieces.\n"
         "\n"
-        "    --white <human|easy|medium|hard|engine>\n"
-        "    --black <human|easy|medium|hard|engine>\n"
-        "          Choose who plays one side. Overrides -c, -d and -2.\n"
+        "    --white <human|guest|profile|easy|medium|hard|engine>\n"
+        "    --black <human|guest|profile|easy|medium|hard|engine>\n"
+        "          Choose who plays one side: a profile name, guest, a level\n"
+        "          or an engine. Overrides -c, -d and -2.\n"
         "          Give both an engine level to watch it play itself:\n"
         "            dchess --white hard --black easy\n"
         "          An engine is a name from engines.conf, e.g.\n"
         "            dchess --white \"Stockfish 1500\" --black hard\n"
+        "\n"
+        "    --profile <name>\n"
+        "          Play as this profile for this run.\n"
+        "\n"
+        "    --profiles\n"
+        "          List the profiles with their records and exit.\n"
         "\n"
         "    --engines\n"
         "          List the registered UCI engines and exit.\n"
@@ -186,6 +195,43 @@ static int known_engine(const char *name, char *err, size_t n)
     return 0;
 }
 
+static int known_profile(const char *name, char *err, size_t n)
+{
+    ProfileList l;
+    profiles_load(&l);
+    if (profiles_find(&l, name) >= 0) return 1;
+    char names[160] = "";
+    for (int i = 0; i < l.count; i++) {
+        if (i) strncat(names, ", ", sizeof(names) - strlen(names) - 1);
+        strncat(names, l.p[i].name, sizeof(names) - strlen(names) - 1);
+    }
+    snprintf(err, n, "Unknown profile '%s'. Profiles: %s", name, l.count ? names : "none yet");
+    return 0;
+}
+
+void cli_list_profiles(void)
+{
+    ProfileList l;
+    RecordList r;
+    char games[512];
+    profiles_load(&l);
+    records_path(games, sizeof(games));
+    records_load(games, &r);
+    if (!l.count) {
+        printf("No profiles yet. One is created the first time dchess starts.\n");
+        exit(0);
+    }
+    printf("  %-26s %s\n", "PROFILE", "W-D-L");
+    for (int i = 0; i < l.count; i++) {
+        const Profile *p = &l.p[i];
+        RecordTally t = records_tally(&r, p->name);
+        printf("  %s %-24s %d-%d-%d\n", i == l.active ? "*" : " ", p->name,
+               t.wins + p->legacy_wins, t.draws + p->legacy_draws, t.losses + p->legacy_losses);
+    }
+    records_free(&r);
+    exit(0);
+}
+
 void cli_list_engines(void)
 {
     EngineList l;
@@ -221,6 +267,11 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     args->show_version = 0;
     args->show_stats   = 0;
     args->list_engines = 0;
+    args->list_profiles = 0;
+    args->profile[0] = '\0';
+    args->human_active[WHITE] = 1;
+    args->human_active[BLACK] = 0;
+    int chosen_active[2] = { 0, 0 };
     args->show_help    = 0;
     args->fen[0]        = '\0';
     args->menu          = 0;
@@ -252,6 +303,25 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         }
 
         /* --engines ─────────────────────────────────────────────────── */
+        if (strcmp(a, "--profiles") == 0) {
+            args->list_profiles = 1;
+            return 0;
+        }
+        if (strcmp(a, "--profile") == 0) {
+            if (i + 1 >= argc) {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Option '--profile' requires a profile name");
+                args->error = 1;
+                return -1;
+            }
+            const char *val = argv[++i];
+            if (!known_profile(val, args->error_msg, sizeof(args->error_msg))) {
+                args->error = 1;
+                return -1;
+            }
+            snprintf(args->profile, sizeof(args->profile), "%s", val);
+            continue;
+        }
         if (strcmp(a, "--engines") == 0) {
             args->list_engines = 1;
             return 0;
@@ -323,10 +393,17 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             }
             const char *val = argv[++i];
             int lv = players_level_from_name(val);
+            char perr[256];
+            chosen_active[side] = 0;
             if (strcmp(val, "human") == 0) {
+                chosen[side] = player_human();
+                chosen_active[side] = 1;
+            } else if (strcasecmp(val, "guest") == 0) {
                 chosen[side] = player_human();
             } else if (lv >= 0) {
                 chosen[side] = player_builtin(lv);
+            } else if (known_profile(val, perr, sizeof(perr))) {
+                chosen[side] = player_profile(val);
             } else if (known_engine(val, args->error_msg, sizeof(args->error_msg))) {
                 chosen[side] = player_uci(val);
             } else {
@@ -405,14 +482,21 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         return -1;
     }
 
+    /* The human side is the active profile; with -2, White is. */
+    args->human_active[WHITE] = args->human_active[BLACK] = 0;
     if (two) {
         args->players[WHITE] = args->players[BLACK] = player_human();
+        args->human_active[WHITE] = 1;
     } else {
         args->players[colour]         = player_human();
         args->players[colour ^ BLACK] = player_builtin(level);
+        args->human_active[colour]    = 1;
     }
     for (int s = WHITE; s <= BLACK; s++)
-        if (chosen_set[s]) args->players[s] = chosen[s];
+        if (chosen_set[s]) {
+            args->players[s] = chosen[s];
+            args->human_active[s] = chosen_active[s];
+        }
 
     return 0;
 }

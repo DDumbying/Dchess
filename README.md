@@ -80,9 +80,11 @@ OPTIONS
         medium – depth 5, up to 3s   (balanced)  [default]
         hard   – depth 8, up to 5s   (challenging, slower)
   -2, --two-player                Local two-player mode — no engine, board flips after each move
-  --white <human|easy|medium|hard|engine>
-  --black <human|easy|medium|hard|engine>
+  --white <human|guest|profile|easy|medium|hard|engine>
+  --black <human|guest|profile|easy|medium|hard|engine>
                                   Choose who plays a side; overrides -c, -d and -2
+  --profile <name>                Play as this profile for this run
+  --profiles                      List the profiles with their records and exit
   --engines                       List the registered UCI engines and exit
   --fen <string>                  Start from a custom FEN position instead of the standard setup
   -m, --menu                      Show the onboarding screen to pick options visually,
