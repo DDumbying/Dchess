@@ -119,6 +119,11 @@ flag (`--color`, `--difficulty`, `--two-player`, `--fen`, `--theme`) skips
 it and starts immediately, so scripts and muscle-memory invocations keep
 working exactly as before.
 
+Pressing `e` opens the Engines screen, where you add a UCI engine by its path
+(dchess starts it and reads its name), set its strength (time per move or
+depth, plus an Elo cap when the engine supports one), test it, or delete it.
+Registered engines then appear in the White and Black choices.
+
 ## Build
 
 ```bash
