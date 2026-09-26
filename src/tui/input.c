@@ -10,6 +10,7 @@
  *   Normal mode  (insert_mode == 0):
  *     * hjkl / arrow keys  -> cursor navigation (returned to caller)
  *     * 'u'                -> take back the last move
+ *     * Space              -> pause / resume (returned to caller)
  *     * 'i'                -> enter insert mode (returns 0)
  *     * Enter on empty buf -> cursor action (returned as '\n')
  *     * All other keys     -> ignored
@@ -77,6 +78,8 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
                 return '\n';
             case '\t':   /* Tab — pass through for stats overlay */
                 return '\t';
+            case ' ':   /* pause / resume */
+                return ' ';
             case 'i':
                 *insert_mode = 1;
                 curs_set(1);

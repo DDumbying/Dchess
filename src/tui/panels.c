@@ -227,13 +227,15 @@ static void draw_engine_panel(WINDOW *p, const TUIState *state)
 {
     panel_frame(p, "engine", CP_ACC_ENGINE);
 
-    if (state->two_player || state->engine_side < 0) {
+    if (!players_automated(state->players, WHITE) &&
+        !players_automated(state->players, BLACK) &&
+        !state->thinking && state->last_search.nodes == 0) {
         wattron(p, COLOR_PAIR(CP_HINT));
         mvw_clip(p, 1, 2, "no engine");
         wattroff(p, COLOR_PAIR(CP_HINT));
         return;
     }
-    if (state->search_running) {
+    if (state->thinking) {
         wattron(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
         mvw_clip(p, 1, 2, "thinking...");
         wattroff(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);

@@ -53,7 +53,7 @@ One of these nerdy things built out of passion — to actually understand how `C
 - Live per-turn clock for both sides — starts counting on the first move, not at launch
 - Evaluation bar updates live after every engine response
 - Game-over popup appears immediately on checkmate/stalemate without needing a keypress
-- Engine plays one side, human the other — configurable at launch or mid-game
+- Each side is you, a friend or the engine at any level — including engine against engine — configurable at launch or mid-game
 - **Two-player local mode** — no engine, board flips 180° after each move so the next player faces their own pieces
 
 **Statistics**
@@ -137,16 +137,23 @@ Enter       select piece / confirm move
 Esc         deselect
 i           enter command/insert mode
 Tab         open in-game stats popup (any key to close)
+Space       pause / resume the engines
 ```
 
 **Command mode** (press `i` to enter, `ESC` to exit)
 ```
 e2e4        make a move in algebraic notation
-go          let the engine play the current side
+go          play one engine move for the side to move, even while paused
 stop        have a thinking engine return its best move now, instead
             of waiting out the rest of its time budget
 new         reset the board
-flip        swap which side the engine plays
+flip        turn the board around
+pause / resume
+            hold and restart the engines (Space does both)
+white|black human
+white|black engine [easy|medium|hard]
+            change who plays a side, mid-game
+swap        exchange the two players
 depth N     change search depth (1–8) mid-game
 eval        show current position evaluation
 fen         show the current position as a FEN string

@@ -84,8 +84,10 @@ static int prompt_fen(WINDOW *win, int row, int col, int width, char *out, size_
 int tui_onboarding(TUIState *state)
 {
     OnboardChoice choice;
-    choice.side           = state->two_player ? SIDE_TWO_PLAYER : state->player_side;
-    choice.difficulty     = state->difficulty;
+    int w_human = state->players[WHITE].kind == PLAYER_HUMAN;
+    int b_human = state->players[BLACK].kind == PLAYER_HUMAN;
+    choice.side       = (w_human && b_human) ? SIDE_TWO_PLAYER : (w_human ? WHITE : BLACK);
+    choice.difficulty = state->players[choice.side == BLACK ? WHITE : BLACK].level;
     choice.use_custom_fen = 0;
     choice.fen[0]         = '\0';
     choice.theme          = state->theme;

@@ -86,24 +86,19 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
     WINDOW *pop, *shadow;
     build_game_over_panel(screen_board(sc), state, &pop, &shadow);
 
-    /* Save stats for this completed game  */
+    /* Only games against the built-in engine have a place in the stats. */
     {
-        int result = 0; /* draw by default */
-        const char *r = state->game.result;
-        /* Check if human won or lost */
-        if (strstr(r, "White wins")) {
-            result = (state->player_side == WHITE) ? 1 : -1;
-        } else if (strstr(r, "Black wins")) {
-            result = (state->player_side == BLACK) ? 1 : -1;
+        int human, level;
+        if (players_stats_entry(state->players, &human, &level)) {
+            int result = 0;
+            const char *r = state->game.result;
+            if (strstr(r, "White wins"))      result = (human == WHITE) ? 1 : -1;
+            else if (strstr(r, "Black wins")) result = (human == BLACK) ? 1 : -1;
+            int total_secs = state->game.white_clock + state->game.black_clock;
+            stats_record(&state->stats, level, result, human,
+                         state->game.move_count, total_secs);
+            stats_save(&state->stats);
         }
-        int total_secs = state->game.white_clock + state->game.black_clock;
-        stats_record(&state->stats,
-                     state->difficulty,
-                     result,
-                     state->player_side,
-                     state->game.move_count,
-                     total_secs);
-        stats_save(&state->stats);
     }
 
     while (1) {
@@ -130,7 +125,7 @@ static void show_game_over_popup(Screen *sc, TUIState *state)
         if (ch == 'q' || ch == 'Q') {
             /* The worker writes into TUIState, which lives in main()'s
              * frame, so stop it before exit() tears down. */
-            cancel_engine_search(state);
+            tui_release_players(state);
             delwin(pop);
             panel_shadow_destroy(shadow);
             tui_cleanup();
@@ -234,13 +229,12 @@ static void move_to_square(TUIState *state, int to_sq)
     clear_selection(state);
     if (state->game.game_over) return;
 
-    if (state->two_player) {
+    /* An engine's reply is drive_turn()'s job. */
+    if (!players_automated(state->players, WHITE) &&
+        !players_automated(state->players, BLACK)) {
         state->view_side  = state->game.pos.side;
         state->cursor_row = 6;
         state->cursor_col = 4;
-    } else if (state->engine_side == state->game.pos.side) {
-        /* Only kicks off the search; the main loop applies the result. */
-        handle_command(state, "go");
     }
 }
 
@@ -268,23 +262,9 @@ void tui_init(TUIState *state, const CliArgs *args)
 {
     memset(state, 0, sizeof(*state));
 
-    /* tui_init() can run twice (CLI defaults, then again from onboarding
-     * with the player's choices) -- always before any background search
-     * could possibly be in flight, so re-initializing an all-zeroed,
-     * never-locked mutex here is safe in practice even without an
-     * explicit destroy first. */
-    pthread_mutex_init(&state->search_mutex, NULL);
-
     /* Apply CLI configuration */
-    const Player *pl = args ? args->players : NULL;
-    int w_human = !pl || pl[WHITE].kind == PLAYER_HUMAN;
-    int b_human =  pl && pl[BLACK].kind == PLAYER_HUMAN;
-    state->two_player   = w_human && b_human;
-    state->player_side  = (!w_human && b_human) ? BLACK : WHITE;
-    state->difficulty   = pl ? pl[state->player_side == WHITE ? BLACK : WHITE].level
-                             : DIFF_MEDIUM;
-    state->engine_depth = cli_depth_for_difficulty(state->difficulty);
-    state->time_limit_ms = cli_time_limit_for_difficulty(state->difficulty);
+    state->players[WHITE] = args ? args->players[WHITE] : player_human();
+    state->players[BLACK] = args ? args->players[BLACK] : player_builtin(DIFF_MEDIUM);
     state->show_onboarding = args ?
         (args->menu || (!args->any_gameplay_flag && !args->no_menu)) : 0;
     state->theme = args ? args->theme : 0;
@@ -297,10 +277,6 @@ void tui_init(TUIState *state, const CliArgs *args)
     int fen_ok = 0;
     if (args && args->fen[0])
         fen_ok = game_load_fen(&state->game, args->fen);
-
-    /* Engine plays the opposite side of the human (disabled in two-player) */
-    state->engine_side = state->two_player ? -1 :
-                         (state->player_side == WHITE) ? BLACK : WHITE;
 
     /* The board always opens from White's perspective */
     state->view_side  = WHITE;
@@ -474,9 +450,12 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
             /* Mirrors handle_command(): without this the cursor could
              * move the engine's own pieces (it is their turn, so they
              * read as friendly) out from under the search. */
-            if (state->search_running) {
+            if (state->thinking) {
                 snprintf(state->status, sizeof(state->status),
                          "Engine is thinking — please wait, or use 'stop'");
+            } else if (!tui_can_move_by_hand(state)) {
+                snprintf(state->status, sizeof(state->status),
+                         "It is the engine's move — 'pause' to move for it");
             } else if (!state->game.game_over) {
                 cursor_enter(state);
             }
@@ -484,6 +463,10 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
 
         case 'u':   /* takeback */
             tui_undo(state);
+            break;
+
+        case ' ':
+            handle_command(state, state->paused ? "resume" : "pause");
             break;
 
         case 27: /* Esc */
@@ -533,15 +516,13 @@ void tui_run(TUIState *state)
     state->request_redraw = screen_paint_hook;
     state->redraw_ctx     = &sc;
 
-    /* Engine moves first if it already has the move. */
-    if (!state->two_player && state->engine_side == state->game.pos.side)
-        handle_command(state, "go");
+    tui_attach_players(state);
 
     char cmd_buf[256];
 
     for (;;) {
 
-        if (poll_engine_search(state))
+        if (drive_turn(state))
             game_update_status(&state->game);
 
         if (state->game.game_over && state->game.result[0]) {
@@ -571,7 +552,7 @@ void tui_run(TUIState *state)
     /* Joining is not optional: the worker writes into TUIState, which
      * lives in main()'s stack frame. Near-instant, since cancellation is
      * checked every ~512 nodes. */
-    cancel_engine_search(state);
+    tui_release_players(state);
 
     screen_destroy(&sc);
     tui_cleanup();

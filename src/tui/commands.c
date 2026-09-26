@@ -16,42 +16,91 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <pthread.h>
 
-const char *difficulty_label(int difficulty)
+static long now_ms(void)
 {
-    return (difficulty == DIFF_EASY) ? "Easy" :
-           (difficulty == DIFF_HARD) ? "Hard" : "Medium";
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000L + t.tv_nsec / 1000000L;
 }
 
 void describe_setup(const TUIState *state, char *buf, size_t n)
 {
-    snprintf(buf, n, "You play %s | %s difficulty",
-             (state->player_side == WHITE) ? "White" : "Black",
-             difficulty_label(state->difficulty));
+    players_describe(state->players, buf, n);
+}
+
+void cancel_engine_search(TUIState *state)
+{
+    if (!state->thinking) return;
+    opponent_cancel(state->thinking);
+    state->thinking = NULL;
+}
+
+static void attach(TUIState *state, int side)
+{
+    if (state->drivers[side] && state->thinking == state->drivers[side])
+        cancel_engine_search(state);
+    opponent_free(state->drivers[side]);
+    state->drivers[side] = NULL;
+
+    const Player *p = &state->players[side];
+    if (p->kind == PLAYER_BUILTIN)
+        state->drivers[side] = opponent_builtin(p->depth, p->time_ms);
+}
+
+void tui_attach_players(TUIState *state)
+{
+    attach(state, WHITE);
+    attach(state, BLACK);
+    if (!state->go_driver) {
+        Player m = player_builtin(DIFF_MEDIUM);
+        state->go_driver = opponent_builtin(m.depth, m.time_ms);
+    }
+}
+
+void tui_release_players(TUIState *state)
+{
+    cancel_engine_search(state);
+    for (int side = WHITE; side <= BLACK; side++) {
+        opponent_free(state->drivers[side]);
+        state->drivers[side] = NULL;
+    }
+    opponent_free(state->go_driver);
+    state->go_driver = NULL;
+}
+
+int tui_can_move_by_hand(const TUIState *state)
+{
+    return state->paused || !players_automated(state->players, state->game.pos.side);
+}
+
+static int both_engines(const TUIState *state)
+{
+    return players_automated(state->players, WHITE) &&
+           players_automated(state->players, BLACK);
+}
+
+static int same_player(const Player *a, const Player *b)
+{
+    return a->kind == b->kind && a->level == b->level &&
+           a->depth == b->depth && a->time_ms == b->time_ms;
 }
 
 void tui_undo(TUIState *state)
 {
     cancel_engine_search(state);
 
-    /* "flip" can set engine_side to -1: nobody plays the other side. */
-    int has_engine = (!state->two_player && state->engine_side >= 0);
-
-    /* Plies needed to hand the turn back to the human. */
-    int needed = 1;
-    if (has_engine)
-        needed = (state->game.pos.side == state->engine_side) ? 1 : 2;
-
-    /* Decided up front: stopping halfway would leave the engine to move
-     * with no search running, and the board would just sit there. */
-    if (state->game.undo_count < needed) {
+    int n = players_undo_plies(state->players, state->game.pos.side,
+                               state->game.undo_count);
+    if (!n) {
         snprintf(state->status, sizeof(state->status), "Nothing to undo");
         return;
     }
-
-    for (int i = 0; i < needed; i++)
+    for (int i = 0; i < n; i++)
         game_undo(&state->game);
+
+    /* Otherwise the engine would play the move straight back. */
+    if (both_engines(state)) state->paused = 1;
 
     int cp;
     if (game_last_eval(&state->game, &cp))
@@ -61,8 +110,8 @@ void tui_undo(TUIState *state)
 
     state->selected = 0;
     memset(state->highlight, 0, sizeof(state->highlight));
-    snprintf(state->status, sizeof(state->status),
-             "Took back %d %s", needed, needed == 1 ? "move" : "moves");
+    snprintf(state->status, sizeof(state->status), "Took back %d %s%s",
+             n, n == 1 ? "move" : "moves", state->paused ? " — paused" : "");
 }
 
 void tui_new_game(TUIState *state)
@@ -71,6 +120,8 @@ void tui_new_game(TUIState *state)
 
     game_reset(&state->game);
     memset(&state->last_search, 0, sizeof(state->last_search));
+    state->last_search_by[0] = '\0';
+    state->paused = 0;
 
     state->selected  = 0;
     state->view_side = WHITE;
@@ -102,59 +153,16 @@ static int try_move(TUIState *state, const char *movestr)
     return 1;
 }
 
-static void apply_engine_result(TUIState *state, SearchResult res);
-
-/* Runs on the worker thread. Touches only search_snapshot. */
-static void *engine_search_worker(void *arg) {
-    TUIState *state = (TUIState *)arg;
-    SearchResult res = search(&state->search_snapshot,
-                               state->search_depth_arg, state->search_time_limit_arg);
-
-    pthread_mutex_lock(&state->search_mutex);
-    state->search_result = res;
-    state->search_ready  = 1;
-    pthread_mutex_unlock(&state->search_mutex);
-
-    return NULL;
-}
-
-/* Returns immediately; poll_engine_search() applies the result. No-op if
- * a search is already running. */
-static void start_engine_search(TUIState *state) {
-    if (state->search_running) return;
-
-    /* Captured before the thread starts, so nothing it reads can change
-     * under it. */
-    state->search_snapshot      = state->game.pos;
-    state->search_snapshot_hash = game_hash(&state->game);
-    state->search_depth_arg     = state->engine_depth;
-    state->search_time_limit_arg = state->time_limit_ms;
-    state->search_ready         = 0;
-    state->search_running       = 1;
-
-    snprintf(state->status, sizeof(state->status), "Engine thinking...");
-    if (state->request_redraw) state->request_redraw(state->redraw_ctx);
-
-    if (pthread_create(&state->search_thread, NULL, engine_search_worker, state) != 0) {
-        /* Rare, but must not leave search_running stuck true. This path
-         * applies the result itself: with search_running back to 0,
-         * poll_engine_search() would never look at it. */
-        state->search_running = 0;
-        state->search_ready   = 0;
-        SearchResult res = search(&state->game.pos, state->engine_depth, state->time_limit_ms);
-        apply_engine_result(state, res);
-    }
-}
-
-
-static void apply_engine_result(TUIState *state, SearchResult res)
+static void apply_engine_result(TUIState *state, SearchResult res, const char *by)
 {
     if (!res.best_move) {
-        /* A cancelled search also comes back empty (see search.h), so ask
+        /* A stopped search also comes back empty (see search.h), so ask
          * the board whether the game is really over. */
         if (has_legal_moves(&state->game.pos)) {
+            /* Or the next tick would start the same search again. */
+            state->paused = 1;
             snprintf(state->status, sizeof(state->status),
-                     "Search stopped — no move played");
+                     "Search stopped before it found a move — paused");
             return;
         }
         game_update_status(&state->game);
@@ -167,81 +175,84 @@ static void apply_engine_result(TUIState *state, SearchResult res)
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
     game_record_eval(&state->game, score_white);
     state->last_search = res;
+    snprintf(state->last_search_by, sizeof(state->last_search_by), "%s", by);
 
     game_play(&state->game, res.best_move);
+    state->last_move_ms = now_ms();
 
-    snprintf(state->status, sizeof(state->status), "Engine: %s (eval %+.2f, depth %d)",
-             state->game.move_history[state->game.move_count - 1],
+    snprintf(state->status, sizeof(state->status), "%s: %s (eval %+.2f, depth %d)",
+             by, state->game.move_history[state->game.move_count - 1],
              eval_f, res.depth_reached);
 }
 
-
-static int engine_result_is_current(const TUIState *state)
+static void start_thinking(TUIState *state, Opponent *o, const char *by)
 {
-    if (state->game.game_over) return 0;
-    return game_hash(&state->game) == state->search_snapshot_hash;
+    if (!o) {
+        snprintf(state->status, sizeof(state->status), "Could not start %s", by);
+        return;
+    }
+    if (!opponent_start(o, &state->game.pos, game_hash(&state->game))) return;
+
+    state->thinking = o;
+    snprintf(state->thinking_by, sizeof(state->thinking_by), "%s", by);
+    snprintf(state->status, sizeof(state->status), "%s thinking...", by);
+    if (state->request_redraw) state->request_redraw(state->redraw_ctx);
 }
 
-int poll_engine_search(TUIState *state) {
-    if (!state->search_running) return 0;
+int drive_turn(TUIState *state)
+{
+    if (state->thinking) {
+        SearchResult res;
+        U64 key;
+        if (!opponent_poll(state->thinking, &res, &key)) return 0;
+        state->thinking = NULL;
 
-    pthread_mutex_lock(&state->search_mutex);
-    int ready = state->search_ready;
-    SearchResult res = state->search_result;
-    pthread_mutex_unlock(&state->search_mutex);
+        /* A result for a board that has since changed would move a piece
+         * that is no longer there. The next tick searches again. */
+        if (state->game.game_over || key != game_hash(&state->game)) return 0;
 
-    if (!ready) return 0;
-
-    pthread_join(state->search_thread, NULL);
-    state->search_running = 0;
-    state->search_ready   = 0;
-
-    /* Applying a result computed for a different board would move a
-     * piece that has since left its square. */
-    if (!engine_result_is_current(state)) {
-        /* Re-search the position actually on the board, so the engine is
-         * not left owing a move. The fresh snapshot matches by
-         * construction, so this cannot loop. */
-        if (!state->game.game_over && !state->two_player &&
-            state->engine_side == state->game.pos.side)
-            start_engine_search(state);
-        return 0;
+        apply_engine_result(state, res, state->thinking_by);
+        return 1;
     }
 
-    apply_engine_result(state, res);
-    return 1;
-}
+    int side = state->game.pos.side;
+    if (!players_should_start(state->players, side, state->paused,
+                              state->game.game_over, now_ms() - state->last_move_ms))
+        return 0;
 
-
-void cancel_engine_search(TUIState *state) {
-    if (!state->search_running) return;
-    search_cancel();
-    pthread_join(state->search_thread, NULL);
-    state->search_running = 0;
-    state->search_ready    = 0;
+    char by[32];
+    player_label(&state->players[side], by, sizeof(by));
+    start_thinking(state, state->drivers[side], by);
+    return 0;
 }
 
 int handle_command(TUIState *state, const char *cmd) {
     if (!cmd || !cmd[0]) return 1;
 
-    /* Like UCI's "stop": return the best move found so far. */
+    /* Like UCI's "stop": play the best move found so far. */
     if (strcmp(cmd, "stop") == 0) {
-        if (!state->search_running) {
+        if (!state->thinking) {
             snprintf(state->status, sizeof(state->status), "No search in progress");
             return 1;
         }
-        search_cancel();
-        pthread_join(state->search_thread, NULL);
-        state->search_running = 0;
-        pthread_mutex_lock(&state->search_mutex);
-        SearchResult res = state->search_result;
-        state->search_ready = 0;
-        pthread_mutex_unlock(&state->search_mutex);
-        apply_engine_result(state, res);
+        opponent_stop(state->thinking);
+        drive_turn(state);
+        return 1;
+    }
+    if (strcmp(cmd, "pause") == 0) {
+        cancel_engine_search(state);
+        state->paused = 1;
+        snprintf(state->status, sizeof(state->status),
+                 "Paused — Space or 'resume' to continue, 'go' for one move");
+        return 1;
+    }
+    if (strcmp(cmd, "resume") == 0) {
+        state->paused = 0;
+        snprintf(state->status, sizeof(state->status), "Resumed");
         return 1;
     }
 
-    /* Moves/"go"/"eval" are rejected while the engine thinks; none of
+    /* Moves/"go"/"eval" are rejected while an engine thinks; none of
      * them mean "start over". Everything else is safe to run. */
     int is_move = (cmd[0] >= 'a' && cmd[0] <= 'h' && cmd[1] >= '1' && cmd[1] <= '8');
     int reject_while_thinking =
@@ -249,7 +260,7 @@ int handle_command(TUIState *state, const char *cmd) {
         strcmp(cmd, "go") == 0 ||
         strcmp(cmd, "eval") == 0;
 
-    if (reject_while_thinking && state->search_running) {
+    if (reject_while_thinking && state->thinking) {
         snprintf(state->status, sizeof(state->status),
                  "Engine is thinking — please wait, or use 'stop'");
         return 1;
@@ -257,30 +268,72 @@ int handle_command(TUIState *state, const char *cmd) {
 
     /* These replace the game state, so a search for the old position is
      * not worth waiting for. */
-    if (strcmp(cmd, "new") == 0 || strcmp(cmd, "flip") == 0 ||
+    if (strcmp(cmd, "new") == 0 ||
         strcmp(cmd, "undo") == 0 || strcmp(cmd, "u") == 0 ||
         strncmp(cmd, "loadfen ", 8) == 0) {
         cancel_engine_search(state);
     }
 
     if (is_move) {
-        if (!state->game.game_over && try_move(state, cmd))
-            if (state->engine_side == state->game.pos.side && !state->game.game_over)
-                start_engine_search(state);
+        if (state->game.game_over) return 1;
+        if (!tui_can_move_by_hand(state)) {
+            snprintf(state->status, sizeof(state->status),
+                     "It is the engine's move — 'pause' to move for it");
+            return 1;
+        }
+        try_move(state, cmd);
         return 1;
     }
     if (strcmp(cmd, "go") == 0) {
-        if (!state->game.game_over) start_engine_search(state);
+        if (state->game.game_over) return 1;
+        int side = state->game.pos.side;
+        char by[32];
+        if (state->drivers[side]) {
+            player_label(&state->players[side], by, sizeof(by));
+            start_thinking(state, state->drivers[side], by);
+        } else {
+            Player m = player_builtin(DIFF_MEDIUM);
+            player_label(&m, by, sizeof(by));
+            start_thinking(state, state->go_driver, by);
+        }
         return 1;
     }
+
+    char err[128];
+    Player before[2] = { state->players[WHITE], state->players[BLACK] };
+    int pc = players_apply_command(state->players, cmd, err, sizeof(err));
+    if (pc < 0) {
+        snprintf(state->status, sizeof(state->status), "%s", err);
+        return 1;
+    }
+    if (pc > 0) {
+        for (int side = WHITE; side <= BLACK; side++)
+            if (!same_player(&before[side], &state->players[side]))
+                attach(state, side);
+        char setup[128];
+        describe_setup(state, setup, sizeof(setup));
+        snprintf(state->status, sizeof(state->status), "%s", setup);
+        return 1;
+    }
+
     if (strncmp(cmd, "depth ", 6) == 0) {
         int d = atoi(cmd + 6);
-        if (d >= 1 && d <= 8) {
-            state->engine_depth = d;
-            snprintf(state->status, sizeof(state->status),
-                     "Depth cap set to %d (still bounded by the %.1fs time budget)",
-                     d, state->time_limit_ms / 1000.0f);
+        if (d < 1 || d > 8) {
+            snprintf(state->status, sizeof(state->status), "Depth must be 1–8");
+            return 1;
         }
+        int engines = 0;
+        for (int side = WHITE; side <= BLACK; side++) {
+            if (state->players[side].kind != PLAYER_BUILTIN) continue;
+            state->players[side].depth = d;
+            attach(state, side);
+            engines++;
+        }
+        if (engines)
+            snprintf(state->status, sizeof(state->status), "Engine depth cap set to %d", d);
+        else
+            snprintf(state->status, sizeof(state->status),
+                     "No engine is playing; depth unchanged");
         return 1;
     }
     if (strcmp(cmd, "undo") == 0 || strcmp(cmd, "u") == 0) {
@@ -289,10 +342,6 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "new") == 0) {
         tui_new_game(state);
-
-
-        if (!state->two_player && state->engine_side == state->game.pos.side)
-            start_engine_search(state);
         return 1;
     }
     if (strcmp(cmd, "pgn") == 0 || strncmp(cmd, "pgn ", 4) == 0) {
@@ -302,17 +351,15 @@ int handle_command(TUIState *state, const char *cmd) {
         else
             pgn_default_path(path, sizeof(path));
 
-        char engine_name[64];
-        snprintf(engine_name, sizeof(engine_name), "dchess (%s)",
-                 difficulty_label(state->difficulty));
-
+        char white[48], black[48];
+        players_pgn_name(state->players, WHITE, white, sizeof(white));
+        players_pgn_name(state->players, BLACK, black, sizeof(black));
         PgnHeader h = {
             .event = "Casual game",
             .site  = "dchess",
-            .white = (state->player_side == WHITE) ? "Player" : engine_name,
-            .black = (state->player_side == WHITE) ? engine_name : "Player",
+            .white = white,
+            .black = black,
         };
-        if (state->two_player) { h.white = "Player 1"; h.black = "Player 2"; }
 
         if (pgn_write(&state->game, &h, path) == 0)
             snprintf(state->status, sizeof(state->status), "Saved PGN: %.200s", path);
@@ -337,11 +384,9 @@ int handle_command(TUIState *state, const char *cmd) {
         state->selected = 0;
         memset(state->highlight, 0, sizeof(state->highlight));
         memset(&state->last_search, 0, sizeof(state->last_search));
+        state->last_search_by[0] = '\0';
         snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
         snprintf(state->status, sizeof(state->status), "Position loaded from FEN");
-
-        if (!state->two_player && state->engine_side == state->game.pos.side)
-            start_engine_search(state);
         return 1;
     }
     if (strncmp(cmd, "theme ", 6) == 0) {
@@ -364,12 +409,11 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "flip") == 0) {
-        if      (state->engine_side == BLACK)  state->engine_side = WHITE;
-        else if (state->engine_side == WHITE)  state->engine_side = -1;
-        else                                   state->engine_side = BLACK;
-        char *s = state->engine_side == WHITE ? "White" :
-                  state->engine_side == BLACK ? "Black" : "None";
-        snprintf(state->status, sizeof(state->status), "Engine plays: %s", s);
+        state->view_side = (state->view_side == WHITE) ? BLACK : WHITE;
+        state->selected = 0;
+        memset(state->highlight, 0, sizeof(state->highlight));
+        snprintf(state->status, sizeof(state->status), "Board turned: %s at the bottom",
+                 state->view_side == WHITE ? "White" : "Black");
         return 1;
     }
     if (strcmp(cmd, "eval") == 0) {
@@ -380,7 +424,6 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "stats") == 0) {
-        /* Reload latest stats from disk */
         stats_load(&state->stats);
         int total = state->stats.games_played[0] +
                     state->stats.games_played[1] +
@@ -396,7 +439,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
-                 "e2e4|go|stop|undo|new|flip|depth N|eval|fen|pgn|loadfen <FEN>|stats|quit  (dchess --help for full docs)");
+                 "e2e4 go stop pause resume undo new swap flip depth N eval fen pgn "
+                 "loadfen stats quit | white|black human|engine [level]");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;
