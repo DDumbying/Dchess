@@ -31,6 +31,10 @@ typedef struct { int pvs, aspiration, null_move, lmr, check_ext, tt_depth; } Sea
 SearchOptions search_default_options(void);
 void search_set_options(const SearchOptions *o);
 
+/* After each completed depth, from the searching thread (UCI "info"). */
+typedef struct { int depth, score; long nodes, ms; Move pv[8]; int pv_len; } SearchInfo;
+void search_set_info(void (*fn)(const SearchInfo *));
+
 /* Thread-safe; the one function here meant to be called from a different
  * thread than search() itself. Safe to call when nothing is running. */
 void search_cancel(void);

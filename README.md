@@ -75,11 +75,15 @@ and the recent games — any of which opens as a replay.
   null-move pruning, late-move reductions and check extensions, a
   transposition table, move ordering (TT move, captures, killers, history)
   and quiescence search — Hard reaches about depth 12–13 in its 5 seconds
-- A tapered evaluation (material and piece-square tables, king safety that
-  shifts toward the endgame)
+- A tapered evaluation — PeSTO's material and piece-square tables for every
+  piece, plus king safety (pawn shield, open files) — each term measured
+  before it was kept
 - A principal line and correct mate distances for analysis
 - Searches in a background thread, so the clocks and screen stay live, and
   `stop` takes its best move so far
+- A UCI engine too: `dchess --uci` (or dchess started through pipes, as GUIs
+  do) plays in Arena, Cute Chess, BanksiaGUI and friends — and measures at
+  roughly 2400–2550 against a strength-limited Stockfish at 100 ms a move
 
 **Interface**
 - ncurses with Unicode pieces, scaled to the terminal
@@ -133,6 +137,7 @@ OPTIONS
   --theme <name>                  Color theme: gruvbox | tokyonight | btop | catppuccin
                                    (default: gruvbox)
   -s, --stats                     Show statistics in a full TUI screen and exit
+  --uci                           Run as a UCI engine on stdin/stdout
   -V, --version                   Print version and exit
   -h, --help                      Show help and exit
 

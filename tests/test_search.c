@@ -11,6 +11,7 @@
 #include "engine/move.h"
 #include "engine/make.h"
 #include "engine/search.h"
+#include "engine/eval.h"
 #include "utils/bitboard.h"
 #include "utils/constants.h"
 
@@ -115,15 +116,19 @@ static void test_plain_search(void)
     SearchOptions none;
     memset(&none, 0, sizeof(none));
     search_set_options(&none);
+    EvalOptions plain = { 0 };           /* and the evaluation as it was */
+    eval_set_options(&plain);
     int same = 1;
     for (size_t i = 0; i < sizeof(b) / sizeof(b[0]); i++) {
         char best[8];
         run(b[i].fen, 5, 0, best);
         if (strcmp(best, b[i].move)) { same = 0; printf("    %s gave %s\n", b[i].move, best); }
     }
-    check("with every option off the search is unchanged", same);
+    check("with every option off the engine is unchanged", same);
     SearchOptions all = search_default_options();
     search_set_options(&all);
+    EvalOptions eall = eval_default_options();
+    eval_set_options(&eall);
 }
 
 static void test_tactics(void)

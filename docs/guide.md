@@ -13,6 +13,7 @@ the short version and the full key and command lists; the
 - [Replays](#replays)
 - [Profiles, history and stats](#profiles-history-and-stats)
 - [Files](#files)
+- [dchess in other programs (UCI)](#dchess-in-other-programs-uci)
 - [Troubleshooting](#troubleshooting)
 - [Recording the demo clips](#recording-the-demo-clips)
 
@@ -229,6 +230,24 @@ elo   = 1500
 usual tags, dchess adds `WhiteKind`/`BlackKind` (profile, guest, dchess,
 engine), the engine strength, `EndReason`, `PlyCount`, `Seconds`,
 `TimeControl` and the opening.
+
+## dchess in other programs (UCI)
+
+dchess is also a UCI engine. In a chess GUI (Arena, Cute Chess,
+BanksiaGUI, …) add it as an engine with the path to the `dchess` binary —
+started through pipes with no arguments it speaks UCI on its own; `dchess
+--uci` does the same explicitly. It answers `uci`, `isready`,
+`ucinewgame`, `position`, `go` (`wtime`/`btime`/`winc`/`binc`, `movetime`,
+`depth`, `infinite`), `stop` and `quit`, reports `info depth … score … pv
+…` as it searches, and has one option, `OwnBook` (the built-in opening
+book, on by default).
+
+It can also play inside dchess: register the `dchess` binary on the engines
+screen and pick it for a side.
+
+`make match ARGS="--vs /usr/bin/stockfish --vs-elo 2300"` measures dchess
+against another engine at a set strength — see the journal for the
+results.
 
 ## Troubleshooting
 

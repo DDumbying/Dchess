@@ -3,34 +3,58 @@
  *
  *   make match ARGS="--base none --cand pvs --games 80 --ms 50"
  *
- * Options are a comma list starting from all (the defaults) or none: pvs,
- * asp, nmp, lmr, ext, tt; "-name" turns one off. Every opening is played twice, colours
+ * Options are a comma list starting from all (the defaults) or none:
+ * search pvs, asp, nmp, lmr, ext, tt; evaluation pesto, pawns, mob, king,
+ * xtra; "-name" turns one off. Every opening is played twice, colours
  * swapped. The result is the candidate's score and the Elo difference with
- * a 95% error. */
+ * a 95% error.
+ *
+ * --vs PATH plays the candidate against a UCI engine instead (with
+ * --vs-elo N for UCI_Elo and --vs-ms N for its time a move), which puts
+ * dchess on that engine's rating scale. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "engine/move.h"
 #include "engine/search.h"
+#include "engine/eval.h"
 #include "game/game.h"
 #include "game/openings.h"
+#include "game/opponent.h"
+#include "game/uci.h"
+#include "utils/engines.h"
+#include <time.h>
 #include "utils/bitboard.h"
 #include "utils/constants.h"
 
 #define OPENING_PLIES 8
 #define MAX_PLIES     200
 
-static int parse_options(const char *list, SearchOptions *o)
+/* A player's search and evaluation switches. */
+typedef struct { SearchOptions s; EvalOptions e; } Opts;
+
+static int parse_options(const char *list, Opts *all)
 {
     char buf[128], *save = NULL;
     snprintf(buf, sizeof(buf), "%s", list);
-    memset(o, 0, sizeof(*o));
+    memset(all, 0, sizeof(*all));
+    SearchOptions *o = &all->s;
+    EvalOptions *e = &all->e;
     for (char *t = strtok_r(buf, ",", &save); t; t = strtok_r(NULL, ",", &save)) {
         int on = t[0] != '-';
         const char *n = on ? t : t + 1;
-        if      (!strcmp(n, "all"))  { *o = search_default_options(); if (!on) memset(o, 0, sizeof(*o)); }
-        else if (!strcmp(n, "none")) memset(o, 0, sizeof(*o));
+        if (!strcmp(n, "all")) {
+            *o = search_default_options();
+            *e = eval_default_options();
+            if (!on) memset(all, 0, sizeof(*all));
+        }
+        else if (!strcmp(n, "none")) memset(all, 0, sizeof(*all));
+        else if (!strcmp(n, "pesto")) e->pesto = on;
+        else if (!strcmp(n, "pawns")) e->pawns = on;
+        else if (!strcmp(n, "mob"))   e->mobility = on;
+        else if (!strcmp(n, "king"))  e->king = on;
+        else if (!strcmp(n, "xtra"))  e->extras = on;
         else if (!strcmp(n, "pvs"))  o->pvs = on;
         else if (!strcmp(n, "asp"))  o->aspiration = on;
         else if (!strcmp(n, "nmp"))  o->null_move = on;
@@ -52,9 +76,23 @@ static int play_uci(GameState *g, const char *m)
     return 1;
 }
 
+static Opponent *vs;   /* --vs: the external engine, or NULL */
+
+/* The external engine's move for `g`, or 0 when it fails. */
+static Move vs_move(const GameState *g)
+{
+    SearchResult r;
+    U64 key;
+    struct timespec nap = { 0, 2 * 1000000L };
+    if (!opponent_start(vs, g)) return 0;
+    while (!opponent_poll(vs, &r, &key)) nanosleep(&nap, NULL);
+    const char *err = opponent_error(vs);
+    if (err && err[0]) { fprintf(stderr, "\n%s\n", err); return 0; }
+    return r.best_move;
+}
+
 /* +1 when the candidate wins, -1 when it loses, 0 for a draw. */
-static int play_game(int opening, int cand_side, const SearchOptions *base,
-                     const SearchOptions *cand, int ms)
+static int play_game(int opening, int cand_side, const Opts *base, const Opts *cand, int ms)
 {
     static GameState g;
     memset(&g, 0, sizeof(g));
@@ -66,12 +104,24 @@ static int play_game(int opening, int cand_side, const SearchOptions *base,
         if (!play_uci(&g, t)) break;
 
     while (!g.game_over && g.move_count < MAX_PLIES) {
-        search_set_options(g.pos.side == cand_side ? cand : base);
-        search_clear();
-        Position p = g.pos;
-        SearchResult r = search(&p, MAX_DEPTH, ms);
-        if (!r.best_move) break;
-        game_play(&g, r.best_move);
+        Move m;
+        if (vs && g.pos.side != cand_side) {
+            m = vs_move(&g);
+        } else {
+            const Opts *me = g.pos.side == cand_side ? cand : base;
+            search_set_options(&me->s);
+            eval_set_options(&me->e);
+            search_clear();
+            Position p = g.pos;
+            m = search(&p, MAX_DEPTH, ms).best_move;
+        }
+        if (!m && vs && g.pos.side != cand_side) {
+            /* A broken opponent is no draw: stop rather than skew the score. */
+            fprintf(stderr, "the opponent failed; the match is abandoned\n");
+            exit(1);
+        }
+        if (!m) break;
+        game_play(&g, m);
         game_update_status(&g);
     }
     int winner = strstr(g.result, "White wins") ? WHITE : strstr(g.result, "Black wins") ? BLACK : -1;
@@ -80,20 +130,38 @@ static int play_game(int opening, int cand_side, const SearchOptions *base,
 
 int main(int argc, char **argv)
 {
-    int games = 80, ms = 50;
-    const char *base_s = "none", *cand_s = "all";
+    int games = 80, ms = 50, vs_elo = 0, vs_ms = 0;
+    const char *base_s = "none", *cand_s = "all", *vs_path = NULL;
     for (int i = 1; i + 1 < argc; i += 2) {
         if      (!strcmp(argv[i], "--games")) games = atoi(argv[i + 1]);
         else if (!strcmp(argv[i], "--ms"))    ms = atoi(argv[i + 1]);
         else if (!strcmp(argv[i], "--base"))  base_s = argv[i + 1];
         else if (!strcmp(argv[i], "--cand"))  cand_s = argv[i + 1];
+        else if (!strcmp(argv[i], "--vs"))    vs_path = argv[i + 1];
+        else if (!strcmp(argv[i], "--vs-elo")) vs_elo = atoi(argv[i + 1]);
+        else if (!strcmp(argv[i], "--vs-ms")) vs_ms = atoi(argv[i + 1]);
         else { fprintf(stderr, "unknown flag %s\n", argv[i]); return 2; }
     }
-    SearchOptions base, cand;
+    Opts base, cand;
     if (!parse_options(base_s, &base) || !parse_options(cand_s, &cand)) return 2;
     if (games < 2) games = 2;
     games += games % 2;
     init_attacks();
+    char vs_name[128] = "";
+    if (vs_path) {
+        EngineEntry e;
+        memset(&e, 0, sizeof(e));
+        snprintf(e.name, sizeof(e.name), "%s", strrchr(vs_path, '/') ? strrchr(vs_path, '/') + 1 : vs_path);
+        snprintf(e.path, sizeof(e.path), "%s", vs_path);
+        e.limit_ms = vs_ms > 0 ? vs_ms : ms;
+        e.elo = vs_elo;
+        vs = opponent_uci(&e);
+        if (!vs) { fprintf(stderr, "cannot start %s\n", vs_path); return 2; }
+        const char *b = strrchr(vs_path, '/');
+        if (vs_elo) snprintf(vs_name, sizeof(vs_name), "%s @%d", b ? b + 1 : vs_path, vs_elo);
+        else        snprintf(vs_name, sizeof(vs_name), "%s", b ? b + 1 : vs_path);
+        base_s = vs_name;
+    }
 
     int w = 0, d = 0, l = 0, pairs = games / 2;
     for (int i = 0; i < pairs; i++) {
@@ -105,6 +173,7 @@ int main(int argc, char **argv)
         }
     }
     fprintf(stderr, "\n");
+    if (vs) opponent_free(vs);
 
     int n = w + d + l;
     double s = (w + 0.5 * d) / n;

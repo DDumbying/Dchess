@@ -130,6 +130,9 @@ typedef struct {
 static TTEntry *tt = NULL;
 
 /* tt_depth is off: it did not measure as a gain (see docs/overview.md). */
+static void (*info_fn)(const SearchInfo *);
+void search_set_info(void (*fn)(const SearchInfo *)) { info_fn = fn; }
+
 static SearchOptions opt = { 1, 1, 1, 1, 1, 0 };
 
 SearchOptions search_default_options(void) { SearchOptions o = { 1, 1, 1, 1, 1, 0 }; return o; }
@@ -532,6 +535,14 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
         best.depth_reached = depth;
         if (rr.best)
             tt_store(root_key, depth, rr.score, TT_EXACT, rr.best, 0);
+        if (info_fn && rr.best) {
+            SearchInfo si = { depth, rr.score, node_count, 0, { 0 }, rr.pv_len };
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            si.ms = (now.tv_sec - started.tv_sec) * 1000L + (now.tv_nsec - started.tv_nsec) / 1000000L;
+            memcpy(si.pv, rr.pv, sizeof(si.pv));
+            info_fn(&si);
+        }
 
         if (legal == 0) break; /* checkmate/stalemate: nothing deeper to find */
         if (legal == 1 && depth >= 2) break;   /* a forced move: nothing to choose */
