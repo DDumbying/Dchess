@@ -194,9 +194,11 @@ static int make_dirs(const char *file)
 
 int engines_save(const EngineList *l)
 {
-    char path[512];
+    char path[512], tmp[600];
     if (!engines_path(path, sizeof(path)) || !make_dirs(path)) return 0;
-    FILE *f = fopen(path, "w");
+    /* Written aside and renamed over, so a failed save loses nothing. */
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    FILE *f = fopen(tmp, "w");
     if (!f) return 0;
     for (int i = 0; i < l->count; i++) {
         const EngineEntry *e = &l->e[i];
@@ -207,7 +209,11 @@ int engines_save(const EngineList *l)
         if (e->elo)         fprintf(f, "elo   = %d\n", e->elo);
     }
     int ok = !ferror(f);
-    return fclose(f) == 0 && ok;
+    if (fclose(f) != 0 || !ok) {
+        remove(tmp);
+        return 0;
+    }
+    return rename(tmp, path) == 0;
 }
 
 void engine_strength_label(const EngineEntry *e, char *buf, size_t n)

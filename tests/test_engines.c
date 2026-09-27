@@ -204,6 +204,29 @@ static void test_save_failure(void)
     remove(blocker);
 }
 
+
+static void test_atomic_save(void)
+{
+    printf("== saving is atomic ==\n");
+    char path[512], sub[512], buf[256];
+    write_conf("[Keep]\npath = /bin/keep\n");
+    engines_path(path, sizeof(path));
+    snprintf(sub, sizeof(sub), "%s/dchess", dir);
+    chmod(sub, 0555);                      /* no room for a temporary file */
+    EngineList l = { .count = 0 };
+    int saved = engines_save(&l);
+    chmod(sub, 0755);
+    FILE *f = fopen(path, "r");
+    size_t n = f ? fread(buf, 1, sizeof(buf) - 1, f) : 0;
+    buf[n] = '\0';
+    if (f) fclose(f);
+    check("a save that cannot complete leaves the file alone", !saved && strstr(buf, "[Keep]") != NULL);
+    engines_save(&l);
+    char tmp[600];
+    snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+    check("and a good save leaves no temporary file", access(tmp, F_OK) != 0);
+}
+
 int main(void)
 {
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
@@ -216,6 +239,7 @@ int main(void)
     test_malformed();
     test_labels();
     test_save_failure();
+    test_atomic_save();
 
     char path[512], sub[512];
     engines_path(path, sizeof(path));

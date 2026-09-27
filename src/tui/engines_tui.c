@@ -275,7 +275,7 @@ static void save(EngScreen *s, const EngineList *l, const char *done)
         say(s, 0, done);
         return;
     }
-    engines_path(path, sizeof(path));
+    if (!engines_path(path, sizeof(path))) snprintf(path, sizeof(path), "engines.conf");
     snprintf(m, sizeof(m), "Could not write %.140s", path);
     say(s, 1, m);
 }
