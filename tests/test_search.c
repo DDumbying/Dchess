@@ -8,6 +8,7 @@
 #include "engine/board.h"
 #include "engine/fen.h"
 #include "engine/move.h"
+#include "engine/make.h"
 #include "engine/search.h"
 #include "utils/bitboard.h"
 #include "utils/constants.h"
@@ -50,6 +51,25 @@ static void test_mates(void)
         check(name, r.best_score == MATE_SCORE - (2 * m[i].moves - 1) &&
                     (!m[i].move || !strcmp(best, m[i].move)));
     }
+}
+
+static void test_warm_table(void)
+{
+    printf("== a warm table ==\n");
+    const char *fen = "r5rk/5p1p/5R2/4B3/8/8/7P/7K w - - 0 1";
+    Position pos;
+    parse_fen(fen, &pos, NULL, NULL);
+    search_clear();
+    Position p = pos;
+    SearchResult a = search(&p, 8, 0);
+    p = pos;
+    SearchResult b = search(&p, 8, 0);          /* the table still holds the first search */
+    check("a repeated search keeps the mate distance", a.best_score == MATE_SCORE - 5 &&
+                                                       b.best_score == MATE_SCORE - 5);
+    p = pos;
+    make_move(&p, a.best_move);
+    SearchResult c = search(&p, 8, 0);          /* the defender, one move in, same table */
+    check("and so does the position one move later", c.best_score == -(MATE_SCORE - 4));
 }
 
 static void test_zugzwang(void)
@@ -126,6 +146,7 @@ int main(void)
     init_attacks();
     test_mates();
     test_zugzwang();
+    test_warm_table();
     test_plain_search();
     test_tactics();
     if (failures) {

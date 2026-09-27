@@ -124,6 +124,7 @@ typedef struct {
     int    score;
     TTFlag flag;
     Move   best;
+    unsigned char age;     /* the search() that stored it */
 } TTEntry;
 
 static TTEntry *tt = NULL;
@@ -148,9 +149,8 @@ static TTEntry *tt_probe(U64 key) {
     return (e->key == key) ? e : NULL;
 }
 
-/* Mate scores are relative to the ply they were found at, so caching them
- * verbatim and reusing at a different ply would report the wrong mate
- * distance. Simplest safe fix: just don't cache them. */
+static unsigned char search_age;
+
 static int is_mate_score(int s) {
     return s > MATE_BOUND || s < -MATE_BOUND;
 }
@@ -169,10 +169,32 @@ static void pv_extend(int ply, Move m)
     pv_len[ply] = n > ply + 1 ? n : ply + 1;
 }
 
-static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best) {
-    if (!tt || is_mate_score(score)) return;
+/* Mate scores count plies from the root, so they are stored counting from
+ * this node and turned back on probe; without the depth-preferred table
+ * they are not stored at all, as before. */
+static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best, int ply) {
+    if (!tt) return;
     TTEntry *e = &tt[key % TT_SIZE];
+    if (!opt.tt_depth) {
+        if (is_mate_score(score)) return;
+    } else {
+        /* A deeper result from this search stays unless the new one is exact. */
+        int keep = e->key && e->age == search_age && depth < e->depth && flag != TT_EXACT;
+        if (keep) return;
+        if (score > MATE_BOUND)  score += ply;
+        if (score < -MATE_BOUND) score -= ply;
+    }
     e->key = key; e->depth = depth; e->score = score; e->flag = flag; e->best = best;
+    e->age = search_age;
+}
+
+/* The entry's score as seen from this node's ply. */
+static int tt_score(const TTEntry *e, int ply)
+{
+    int s = e->score;
+    if (opt.tt_depth && s > MATE_BOUND)  s -= ply;
+    if (opt.tt_depth && s < -MATE_BOUND) s += ply;
+    return s;
 }
 
 /* Put the TT's remembered best move (if any) first, then sort the rest
@@ -309,9 +331,10 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     if (hit) {
         tt_move = hit->best;
         if (hit->depth >= depth) {
-            if (hit->flag == TT_EXACT) return hit->score;
-            if (hit->flag == TT_ALPHA && hit->score <= alpha) return alpha;
-            if (hit->flag == TT_BETA  && hit->score >= beta)  return beta;
+            int hs = tt_score(hit, ply);
+            if (hit->flag == TT_EXACT) return hs;
+            if (hit->flag == TT_ALPHA && hs <= alpha) return alpha;
+            if (hit->flag == TT_BETA  && hs >= beta)  return beta;
         }
     }
 
@@ -384,7 +407,7 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         if (search_aborted) return alpha;   /* nothing from here is trustworthy */
         if (score >= beta) {
             record_cutoff(ml.moves[i], depth, ply);
-            tt_store(key, depth, beta, TT_BETA, ml.moves[i]);
+            tt_store(key, depth, beta, TT_BETA, ml.moves[i], ply);
             return beta;
         }
         if (score > alpha) {
@@ -399,7 +422,7 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         return in_check ? -(MATE_SCORE - ply) : 0;
     }
 
-    tt_store(key, depth, alpha, (alpha > orig_alpha) ? TT_EXACT : TT_ALPHA, best_move);
+    tt_store(key, depth, alpha, (alpha > orig_alpha) ? TT_EXACT : TT_ALPHA, best_move, ply);
     return alpha;
 }
 
@@ -458,6 +481,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
     struct timespec started;
     clock_gettime(CLOCK_MONOTONIC, &started);
     node_count = 0;
+    search_age++;
     tt_ensure();
     memset(killers, 0, sizeof(killers));
     memset(history, 0, sizeof(history));
@@ -503,7 +527,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
         best.best_score    = rr.best ? rr.score : -INF;
         best.depth_reached = depth;
         if (rr.best)
-            tt_store(root_key, depth, rr.score, TT_EXACT, rr.best);
+            tt_store(root_key, depth, rr.score, TT_EXACT, rr.best, 0);
 
         if (legal == 0) break; /* checkmate/stalemate: nothing deeper to find */
         if (time_limit_ms > 0 && deadline_passed()) break;
