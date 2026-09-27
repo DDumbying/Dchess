@@ -319,6 +319,13 @@ static void test_old_backslash(void)
     records_free(&l);
 }
 
+static void test_time_reason(void)
+{
+    printf("== time outs ==\n");
+    check("a flag ends by time", !strcmp(records_end_reason("White loses on time — Black wins!"), "time") &&
+                                 !strcmp(records_end_reason("Time out, insufficient material — Draw!"), "time"));
+}
+
 static void test_offsets(void)
 {
     printf("== where each game starts ==\n");
@@ -385,6 +392,7 @@ int main(void)
     test_opening_tags();
     test_escaped_names();
     test_offsets();
+    test_time_reason();
     test_old_backslash();
     test_speed();
 

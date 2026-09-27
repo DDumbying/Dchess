@@ -61,18 +61,8 @@ static WINDOW *sub(WINDOW *side, int row, int h)
 
 static void clock_cs(const TUIState *s, long *w_cs, long *b_cs)
 {
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    long run = (now.tv_sec  - s->game.turn_start_mono.tv_sec)  * 100
-             + (now.tv_nsec - s->game.turn_start_mono.tv_nsec) / 10000000;
-    if (run < 0) run = 0;
-
-    *w_cs = (long)s->game.white_clock * 100;
-    *b_cs = (long)s->game.black_clock * 100;
-    if (!s->game.game_over && s->game.clock_started) {
-        if (s->game.clock_side == WHITE) *w_cs += run;
-        else                             *b_cs += run;
-    }
+    *w_cs = game_time_spent(&s->game, WHITE) / 10;
+    *b_cs = game_time_spent(&s->game, BLACK) / 10;
 }
 
 static void fmt_clock(long cs, char *out, size_t n)

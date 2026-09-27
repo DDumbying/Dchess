@@ -25,6 +25,7 @@ int records_path(char *buf, size_t n)
 
 const char *records_end_reason(const char *result)
 {
+    if (strstr(result, "on time") || strstr(result, "Time out")) return "time";
     if (strstr(result, "Checkmate"))    return "checkmate";
     if (strstr(result, "Stalemate"))    return "stalemate";
     if (strstr(result, "Insufficient")) return "material";

@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "game/game.h"
+#include "game/timectl.h"
 #include "engine/movegen.h"
 #include "engine/make.h"
 #include "engine/search.h"
@@ -617,11 +618,82 @@ static void test_last_move_after_fen(void)
           game_last_move(&g, &m) == 1 && FROM(m) == e2 && TO(m) == e4);
 }
 
+static long fake_now;
+static long fake_clock(void) { return fake_now; }
+
+static void test_time_control(void)
+{
+    printf("== time controls ==\n");
+    static GameState g;
+    TimeControl tc;
+    game_set_time_source(fake_clock);
+    fake_now = 1000;
+    game_reset(&g);
+    tc_parse("5+2", &tc);
+    game_set_time_control(&g, &tc);
+    check("full time before the first move", game_time_left(&g, WHITE) == 300000);
+    play(&g, "e2e4");                      /* the clock starts on move 1 */
+    fake_now += 3000;
+    play(&g, "e7e5");
+    fake_now += 5000;
+    play(&g, "g1f3");
+    check("time spent and increments add up",
+          game_time_left(&g, WHITE) == 300000 - 5000 + 2 * 2000 &&
+          game_time_left(&g, BLACK) == 300000 - 3000 + 2000);
+    fake_now += 4000;
+    check("the running turn counts", game_time_left(&g, BLACK) == 300000 - 3000 + 2000 - 4000);
+    game_undo(&g);
+    check("undo refunds the move's time",
+          game_time_left(&g, WHITE) == 300000 + 2000);
+    game_clock_pause(&g);
+    fake_now += 60000;
+    game_clock_resume(&g);
+    game_clock_resume(&g);
+    check("a pause freezes the clock", game_time_left(&g, WHITE) == 300000 + 2000);
+    fake_now += 1000;
+    check("and resuming runs it again", game_time_left(&g, WHITE) == 300000 + 2000 - 1000);
+
+    game_reset(&g);
+    game_clock_pause(&g);
+    game_clock_resume(&g);
+    check("a new game starts at the base again", game_time_left(&g, WHITE) == 300000 &&
+                                                 game_time_left(&g, BLACK) == 300000);
+    tc_parse("0.1+0", &tc);
+    game_set_time_control(&g, &tc);
+    play(&g, "e2e4");
+    play(&g, "e7e5");
+    fake_now += 5000;
+    check("no flag with time left", game_check_flag(&g) == 0 && !g.game_over);
+    fake_now += 2000;
+    check("a flag loses on time", game_check_flag(&g) == 1 && g.game_over &&
+                                  !strcmp(g.result, "White loses on time — Black wins!"));
+    check("and only once", game_check_flag(&g) == 0);
+    fake_now += 3000;
+    check("the flagged clock stops at zero", game_time_left(&g, WHITE) == 0);
+
+    game_load_fen(&g, "8/8/8/4k3/8/8/4P3/4K3 b - - 0 1");
+    check("a loaded position starts a fresh clock", game_time_left(&g, WHITE) == 6000);
+    play(&g, "e5d5");
+    fake_now += 7000;
+    check("a flag against a bare king is a draw", game_check_flag(&g) == 1 &&
+                                                   !strcmp(g.result, "Time out, insufficient material — Draw!"));
+
+    tc_parse("off", &tc);
+    game_set_time_control(&g, &tc);
+    game_reset(&g);
+    play(&g, "e2e4");
+    fake_now += 999999;
+    check("an untimed game never flags", game_check_flag(&g) == 0);
+    check("and counts up", game_time_spent(&g, BLACK) == 999999);
+    game_set_time_source(NULL);
+}
+
 int main(void)
 {
     init_attacks();
 
     test_reset();
+    test_time_control();
     test_move_log();
     test_halfmove_clock();
     test_threefold_repetition();
