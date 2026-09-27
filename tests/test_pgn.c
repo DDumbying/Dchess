@@ -217,6 +217,19 @@ static void test_extra_and_append(void)
     check("no extra tags when there are none", !has("[WhiteKind") && !has("[Seconds"));
 }
 
+
+static void test_escaping(void)
+{
+    printf("== tag escaping ==\n");
+    GameState g;
+    game_reset(&g);
+    play(&g, "e2e4");
+    PgnHeader h = { .white = "Big \"Al\"", .black = "back\\slash" };
+    render(&g, &h);
+    check("quotes are escaped", has("[White \"Big \\\"Al\\\"\"]"));
+    check("backslashes are escaped", has("[Black \"back\\\\slash\"]"));
+}
+
 int main(void)
 {
     init_attacks();
@@ -227,6 +240,7 @@ int main(void)
     test_line_wrapping();
     test_mid_game_fen();
     test_extra_and_append();
+    test_escaping();
 
     if (failures) {
         printf("\n%d PGN test(s) FAILED.\n", failures);
