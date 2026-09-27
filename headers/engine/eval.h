@@ -26,6 +26,7 @@ enum {
 };
 typedef struct { int v[EP_COUNT]; } EvalParams;
 const EvalParams *eval_default_params(void);   /* the hand-set weights */
+const EvalParams *eval_tuned_params(void);     /* tools/tune.c's, from Stockfish games */
 const EvalParams *eval_params(void);           /* the ones in use */
 void eval_set_params(const EvalParams *p);
 

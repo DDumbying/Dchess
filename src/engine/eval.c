@@ -292,9 +292,13 @@ static const EvalParams hand_set = { {
 } };
 _Static_assert(sizeof(hand_set.v) / sizeof(int) == EP_COUNT, "hand_set lists every parameter");
 
+#include "tuned_params.h"
+_Static_assert(TUNED_PARAM_COUNT == EP_COUNT, "tuned_params.h matches the EP_* layout");
+
 static EvalParams params = hand_set;
 
 const EvalParams *eval_default_params(void) { return &hand_set; }
+const EvalParams *eval_tuned_params(void)   { return &tuned; }
 const EvalParams *eval_params(void)         { return &params; }
 void eval_set_params(const EvalParams *p)   { params = *p; }
 

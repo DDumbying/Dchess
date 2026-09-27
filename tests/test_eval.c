@@ -196,14 +196,20 @@ static void test_mirror_symmetry(void)
     };
     EvalOptions all = { 1, 1, 1, 1, 1 };
     eval_set_options(&all);
+    EvalParams saved = *eval_params();
+    const EvalParams *sets[] = { eval_default_params(), eval_tuned_params() };
     int ok = 1;
-    for (size_t i = 0; i < sizeof(fens) / sizeof(fens[0]); i++) {
-        char m[160];
-        mirror_fen(fens[i], m, sizeof(m));
-        int a = eval_fen(fens[i]), b = eval_fen(m);
-        if (a != b) { ok = 0; printf("    %d vs %d: %s\n", a, b, fens[i]); }
+    for (int k = 0; k < 2; k++) {
+        eval_set_params(sets[k]);
+        for (size_t i = 0; i < sizeof(fens) / sizeof(fens[0]); i++) {
+            char m[160];
+            mirror_fen(fens[i], m, sizeof(m));
+            int a = eval_fen(fens[i]), b = eval_fen(m);
+            if (a != b) { ok = 0; printf("    %d vs %d: %s\n", a, b, fens[i]); }
+        }
     }
-    check("a position and its mirror score the same", ok);
+    eval_set_params(&saved);
+    check("a position and its mirror score the same, either weights", ok);
     EvalOptions none = { 0 };
     eval_set_options(&none);
 }
