@@ -101,11 +101,16 @@ static int mover_view(const Analysis *a, int mover)
     return mover == WHITE ? v : -v;
 }
 
+int review_loss(const Analysis *before, const Analysis *after, int mover)
+{
+    return mover_view(before, mover) - mover_view(after, mover);
+}
+
 Grade review_grade(const Analysis *before, const Analysis *after, int mover)
 {
     int sign = mover == WHITE ? 1 : -1;
     if (before->mate * sign > 0 && after->mate * sign > 0) return GRADE_NONE;
-    int loss = mover_view(before, mover) - mover_view(after, mover);
+    int loss = review_loss(before, after, mover);
     return loss >= 300 ? GRADE_BLUNDER : loss >= 100 ? GRADE_MISTAKE
          : loss >= 50  ? GRADE_INACCURACY : GRADE_NONE;
 }

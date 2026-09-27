@@ -40,6 +40,9 @@ static void test_grades(void)
     check("keeping a mate is fine", review_grade(&b, &a, WHITE) == GRADE_NONE);
     b = cp(50); a = mate(-2);
     check("allowing a mate is a blunder", review_grade(&b, &a, WHITE) == GRADE_BLUNDER);
+    b = cp(100); a = cp(-250);
+    check("the loss is in centipawns for the mover", review_loss(&b, &a, WHITE) == 350 &&
+                                                     review_loss(&b, &a, BLACK) == -350);
     check("marks", !strcmp(grade_mark(GRADE_BLUNDER), "??") && !strcmp(grade_mark(GRADE_MISTAKE), "?") &&
                    !strcmp(grade_mark(GRADE_INACCURACY), "?!") && !strcmp(grade_mark(GRADE_NONE), ""));
 }

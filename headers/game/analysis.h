@@ -29,6 +29,8 @@ const char *analyser_error(const Analyser *a);
 /* How much a move lost for the side that played it, graded. */
 typedef enum { GRADE_NONE, GRADE_INACCURACY, GRADE_MISTAKE, GRADE_BLUNDER } Grade;
 Grade review_grade(const Analysis *before, const Analysis *after, int mover);
+/* The centipawns the mover lost (clamped scores); negative when it gained. */
+int   review_loss(const Analysis *before, const Analysis *after, int mover);
 const char *grade_mark(Grade g);   /* "", "?!", "?", "??" */
 
 #endif
