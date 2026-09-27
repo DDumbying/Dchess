@@ -1,5 +1,12 @@
 #include "game/book.h"
 #include "utils/constants.h"
+#include "game/openings.h"
+#include "engine/fen.h"
+#include "engine/make.h"
+#include "engine/move.h"
+#include "utils/cli.h"
+#include <stdio.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -232,8 +239,231 @@ U64 book_key(const Position *pos)
     return key;
 }
 
-Book *book_builtin(void) { return NULL; }
-Book *book_open(const char *path, char *err, size_t n) { (void)path; (void)err; (void)n; return NULL; }
-void  book_free(Book *b) { free(b); }
-Move  book_pick(const Book *b, const GameState *g, int level, unsigned *rng) { (void)b; (void)g; (void)level; (void)rng; return 0; }
-const char *book_opening(const GameState *g, const char **eco) { (void)g; (void)eco; return NULL; }
+typedef struct {
+    U64 key;
+    short from, to, promo;   /* promo: a FLAG_PROMO_* flag, or 0 */
+    int weight;
+} Entry;
+
+struct Book {
+    Entry *e;
+    int    count;
+};
+
+typedef struct {
+    U64 key;
+    const OpeningLine *line;
+} Name;
+
+static int by_key(const void *a, const void *b)
+{
+    U64 x = ((const Entry *)a)->key, y = ((const Entry *)b)->key;
+    return x < y ? -1 : x > y;
+}
+
+static int name_by_key(const void *a, const void *b)
+{
+    U64 x = ((const Name *)a)->key, y = ((const Name *)b)->key;
+    return x < y ? -1 : x > y;
+}
+
+static int promo_flag(int code)
+{
+    return code == 1 ? FLAG_PROMO_N : code == 2 ? FLAG_PROMO_B :
+           code == 3 ? FLAG_PROMO_R : code == 4 ? FLAG_PROMO_Q : 0;
+}
+
+#define BOOK_MAX_BYTES (512L * 1024 * 1024)
+
+Book *book_open(const char *path, char *err, size_t n)
+{
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        snprintf(err, n, "cannot open book %s", path);
+        return NULL;
+    }
+    if (st.st_size % 16 != 0 || st.st_size > BOOK_MAX_BYTES) {
+        snprintf(err, n, "%s is not a Polyglot book", path);
+        return NULL;
+    }
+    FILE *f = fopen(path, "rb");
+    Book *b = calloc(1, sizeof(*b));
+    int count = (int)(st.st_size / 16);
+    if (b) b->e = malloc((size_t)(count ? count : 1) * sizeof(Entry));
+    if (!f || !b || !b->e) {
+        snprintf(err, n, "cannot read book %s", path);
+        if (f) fclose(f);
+        book_free(b);
+        return NULL;
+    }
+    unsigned char r[16];
+    for (int i = 0; i < count && fread(r, 1, 16, f) == 16; i++) {
+        U64 key = 0;
+        for (int j = 0; j < 8; j++) key = key << 8 | r[j];
+        int move = r[8] << 8 | r[9];
+        Entry *e = &b->e[b->count++];
+        e->key = key;
+        e->to = (short)((move & 7) + 8 * (move >> 3 & 7));
+        e->from = (short)((move >> 6 & 7) + 8 * (move >> 9 & 7));
+        e->promo = (short)promo_flag(move >> 12 & 7);
+        e->weight = r[10] << 8 | r[11];
+    }
+    fclose(f);
+    return b;
+}
+
+static int play_uci(GameState *g, const char *s, Move *out)
+{
+    int from, to, promo;
+    return parse_move_str(s, &from, &to, &promo) && game_find_move(g, from, to, promo, out);
+}
+
+Book *book_builtin(void)
+{
+    Book *b = calloc(1, sizeof(*b));
+    GameState *g = malloc(sizeof(GameState));
+    int cap = 4096;
+    if (b) b->e = malloc((size_t)cap * sizeof(Entry));
+    if (!b || !g || !b->e) {
+        free(g);
+        book_free(b);
+        return NULL;
+    }
+    for (int i = 0; i < OPENINGS_COUNT; i++) {
+        char buf[512], *save;
+        snprintf(buf, sizeof(buf), "%s", OPENINGS[i].moves);
+        game_reset(g);
+        for (char *t = strtok_r(buf, " ", &save); t; t = strtok_r(NULL, " ", &save)) {
+            Move m;
+            if (!play_uci(g, t, &m)) break;
+            U64 key = book_key(&g->pos);
+            int found = 0;
+            for (int j = 0; j < b->count && !found; j++) {
+                Entry *e = &b->e[j];
+                if (e->key == key && e->from == FROM(m) && e->to == TO(m)) {
+                    e->weight++;
+                    found = 1;
+                }
+            }
+            if (!found && b->count < cap) {
+                Entry *e = &b->e[b->count++];
+                e->key = key;
+                e->from = (short)FROM(m);
+                e->to = (short)TO(m);
+                e->promo = (short)(FLAGS(m) & FLAG_PROMOTION);
+                e->weight = 1;
+            }
+            game_play(g, m);
+        }
+    }
+    free(g);
+    qsort(b->e, (size_t)b->count, sizeof(Entry), by_key);
+    return b;
+}
+
+void book_free(Book *b)
+{
+    if (!b) return;
+    free(b->e);
+    free(b);
+}
+
+/* A book gives king-takes-rook for castling; dchess moves the king two. */
+static int decode(const GameState *g, const Entry *e, Move *out)
+{
+    int to = e->to, piece = game_piece_at(g, e->from);
+    if ((piece == K && e->from == e1) || (piece == k && e->from == e8)) {
+        if (e->to == h1 || e->to == h8) to = e->from + 2;
+        else if (e->to == a1 || e->to == a8) to = e->from - 2;
+    }
+    return game_find_move(g, e->from, to, e->promo, out);
+}
+
+Move book_pick(const Book *b, const GameState *g, int level, unsigned *rng)
+{
+    if (!b || !b->count) return 0;
+    int plies = g->move_count - g->log_start;
+    if ((level == DIFF_EASY && plies >= 8) || (level == DIFF_MEDIUM && plies >= 16)) return 0;
+
+    U64 key = book_key(&g->pos);
+    int lo = 0, hi = b->count;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (b->e[mid].key < key) lo = mid + 1;
+        else hi = mid;
+    }
+    Move moves[64];
+    int weights[64], n = 0, total = 0;
+    for (int i = lo; i < b->count && b->e[i].key == key && n < 64; i++) {
+        Move m;
+        if (!decode(g, &b->e[i], &m)) continue;
+        moves[n] = m;
+        weights[n] = b->e[i].weight > 0 ? b->e[i].weight : 1;
+        total += weights[n++];
+    }
+    if (!n) return 0;
+    *rng = *rng * 1103515245u + 12345u;
+    int r = (int)((*rng >> 8) % (unsigned)total);
+    for (int i = 0; i < n; i++) {
+        if (r < weights[i]) return moves[i];
+        r -= weights[i];
+    }
+    return moves[n - 1];
+}
+
+/* Names always come from the built-in lines, whatever book is in use. */
+static Name *names;
+static int   name_count;
+
+static void load_names(void)
+{
+    if (names) return;
+    GameState *g = malloc(sizeof(GameState));
+    names = malloc((size_t)OPENINGS_COUNT * sizeof(Name));
+    if (!g || !names) {
+        free(g);
+        return;
+    }
+    for (int i = 0; i < OPENINGS_COUNT; i++) {
+        char buf[512], *save;
+        snprintf(buf, sizeof(buf), "%s", OPENINGS[i].moves);
+        game_reset(g);
+        int ok = 1;
+        for (char *t = strtok_r(buf, " ", &save); t && ok; t = strtok_r(NULL, " ", &save)) {
+            Move m;
+            ok = play_uci(g, t, &m);
+            if (ok) game_play(g, m);
+        }
+        if (ok) {
+            names[name_count].key = book_key(&g->pos);
+            names[name_count++].line = &OPENINGS[i];
+        }
+    }
+    free(g);
+    qsort(names, (size_t)name_count, sizeof(Name), name_by_key);
+}
+
+static const OpeningLine *named(U64 key)
+{
+    Name probe = { key, NULL };
+    Name *hit = bsearch(&probe, names, (size_t)name_count, sizeof(Name), name_by_key);
+    return hit ? hit->line : NULL;
+}
+
+const char *book_opening(const GameState *g, const char **eco)
+{
+    if (g->start_fen[0]) return NULL;
+    load_names();
+    if (!names) return NULL;
+
+    Position pos;
+    parse_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &pos, NULL, NULL);
+    const OpeningLine *best = NULL;
+    for (int i = 0; i < g->move_count; i++) {
+        make_move(&pos, g->move_made[i]);
+        const OpeningLine *l = named(book_key(&pos));
+        if (l) best = l;
+    }
+    if (best && eco) *eco = best->eco;
+    return best ? best->name : NULL;
+}
