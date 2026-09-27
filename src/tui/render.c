@@ -518,6 +518,11 @@ static void draw_board(WINDOW *win, const TUIState *state)
     draw_board_grid(win, state, sr, sc, sq_h, sq_w);
 }
 
+void render_piece(WINDOW *win, int r, int c, int piece, attr_t attr)
+{
+    put_glyph(win, r, c, piece, attr);
+}
+
 void render_all(WINDOW *board, WINDOW *side, WINDOW *cmd, const TUIState *state)
 {
     werase(board);

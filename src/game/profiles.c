@@ -238,7 +238,7 @@ static int has_legacy(const char *games, const char *name)
 }
 
 int profiles_first_run(ProfileList *l, const char *user, const DchessStats *old,
-                       const char *games)
+                       const char *games, const char *theme)
 {
     char path[512];
     if (!profiles_path(path, sizeof(path))) return 0;
@@ -255,6 +255,7 @@ int profiles_first_run(ProfileList *l, const char *user, const DchessStats *old,
         profiles_add(l, NULL, "player", NULL, 0);
 
     Profile *p = &l->p[0];
+    if (theme) snprintf(p->theme, sizeof(p->theme), "%s", theme);
     if (old)
         for (int i = 0; i < 3; i++) {
             p->legacy_games  += old->games_played[i];
