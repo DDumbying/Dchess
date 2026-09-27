@@ -83,7 +83,8 @@ void cli_help(void)
         "    --replay <file.pgn>\n"
         "          Step through the games in a PGN file; pick one when there\n"
         "          are several.\n"
-        "\n"        "    --book <builtin|off|path.bin>\n"
+        "\n"
+        "    --book <builtin|off|path.bin>\n"
         "          Opening book for dchess's engine: the built-in one, none,\n"
         "          or a Polyglot .bin, for this run. The in-game 'book' command\n"
         "          sets the one remembered per profile.\n"
@@ -321,7 +322,6 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
-        /* --engines ─────────────────────────────────────────────────── */
         if (strcmp(a, "--replay") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),
@@ -362,6 +362,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             snprintf(args->profile, sizeof(args->profile), "%s", val);
             continue;
         }
+        /* --engines ─────────────────────────────────────────────────── */
         if (strcmp(a, "--engines") == 0) {
             args->list_engines = 1;
             return 0;
