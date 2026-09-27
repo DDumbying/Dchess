@@ -278,8 +278,27 @@ static int is_passed(int sq, int side, U64 enemy_pawns)
     return 1;
 }
 
-static const int passed_mg[8] = { 0, 5, 10, 15, 25, 40, 60, 0 };
-static const int passed_eg[8] = { 0, 10, 20, 35, 55, 85, 120, 0 };
+static const EvalParams hand_set = { {
+    -10, -20,                        /* doubled */
+    -15, -10,                        /* isolated */
+    5, 10, 15, 25, 40, 60,           /* passed, middlegame, ranks 1..6 */
+    10, 20, 35, 55, 85, 120,         /* passed, endgame */
+    4, 7, 7, 14,                     /* mobility: squares expected, N B R Q */
+    4, 5, 2, 1,                      /* mobility weight, middlegame */
+    4, 5, 4, 2,                      /* mobility weight, endgame */
+    10, -15,                         /* king shield pawn, open file by the king */
+    30, 50,                          /* bishop pair */
+    20, 10, 10, 5,                   /* rook on an open, a half-open file */
+} };
+_Static_assert(sizeof(hand_set.v) / sizeof(int) == EP_COUNT, "hand_set lists every parameter");
+
+static EvalParams params = hand_set;
+
+const EvalParams *eval_default_params(void) { return &hand_set; }
+const EvalParams *eval_params(void)         { return &params; }
+void eval_set_params(const EvalParams *p)   { params = *p; }
+
+#define W(i) (params.v[i])
 
 static void pawn_terms(const Position *pos, int side, int *mg, int *eg)
 {
@@ -287,21 +306,24 @@ static void pawn_terms(const Position *pos, int side, int *mg, int *eg)
     int files = pawn_files(own);
     for (int f = 0; f < 8; f++) {
         int n = count_bits(own & (FILE_A << f));
-        if (n > 1) { *mg -= 10 * (n - 1); *eg -= 20 * (n - 1); }
+        if (n > 1) { *mg += W(EP_DOUBLED_MG) * (n - 1); *eg += W(EP_DOUBLED_EG) * (n - 1); }
         int neighbours = (f > 0 && (files >> (f - 1) & 1)) || (f < 7 && (files >> (f + 1) & 1));
-        if (n && !neighbours) { *mg -= 15 * n; *eg -= 10 * n; }
+        if (n && !neighbours) { *mg += W(EP_ISOLATED_MG) * n; *eg += W(EP_ISOLATED_EG) * n; }
     }
     U64 bb = own;
     while (bb) {
         int sq = pop_lsb(&bb);
-        if (is_passed(sq, side, enemy)) { int r = rel_rank(sq, side); *mg += passed_mg[r]; *eg += passed_eg[r]; }
+        if (is_passed(sq, side, enemy)) {
+            int r = rel_rank(sq, side);      /* 1..6 for a pawn */
+            *mg += W(EP_PASSED_MG + r - 1);
+            *eg += W(EP_PASSED_EG + r - 1);
+        }
     }
 }
 
 /* Squares each piece reaches beyond what it usually does, weighted. */
 static void mobility_terms(const Position *pos, int side, int *mg, int *eg)
 {
-    static const int typical[4] = { 4, 7, 7, 14 }, wmg[4] = { 4, 5, 2, 1 }, weg[4] = { 4, 5, 4, 2 };
     int o = side == WHITE ? 0 : 6;
     U64 own = pos->occupancies[side], occ = pos->occupancies[BOTH];
     for (int k = 0; k < 4; k++) {
@@ -310,9 +332,9 @@ static void mobility_terms(const Position *pos, int side, int *mg, int *eg)
             int sq = pop_lsb(&bb);
             U64 a = k == 0 ? knight_attacks[sq] : k == 1 ? bishop_attacks(sq, occ)
                   : k == 2 ? rook_attacks(sq, occ) : queen_attacks(sq, occ);
-            int n = count_bits(a & ~own) - typical[k];
-            *mg += n * wmg[k];
-            *eg += n * weg[k];
+            int n = count_bits(a & ~own) - W(EP_MOB_TYPICAL + k);
+            *mg += n * W(EP_MOB_MG + k);
+            *eg += n * W(EP_MOB_EG + k);
         }
     }
 }
@@ -326,10 +348,10 @@ static void king_terms(const Position *pos, int side, int *mg)
     U64 own = pos->bitboards[side == WHITE ? P : p];
     for (int f = file - 1; f <= file + 1; f++) {
         if (f < 0 || f > 7) continue;
-        if (!(own & (FILE_A << f))) *mg -= 15;
+        if (!(own & (FILE_A << f))) *mg += W(EP_OPEN_FILE);
         for (int d = 1; d <= 2; d++) {
             int r = side == WHITE ? rank + d : rank - d;
-            if (r >= 0 && r <= 7 && (own & (1ULL << (r * 8 + f)))) { *mg += 10; break; }
+            if (r >= 0 && r <= 7 && (own & (1ULL << (r * 8 + f)))) { *mg += W(EP_SHIELD); break; }
         }
     }
 }
@@ -337,13 +359,13 @@ static void king_terms(const Position *pos, int side, int *mg)
 static void extra_terms(const Position *pos, int side, int *mg, int *eg)
 {
     int o = side == WHITE ? 0 : 6;
-    if (count_bits(pos->bitboards[B + o]) >= 2) { *mg += 30; *eg += 50; }
+    if (count_bits(pos->bitboards[B + o]) >= 2) { *mg += W(EP_PAIR_MG); *eg += W(EP_PAIR_EG); }
     U64 own = pos->bitboards[P + o], all = pos->bitboards[P] | pos->bitboards[p];
     U64 rooks = pos->bitboards[R + o];
     while (rooks) {
         int f = pop_lsb(&rooks) % 8;
-        if (!(all & (FILE_A << f)))      { *mg += 20; *eg += 10; }
-        else if (!(own & (FILE_A << f))) { *mg += 10; *eg += 5; }
+        if (!(all & (FILE_A << f)))      { *mg += W(EP_ROOK_OPEN_MG); *eg += W(EP_ROOK_OPEN_EG); }
+        else if (!(own & (FILE_A << f))) { *mg += W(EP_ROOK_HALF_MG); *eg += W(EP_ROOK_HALF_EG); }
     }
 }
 
