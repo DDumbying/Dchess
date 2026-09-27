@@ -136,6 +136,9 @@ static void test_many_opponents(void)
     stats_view_build(&l, &p, NOW, &v);
     check("opponents are capped", v.opp_count == SV_OPP_MAX);
     check("but every game counts in the totals", v.total.games == 70);
+    p.legacy_games = 3; p.legacy_wins = 1; p.legacy_losses = 1; p.legacy_draws = 1;
+    stats_view_build(&l, &p, NOW, &v);
+    check("the before-profiles row keeps its place", row(&v, "before profiles") != NULL);
     records_free(&l);
 }
 

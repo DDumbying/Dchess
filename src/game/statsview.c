@@ -50,6 +50,8 @@ void stats_view_build(const RecordList *l, const Profile *p, long now, StatsView
     const char *who = p->name;
     long plies = 0, seconds = 0;
     int run = 0;
+    /* Claimed first so a long list of opponents cannot crowd it out. */
+    SvOpponent *legacy = p->legacy_games > 0 ? opponent(v, "before profiles") : NULL;
 
     for (int i = 0; i < l->count; i++) {
         const Record *r = &l->r[i];
@@ -99,14 +101,11 @@ void stats_view_build(const RecordList *l, const Profile *p, long now, StatsView
         v->avg_seconds = (int)(seconds / v->total.games);
     }
 
-    if (p->legacy_games > 0) {
-        SvOpponent *op = opponent(v, "before profiles");
-        if (op) {
-            op->games = p->legacy_games;
-            op->wins = p->legacy_wins;
-            op->losses = p->legacy_losses;
-            op->draws = p->legacy_draws;
-        }
+    if (legacy) {
+        legacy->games = p->legacy_games;
+        legacy->wins = p->legacy_wins;
+        legacy->losses = p->legacy_losses;
+        legacy->draws = p->legacy_draws;
         v->total.games  += p->legacy_games;
         v->total.wins   += p->legacy_wins;
         v->total.losses += p->legacy_losses;
