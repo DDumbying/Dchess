@@ -1,4 +1,5 @@
 #include "tui/launcher.h"
+#include "tui/art.h"
 #include "tui/colors.h"
 #include "tui/commands.h"
 #include "tui/engines_tui.h"
@@ -11,6 +12,7 @@
 #include "utils/cli.h"
 #include "utils/constants.h"
 #include "utils/dash.h"
+#include "utils/text.h"
 #include "utils/theme.h"
 #include <ncurses.h>
 #include <stdio.h>
@@ -20,10 +22,14 @@
 #include <limits.h>
 #include <wchar.h>
 
-enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_THEME, ROW_START, ROW_COUNT };
+enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_BOOK, ROW_THEME, ROW_START, ROW_COUNT };
 enum { FOCUS_PROFILES, FOCUS_GAME };
 
 #define LEFT_W  24
+#define CARD_W  28
+#define BLOCK_H  14      /* panel height of the dashboard block */
+#define BLOCK_W  132
+#define START_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 #define GAME_ROWS  10
 
 typedef struct {
@@ -31,6 +37,8 @@ typedef struct {
     int        use_custom_fen;
     char       fen[128];
     int        theme;
+    char       book[256], custom_book[256];   /* builtin, off or a path */
+    int        book_touched;
     int        row, focus, pcursor;   /* pcursor == count: "+ new profile" */
     char       msg[96];
     int        msg_err;
@@ -97,6 +105,12 @@ static void apply_profile(TUIState *s, Launch *L)
     const Profile *p = &s->profiles.p[s->profiles.active];
     L->sel[WHITE] = word_player(s, p->white, player_profile(p->name));
     L->sel[BLACK] = word_player(s, p->black, player_builtin(DIFF_MEDIUM));
+    if (!s->cli_book[0]) {
+        snprintf(L->book, sizeof(L->book), "%s", p->book[0] ? p->book : "builtin");
+        L->book_touched = 0;
+    }
+    if (strcmp(L->book, "builtin") && strcmp(L->book, "off"))
+        snprintf(L->custom_book, sizeof(L->custom_book), "%s", L->book);
     int t = p->theme[0] ? theme_from_name(p->theme) : -1;
     if (t >= 0 && t != L->theme) {
         L->theme = t;
@@ -150,9 +164,9 @@ static WINDOW *panel(int h, int w, int y, int x, const char *title, int focused)
     return p;
 }
 
-static void draw_profiles(TUIState *s, Launch *L, int h, int y)
+static void draw_profiles(TUIState *s, Launch *L, int h, int y, int x)
 {
-    WINDOW *p = panel(h, LEFT_W, y, 0, "profiles", L->focus == FOCUS_PROFILES);
+    WINDOW *p = panel(h, LEFT_W, y, x, "profiles", L->focus == FOCUS_PROFILES);
     if (!p) return;
     int rows = h - 2, top = L->pcursor >= rows ? L->pcursor - rows + 1 : 0;
     for (int i = top; i <= s->profiles.count && i - top < rows; i++) {
@@ -179,37 +193,6 @@ static void draw_profiles(TUIState *s, Launch *L, int h, int y)
     delwin(p);
 }
 
-static void draw_recent(TUIState *s, Launch *L, int h, int y)
-{
-    WINDOW *p = panel(h, LEFT_W, y, 0, "recent", 0);
-    if (!p) return;
-    const Record *r[8];
-    int max = h - 2 < 8 ? h - 2 : 8;
-    int n = max > 0 ? records_recent(&L->rec, active_name(s), r, max) : 0;
-    if (!n) {
-        wattron(p, COLOR_PAIR(CP_HINT));
-        mvwprintw(p, 1, 2, "no games yet");
-        wattroff(p, COLOR_PAIR(CP_HINT));
-    }
-    for (int i = 0; i < n; i++) {
-        int mine_white = r[i]->white_kind == KIND_PROFILE && strcmp(r[i]->white, active_name(s)) == 0;
-        int o = mine_white ? r[i]->result : -r[i]->result;
-        char opp[PLAYER_NAME_MAX + 1];
-        stats_opponent_name(r[i], mine_white ? WHITE : BLACK, opp, sizeof(opp));
-        char when[16];
-        age(records_time(r[i]), when, sizeof(when));
-        int pair = o > 0 ? CP_STATUS_OK : o < 0 ? CP_STATUS_ERR : CP_ACC_CLOCK;
-        wattron(p, COLOR_PAIR(pair) | A_BOLD);
-        mvwprintw(p, 1 + i, 2, "%c", o > 0 ? 'W' : o < 0 ? 'L' : 'D');
-        wattroff(p, COLOR_PAIR(pair) | A_BOLD);
-        mvw_fit(p, 1 + i, 4, LEFT_W - 11, opp);
-        wattron(p, COLOR_PAIR(CP_HINT));
-        mvwprintw(p, 1 + i, LEFT_W - 5, "%3s", when);
-        wattroff(p, COLOR_PAIR(CP_HINT));
-    }
-    delwin(p);
-}
-
 static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int small)
 {
     char title[64];
@@ -218,11 +201,13 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
     WINDOW *p = panel(h, w, y, x, title, L->focus == FOCUS_GAME);
     if (!p) return;
 
-    static const char *names[] = { "White", "Black", "Pos  ", "Theme" };
-    int val_w = w - 16;
+    static const char *names[] = { "White", "Black", "Pos  ", "Book ", "Theme" };
+    int board = !small && w >= 16 + 19 + 12 && h >= 12;
+    int top = board ? 1 + (h - 2 - 11) / 2 : 1, fy = board ? top + 2 : 2;
+    int val_w = w - 16 - (board ? 19 : 0);
     if (val_w < 6) val_w = 6;
     for (int r = 0; r < ROW_START; r++) {
-        char label[160];
+        char label[300];
         if (r <= ROW_BLACK) {
             player_label(&L->sel[r], label, sizeof(label));
             const EngineEntry *e = L->sel[r].kind == PLAYER_UCI ? engines_find(&s->engines, L->sel[r].name) : NULL;
@@ -232,6 +217,10 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
                 engine_strength_label(e, st, sizeof(st));
                 snprintf(label + len, sizeof(label) - len, " · %s", st);
             }
+        } else if (r == ROW_BOOK) {
+            const char *slash = strrchr(L->book, '/');
+            snprintf(label, sizeof(label), "%s", !strcmp(L->book, "builtin") ? "built-in"
+                     : slash ? slash + 1 : L->book);
         } else if (r == ROW_POSITION) {
             snprintf(label, sizeof(label), "%s", L->use_custom_fen
                      ? (L->fen[0] ? L->fen : "<enter to type a FEN>") : "Standard");
@@ -240,41 +229,92 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
         }
         int on = L->focus == FOCUS_GAME && L->row == r;
         wattron(p, COLOR_PAIR(CP_HINT));
-        mvwprintw(p, 2 + r, 3, "%s", names[r]);
+        mvwprintw(p, fy + r, 3, "%s", names[r]);
         wattroff(p, COLOR_PAIR(CP_HINT));
         if (on) wattron(p, A_REVERSE);
-        mvwprintw(p, 2 + r, 10, "%s ", on ? "◂" : " ");
-        mvw_fit(p, 2 + r, 12, val_w, label);
-        mvwprintw(p, 2 + r, 12 + val_w, " %s", on ? "▸" : " ");
+        mvwprintw(p, fy + r, 10, "%s ", on ? "◂" : " ");
+        mvw_fit(p, fy + r, 12, val_w, label);
+        mvwprintw(p, fy + r, 12 + val_w, " %s", on ? "▸" : " ");
         if (on) wattroff(p, A_REVERSE);
+    }
+    if (board) {
+        Position pos;
+        const char *fen = L->use_custom_fen && L->fen[0] ? L->fen : START_FEN;
+        if (parse_fen(fen, &pos, NULL, NULL) || parse_fen(START_FEN, &pos, NULL, NULL))
+            draw_mini_board(p, top, w - 19, &pos);
     }
     int on = L->focus == FOCUS_GAME && L->row == ROW_START;
     wattron(p, COLOR_PAIR(CP_STATUS_OK) | A_BOLD | (on ? A_REVERSE : 0));
-    mvwprintw(p, h - 2, (w - 18) / 2 > 1 ? (w - 18) / 2 : 1, "  ▶ START GAME  ");
+    mvwprintw(p, board ? top + 10 : h - 2, (w - 18) / 2 > 1 ? (w - 18) / 2 : 1, "  ▶ START GAME  ");
     wattroff(p, COLOR_PAIR(CP_STATUS_OK) | A_BOLD | (on ? A_REVERSE : 0));
     delwin(p);
 }
 
-static void draw_winrate(TUIState *s, Launch *L, int y, int x, int w)
+static void draw_card(TUIState *s, Launch *L, int h, int y, int x)
 {
-    static const char *bars[] = { "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" };
-    float v[30];
-    int n = records_winrate(&L->rec, active_name(s), v, 30);
-    if (w < 16) return;
-    wattron(stdscr, COLOR_PAIR(CP_HINT));
-    mvprintw(y, x, "win rate ");
-    wattroff(stdscr, COLOR_PAIR(CP_HINT));
-    if (!n) return;
-    for (int i = 0; i < n && 9 + i < w - 6; i++) {
-        int lv = (int)(v[i] * 7.0f + 0.5f);
-        attron(COLOR_PAIR(CP_RAMP_BASE + dash_ramp_index(lv, 8, 8)));
-        mvprintw(y, x + 9 + i, "%s", bars[lv]);
-        attroff(COLOR_PAIR(CP_RAMP_BASE + dash_ramp_index(lv, 8, 8)));
+    const Profile *pr = &s->profiles.p[s->profiles.active];
+    WINDOW *p = panel(h, CARD_W, y, x, pr->name, 0);
+    if (!p) return;
+    static StatsView sv;
+    stats_view_build(&L->rec, pr, (long)time(NULL), &sv);
+    int in = CARD_W - 4;
+    RecordTally t = sv.total;
+    if (!t.games) {
+        wattron(p, COLOR_PAIR(CP_HINT));
+        mvw_fit(p, 1, 2, in, "no games yet");
+        mvw_fit(p, 2, 2, in, "⏎ to play");
+        wattroff(p, COLOR_PAIR(CP_HINT));
+        delwin(p);
+        return;
     }
-    RecordTally t = tally(L, &s->profiles.p[s->profiles.active]);
-    attron(COLOR_PAIR(CP_STATUS_OK) | A_BOLD);
-    mvprintw(y, x + 10 + (n < w - 15 ? n : w - 15), "%d%%", t.games ? 100 * t.wins / t.games : 0);
-    attroff(COLOR_PAIR(CP_STATUS_OK) | A_BOLD);
+    char line[64];
+    snprintf(line, sizeof(line), "%dW %dL %dD", t.wins, t.losses, t.draws);
+    wattron(p, COLOR_PAIR(CP_INFO_VAL) | A_BOLD);
+    mvw_fit(p, 1, 2, in, line);
+    wattroff(p, COLOR_PAIR(CP_INFO_VAL) | A_BOLD);
+    int pct = 100 * t.wins / t.games, bar = in - 5, fill = bar * pct / 100;
+    wattron(p, COLOR_PAIR(CP_STATUS_OK));
+    for (int i = 0; i < bar; i++) mvwaddstr(p, 2, 2 + i, i < fill ? "█" : "░");
+    wattroff(p, COLOR_PAIR(CP_STATUS_OK));
+    mvwprintw(p, 2, 2 + bar, " %3d%%", pct);
+    int row = 3;
+    if (sv.streak) {
+        snprintf(line, sizeof(line), "streak %c%d", sv.streak, sv.streak_len);
+        wattron(p, COLOR_PAIR(CP_HINT));
+        mvw_fit(p, row++, 2, in, line);
+        wattroff(p, COLOR_PAIR(CP_HINT));
+    }
+    row++;
+    for (int i = 0; i < sv.recent_count && row < h - 1; i++, row++) {
+        const Record *r = sv.recent[i];
+        int mine_white = r->white_kind == KIND_PROFILE && strcmp(r->white, pr->name) == 0;
+        int o = mine_white ? r->result : -r->result;
+        char opp[PLAYER_NAME_MAX + 1], when[16];
+        stats_opponent_name(r, mine_white ? WHITE : BLACK, opp, sizeof(opp));
+        age(records_time(r), when, sizeof(when));
+        int pair = o > 0 ? CP_STATUS_OK : o < 0 ? CP_STATUS_ERR : CP_ACC_CLOCK;
+        wattron(p, COLOR_PAIR(pair) | A_BOLD);
+        mvwprintw(p, row, 2, "%c", o > 0 ? 'W' : o < 0 ? 'L' : 'D');
+        wattroff(p, COLOR_PAIR(pair) | A_BOLD);
+        mvw_fit(p, row, 4, in - 8, opp);
+        wattron(p, COLOR_PAIR(CP_HINT));
+        mvwprintw(p, row, CARD_W - 5, "%3s", when);
+        wattroff(p, COLOR_PAIR(CP_HINT));
+    }
+    delwin(p);
+}
+
+static void draw_header(TUIState *s, Launch *L, int hdr, int y, int x, int cols)
+{
+    draw_logo(stdscr, y, x + 1, hdr == 1);
+    char who[160];
+    snprintf(who, sizeof(who), "%s · %s", active_name(s), theme_name(L->theme));
+    int w = text_width(who), room = cols - logo_width(hdr == 1) - 4;
+    if (room < 8) return;
+    if (w > room) w = room;
+    attron(COLOR_PAIR(CP_HINT));
+    mvw_fit(stdscr, y + (hdr == 3), x + cols - 1 - w, w, who);
+    attroff(COLOR_PAIR(CP_HINT));
 }
 
 static void draw(TUIState *s, Launch *L)
@@ -282,35 +322,42 @@ static void draw(TUIState *s, Launch *L)
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
     int small = cols < 80 || rows < 20;
+    int hdr = !small && rows >= 22 ? 3 : 1;
     bkgd(COLOR_PAIR(CP_CANVAS));
     erase();
 
+    int bh = rows - 2 - hdr, x0 = 0, y0 = 0, w = cols;
     if (small) {
-        int h = GAME_ROWS < rows - 3 ? GAME_ROWS : rows - 3;
-        draw_game(s, L, h, cols, 0, 0, 1);
-        if (rows > h + 3) draw_winrate(s, L, h + 1, 2, cols - 2);
+        draw_header(s, L, hdr, 0, 0, cols);
+        draw_game(s, L, GAME_ROWS < bh ? GAME_ROWS : bh, cols, hdr, 0, 1);
     } else {
-        int ph = s->profiles.count + 3;
-        if (ph > (rows - 1) / 2) ph = (rows - 1) / 2;
-        draw_profiles(s, L, ph, 0);
-        draw_recent(s, L, rows - 1 - ph, ph);
-        draw_game(s, L, GAME_ROWS, cols - LEFT_W, 0, LEFT_W, 0);
-        draw_winrate(s, L, GAME_ROWS + 1, LEFT_W + 2, cols - LEFT_W - 2);
+        /* One block, centred: header, a blank row, then the panels. */
+        int ph = bh - 1 < BLOCK_H ? bh - 1 : BLOCK_H;
+        if (w > BLOCK_W) { x0 = (cols - BLOCK_W) / 2; w = BLOCK_W; }
+        y0 = (rows - 2 - hdr - 1 - ph) / 2;
+        if (y0 < 0) y0 = 0;
+        draw_header(s, L, hdr, y0, x0, w);
+        int py = y0 + hdr + 1, card = w >= 100 && s->profiles.count;
+        int gw = w - LEFT_W - (card ? CARD_W : 0);
+        draw_profiles(s, L, ph, py, x0);
+        draw_game(s, L, ph, gw, py, x0 + LEFT_W, 0);
+        if (card) draw_card(s, L, ph, py, x0 + w - CARD_W);
+        y0 = py + ph;
     }
 
     int pair = L->msg_err ? CP_STATUS_ERR : CP_STATUS_OK;
     attron(COLOR_PAIR(pair));
-    mvw_fit(stdscr, rows - 2, small ? 2 : LEFT_W + 2, cols - LEFT_W - 4 > 10 ? cols - LEFT_W - 4 : cols - 4, L->msg);
+    if (small) mvw_fit(stdscr, rows - 2, 2, cols - 4, L->msg);
+    else if (y0 < rows - 1) mvw_fit(stdscr, y0, x0 + LEFT_W + 2, w - LEFT_W - 4, L->msg);
     attroff(COLOR_PAIR(pair));
     attron(COLOR_PAIR(CP_HINT));
     mvw_fit(stdscr, rows - 1, 1, cols - 2, small
-             ? "↑↓ move  ←→ change  p profile  e engines  s stats  esc quit"
-             : "tab panel  ↑↓ move  ←→ change  n new  r rename  d delete  e engines  s stats  esc quit");
+             ? "⏎ play  ↑↓ move  ←→ change  p profile  e engines  s stats  esc quit"
+             : "⏎ play  tab panel  ↑↓ move  ←→ change  n new  r rename  d delete  e engines  s stats  esc quit");
     attroff(COLOR_PAIR(CP_HINT));
     refresh();
 }
 
-/* Edits `buf` on the message row. 1 on Enter, 0 on Esc. */
 static int prompt(const char *label, char *buf, size_t size)
 {
     int rows = getmaxy(stdscr);
@@ -404,6 +451,12 @@ static void change_row(TUIState *s, Launch *L, int dir)
         L->sel[L->row] = cycle_player(s, (i + c + dir) % c);
     } else if (L->row == ROW_POSITION) {
         L->use_custom_fen = !L->use_custom_fen;
+    } else if (L->row == ROW_BOOK) {
+        const char *opts[3] = { "builtin", "off", L->custom_book };
+        int n = L->custom_book[0] ? 3 : 2, i = 0;
+        while (i < n && strcmp(L->book, opts[i])) i++;
+        snprintf(L->book, sizeof(L->book), "%s", opts[(i + n + dir) % n]);
+        L->book_touched = 1;
     } else if (L->row == ROW_THEME) {
         L->theme = (L->theme + theme_count() + dir) % theme_count();
         init_colors(L->theme);
@@ -424,6 +477,10 @@ static int start(TUIState *s, Launch *L)
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", L->fen);
     records_free(&L->rec);
     tui_init(s, &chosen);
+    if (L->book_touched) {   /* chosen here, so remembered like the book command */
+        snprintf(s->book_choice, sizeof(s->book_choice), "%s", L->book);
+        s->cli_book[0] = '\0';
+    }
     s->show_onboarding = 0;
     return 1;
 }
@@ -438,6 +495,9 @@ int tui_launcher(TUIState *state)
     L.sel[WHITE] = state->players[WHITE];
     L.sel[BLACK] = state->players[BLACK];
     L.pcursor = state->profiles.active;
+    snprintf(L.book, sizeof(L.book), "%s", state->book_choice);
+    if (strcmp(L.book, "builtin") && strcmp(L.book, "off"))
+        snprintf(L.custom_book, sizeof(L.custom_book), "%s", L.book);
     records_path(L.games, sizeof(L.games));
     records_load(L.games, &L.rec);
     if (state->profiles.count && !state->cli_setup) apply_profile(state, &L);
