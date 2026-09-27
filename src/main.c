@@ -8,6 +8,7 @@
 #include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 int main(int argc, char **argv)
 {
@@ -23,6 +24,9 @@ int main(int argc, char **argv)
 
     if (args.show_help)    cli_help();     /* exits */
     if (args.show_version) cli_version();  /* exits */
+    /* Engines are started through pipes with no arguments: a GUI (or
+     * dchess's own engines screen) gets UCI without needing --uci. */
+    if (argc == 1 && !isatty(STDIN_FILENO)) args.uci = 1;
     if (args.uci) {
         init_attacks();
         return uci_engine_run(stdin, stdout);

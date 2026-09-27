@@ -246,9 +246,11 @@ static const int *pesto_mg[6] = { pesto_mg_pawn_table, pesto_mg_knight_table, pe
 static const int *pesto_eg[6] = { pesto_eg_pawn_table, pesto_eg_knight_table, pesto_eg_bishop_table,
                                   pesto_eg_rook_table, pesto_eg_queen_table, pesto_eg_king_table };
 
-static EvalOptions eopt;   /* none on until measured; see eval_default_options() */
+/* The terms that measured as gains: PeSTO and king safety. The others,
+ * with these hand-set weights, did not (docs/overview.md, round 10). */
+static EvalOptions eopt = { 1, 0, 0, 1, 0 };
 
-EvalOptions eval_default_options(void) { EvalOptions o = { 0, 0, 0, 0, 0 }; return o; }
+EvalOptions eval_default_options(void) { EvalOptions o = { 1, 0, 0, 1, 0 }; return o; }
 void eval_set_options(const EvalOptions *o) { eopt = *o; }
 
 static const U64 FILE_A = 0x0101010101010101ULL;
