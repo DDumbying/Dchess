@@ -410,3 +410,24 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
                     + (finished.tv_nsec - started.tv_nsec) / 1000000L;
     return best;
 }
+
+int search_pv(const Position *pos, Move first, Move *out, int max)
+{
+    Position p = *pos;
+    U64 seen[64];
+    int n = 0;
+    Move m = first;
+    while (m && n < max && n < 64) {
+        seen[n] = hash_position(&p);
+        Position next = p;
+        if (!make_move(&next, m)) break;
+        out[n++] = m;
+        p = next;
+        U64 k = hash_position(&p);
+        for (int i = 0; i < n; i++)
+            if (seen[i] == k) return n;       /* a repetition ends the line */
+        const TTEntry *e = tt_probe(k);
+        m = e ? e->best : 0;
+    }
+    return n;
+}

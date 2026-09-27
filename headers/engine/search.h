@@ -22,6 +22,11 @@ typedef struct {
  * -- use has_legal_moves() for that. */
 SearchResult search(Position *pos, int max_depth, int time_limit_ms);
 
+/* The line the last search expects from `pos`: `first` (its best move),
+ * then the transposition table's best moves, up to `max`. Call it only
+ * while no search runs. */
+int search_pv(const Position *pos, Move first, Move *out, int max);
+
 /* Thread-safe; the one function here meant to be called from a different
  * thread than search() itself. Safe to call when nothing is running. */
 void search_cancel(void);
