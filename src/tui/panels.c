@@ -109,6 +109,12 @@ static void draw_eval_panel(WINDOW *p, const TUIState *state)
     panel_frame(p, "eval", CP_ACC_EVAL);
     int h, w;
     getmaxyx(p, h, w);
+    if (state->replay) {                /* no engine looks at a replay */
+        wattron(p, COLOR_PAIR(CP_HINT));
+        mvw_clip(p, h - 2, 2, "—");
+        wattroff(p, COLOR_PAIR(CP_HINT));
+        return;
+    }
 
     int rows = h - 3;   /* border top and bottom, and the value line */
     int cols = w - 4;
@@ -357,7 +363,14 @@ void draw_command_bar(WINDOW *cmd, const TUIState *state)
         const char *keys = state->replay_auto ? "space pause  esc back"
                          : "←→ step  home/end  space auto  p play  esc back";
         int kw = text_width(keys), sw = w - 4 - kw - 2;
-        if (state->status[0] && sw > 8) {
+        if (state->status[0] && sw <= 8) {       /* no room for both: the message wins */
+            wattron(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
+            mvw_fit(cmd, 2, 2, w - 4, state->status);
+            wattroff(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
+            wnoutrefresh(cmd);
+            return;
+        }
+        if (state->status[0]) {
             wattron(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
             mvw_fit(cmd, 2, 2, sw, state->status);
             wattroff(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);

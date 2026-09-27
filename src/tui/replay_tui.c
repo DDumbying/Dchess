@@ -87,11 +87,11 @@ int replay_open(TUIState *s, const char *path, long offset)
         wtimeout(in, s->replay_auto ? 1000 : -1);
         int ch = wgetch(in);
         if (ch == ERR) {
-            if (s->replay_ply < g->count) step(s, 1);
-            else s->replay_auto = 0;
+            step(s, 1);
+            if (s->replay_ply >= g->count) s->replay_auto = 0;
             continue;
         }
-        s->status[0] = '\0';
+        if (ch != KEY_RESIZE) s->status[0] = '\0';
         if (ch == 27) break;
         switch (ch) {
         case KEY_RESIZE:            tui_screen_resize(sc); break;

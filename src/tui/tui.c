@@ -476,6 +476,10 @@ Screen *tui_screen_open(TUIState *state)
 {
     Screen *sc = malloc(sizeof(*sc));
     if (!sc) return NULL;
+    while (screen_too_small()) {
+        screen_draw_too_small();
+        wgetch(stdscr);
+    }
     *sc = screen_create(state);
     return sc;
 }
