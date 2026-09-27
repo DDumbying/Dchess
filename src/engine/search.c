@@ -298,6 +298,9 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     if (cancel_check_due() && atomic_load(&cancel_requested))
         search_aborted = 1;
 
+    if (ply >= MAX_DEPTH - 1) return quiescence(pos, alpha, beta, 0, ply);
+    int in_check = is_in_check(pos, pos->side);
+    if (opt.check_ext && in_check) depth++;   /* no horizon in the middle of a check */
     if (depth == 0) return quiescence(pos, alpha, beta, 0, ply);
 
     U64 key = hash_position(pos);
@@ -315,7 +318,7 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     /* Null move: if passing still beats beta, a real move surely does. */
     if (opt.null_move && depth >= 3 && ply < MAX_DEPTH && !null_played[ply] &&
         beta < MATE_BOUND && has_pieces(pos, pos->side) &&
-        !is_in_check(pos, pos->side) && evaluate(pos) >= beta) {
+        !in_check && evaluate(pos) >= beta) {
         Position saved = *pos;
         pos->side ^= 1;
         pos->enpassant = NO_SQ;
@@ -349,14 +352,32 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         }
         legal++;
 
+        Move m = ml.moves[i];
+        int reduce = 0;
+        /* Quiet moves late in the ordering are rarely best: look shallower
+         * first, and properly only if they surprise. */
+        if (opt.lmr && legal >= 4 && depth >= 3 && !in_check &&
+            !(FLAGS(m) & (FLAG_CAPTURE | FLAG_PROMOTION)) &&
+            m != killers[ply][0] && m != killers[ply][1] && !is_in_check(pos, pos->side))
+            reduce = legal >= 8 && depth >= 6 ? 2 : 1;
+
         int score;
-        if (!opt.pvs || legal == 1) {
+        if (legal == 1) {
             score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
         } else {
-            /* Later moves only have to prove they are no better. */
-            score = -alpha_beta(pos, depth-1, ply+1, -alpha-1, -alpha);
-            if (score > alpha && score < beta && !search_aborted)
-                score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+            score = alpha + 1;
+            if (reduce)
+                score = -alpha_beta(pos, depth-1-reduce, ply+1, -alpha-1, -alpha);
+            if (score > alpha && !search_aborted) {
+                if (opt.pvs) {
+                    /* Later moves only have to prove they are no better. */
+                    score = -alpha_beta(pos, depth-1, ply+1, -alpha-1, -alpha);
+                    if (score > alpha && score < beta && !search_aborted)
+                        score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+                } else {
+                    score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+                }
+            }
         }
         memcpy(pos, &saved, sizeof(Position));
 
@@ -375,10 +396,7 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
 
     if (legal == 0) {
         /* Checkmate or stalemate */
-        int score = is_in_check(pos, pos->side)
-            ? -(MATE_SCORE - ply)
-            : 0;
-        return score;
+        return in_check ? -(MATE_SCORE - ply) : 0;
     }
 
     tt_store(key, depth, alpha, (alpha > orig_alpha) ? TT_EXACT : TT_ALPHA, best_move);
