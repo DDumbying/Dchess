@@ -12,9 +12,12 @@
  *   gcc -Iheaders -O2 tests/test_eval.c src/engine/[a-z]*.c src/utils/bitboard.c -o /tmp/test_eval
  *   /tmp/test_eval
  */
+#include <ctype.h>
 #include <stdio.h>
+#include <string.h>
 #include "engine/board.h"
 #include "engine/eval.h"
+#include "engine/fen.h"
 #include "utils/bitboard.h"
 #include "utils/constants.h"
 
@@ -143,6 +146,98 @@ static void test_bare_king_endgame_prefers_centralization(void)
           evaluate(&center) > evaluate(&corner));
 }
 
+/* The same position with colours swapped and the board turned round. */
+static void mirror_fen(const char *fen, char *out, size_t n)
+{
+    char board[128], side[4], castle[8], ep[4], rest[32] = "0 1";
+    sscanf(fen, "%127s %3s %7s %3s %31[^\n]", board, side, castle, ep, rest);
+    char *ranks[8], *save = NULL;
+    int nr = 0;
+    for (char *r = strtok_r(board, "/", &save); r && nr < 8; r = strtok_r(NULL, "/", &save)) ranks[nr++] = r;
+    char b[128] = "";
+    for (int i = nr - 1; i >= 0; i--) {
+        for (char *c = ranks[i]; *c; c++) *c = isupper((unsigned char)*c) ? tolower(*c) : toupper(*c);
+        strcat(b, ranks[i]);
+        if (i) strcat(b, "/");
+    }
+    char c2[8] = "";
+    if (strchr(castle, 'k')) strcat(c2, "K");
+    if (strchr(castle, 'q')) strcat(c2, "Q");
+    if (strchr(castle, 'K')) strcat(c2, "k");
+    if (strchr(castle, 'Q')) strcat(c2, "q");
+    if (!c2[0]) strcpy(c2, "-");
+    if (ep[0] != '-') ep[1] = ep[1] == '3' ? '6' : '3';
+    snprintf(out, n, "%s %s %s %s %s", b, side[0] == 'w' ? "b" : "w", c2, ep, rest);
+}
+
+static int eval_fen(const char *fen)
+{
+    Position pos;
+    parse_fen(fen, &pos, NULL, NULL);
+    return evaluate(&pos);
+}
+
+static void test_mirror_symmetry(void)
+{
+    printf("== colour symmetry, every term on ==\n");
+    static const char *fens[] = {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        "r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/R2QKB1R w KQ - 0 8",
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+        "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        "rnbqkbnr/pp1ppppp/8/2pP4/8/8/PPP1PPPP/RNBQKBNR w KQkq c6 0 3",
+        "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+        "8/P7/8/8/8/8/7p/K6k w - - 0 1",
+        "4k3/pppppppp/8/8/8/8/PPPPPPPP/4K3 b - - 0 1",
+        "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQ1RK1 b kq - 5 4",
+        "8/8/3k4/8/8/4K3/8/8 w - - 0 1",
+    };
+    EvalOptions all = { 1, 1, 1, 1, 1 };
+    eval_set_options(&all);
+    int ok = 1;
+    for (size_t i = 0; i < sizeof(fens) / sizeof(fens[0]); i++) {
+        char m[160];
+        mirror_fen(fens[i], m, sizeof(m));
+        int a = eval_fen(fens[i]), b = eval_fen(m);
+        if (a != b) { ok = 0; printf("    %d vs %d: %s\n", a, b, fens[i]); }
+    }
+    check("a position and its mirror score the same", ok);
+    EvalOptions none = { 0 };
+    eval_set_options(&none);
+}
+
+/* What one term adds to White's side of the score. */
+static int term(const char *fen, int which)
+{
+    EvalOptions o = { 0 }, none = { 0 };
+    int *f[] = { &o.pesto, &o.pawns, &o.mobility, &o.king, &o.extras };
+    *f[which] = 1;
+    eval_set_options(&o);
+    int with = eval_fen(fen);
+    eval_set_options(&none);
+    return with - eval_fen(fen);
+}
+
+static void test_terms(void)
+{
+    printf("== the terms ==\n");
+    enum { PESTO, PAWNS, MOB, KING, XTRA };
+    check("doubled, isolated pawns score below connected ones",
+          term("8/8/8/8/8/1P6/1P6/k6K w - - 0 1", PAWNS) < term("8/8/8/8/8/2P5/1P6/k6K w - - 0 1", PAWNS));
+    check("a passed pawn is worth more further up",
+          term("k7/8/4P3/8/8/8/8/7K w - - 0 1", PAWNS) > term("k7/8/8/8/8/4P3/8/7K w - - 0 1", PAWNS));
+    check("a central knight is more mobile than a cornered one",
+          term("k7/8/8/3N4/8/8/8/7K w - - 0 1", MOB) > term("k7/8/8/8/8/8/8/N6K w - - 0 1", MOB));
+    check("a shielded king scores above an exposed one (with queens on)",
+          term("q5k1/8/8/8/8/8/5PPP/Q5K1 w - - 0 1", KING) > term("q5k1/8/8/8/8/8/8/Q5K1 w - - 0 1", KING));
+    check("the bishop pair scores above bishop and knight",
+          term("k7/8/8/8/8/8/8/2B1BK2 w - - 0 1", XTRA) > term("k7/8/8/8/8/8/8/2B1NK2 w - - 0 1", XTRA));
+    check("PeSTO tables value a queen above a rook", term("k7/8/8/8/8/8/8/Q6K w - - 0 1", PESTO) >
+                                                     term("k7/8/8/8/8/8/8/R6K w - - 0 1", PESTO) - 1000);
+}
+
 int main(void)
 {
     init_attacks();
@@ -159,6 +254,8 @@ int main(void)
 
     printf("== king PST tapering ==\n");
     test_bare_king_endgame_prefers_centralization();
+    test_mirror_symmetry();
+    test_terms();
 
     printf("\n%s\n", failures == 0 ? "All eval tests passed."
                                    : "EVAL TEST FAILURES DETECTED.");
