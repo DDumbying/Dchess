@@ -162,18 +162,32 @@ static void draw_endings(Page *pg, int h, int w, int y, int x)
     WINDOW *p = panel(h, w, y, x, "endings", CP_ACC_CLOCK);
     if (!p) return;
     const StatsView *v = &pg->v;
-    const char *names[] = { "mate", "resign", "stalemate", "repetition", "50-move", "material" };
-    int counts[] = { v->mates, v->resigns, v->stalemates, v->repetitions, v->fifty, v->material };
-    int pairs[]  = { CP_STATUS_OK, CP_STATUS_ERR, CP_ACC_CLOCK, CP_ACC_CLOCK, CP_ACC_CLOCK, CP_ACC_CLOCK };
+    const char *names[] = { "mate", "resign", "stalemate", "repetition", "50-move", "material", "time" };
+    int counts[] = { v->mates, v->resigns, v->stalemates, v->repetitions, v->fifty, v->material, v->timeouts };
+    int pairs[]  = { CP_STATUS_OK, CP_STATUS_ERR, CP_ACC_CLOCK, CP_ACC_CLOCK, CP_ACC_CLOCK, CP_ACC_CLOCK,
+                     CP_STATUS_ERR };
     int most = 1, bar = w - 20 > 4 ? w - 20 : 4, row = 1;
-    for (int i = 0; i < 6; i++) if (counts[i] > most) most = counts[i];
-    for (int i = 0; i < 6 && row < h - 2; i++, row++) {
+    for (int i = 0; i < 7; i++) if (counts[i] > most) most = counts[i];
+    for (int i = 0; i < 7 && row < h - 2; i++, row++) {
         int fill = dash_bar_fill(counts[i], most, bar);
         wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, row, 2, "%-10s", names[i]); wattroff(p, COLOR_PAIR(CP_HINT));
         wattron(p, COLOR_PAIR(pairs[i]));
         for (int c = 0; c < bar; c++) mvwprintw(p, row, 13 + c, "%s", c < fill ? "█" : "░");
         wattroff(p, COLOR_PAIR(pairs[i]));
         mvwprintw(p, row, 14 + bar, "%3d", counts[i]);
+    }
+    /* The time controls played, below the endings while there is room. */
+    int timed_any = 0;
+    for (int c = 0; c < 5; c++) timed_any |= v->by_tc[c].games && c < 4;
+    if (timed_any && row < h - 3) row++;
+    for (int c = 0; c < 5 && timed_any && row < h - 2; c++) {
+        const SvTc *t = &v->by_tc[c];
+        if (!t->games) continue;
+        char line[48];
+        snprintf(line, sizeof(line), "%-10s %3d  %d-%d-%d", t->name, t->games, t->wins, t->draws, t->losses);
+        wattron(p, COLOR_PAIR(CP_HINT));
+        mvw_fit(p, row++, 2, w - 4, line);
+        wattroff(p, COLOR_PAIR(CP_HINT));
     }
     if (row < h - 1) {
         wattron(p, COLOR_PAIR(CP_HINT));

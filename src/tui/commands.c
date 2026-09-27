@@ -51,6 +51,10 @@ void tui_remember_setup(TUIState *state)
     player_word(&state->players[BLACK], p->black, sizeof(p->black));
     if (!state->cli_book[0])   /* --book is for one run */
         snprintf(p->book, sizeof(p->book), "%s", state->book_choice);
+    if (!state->cli_clock[0]) {   /* --clock is for one run */
+        if (tc_timed(&state->game.tc)) tc_format(&state->game.tc, p->clock, sizeof(p->clock));
+        else p->clock[0] = '\0';
+    }
     snprintf(p->analysis, sizeof(p->analysis), "%s",
              analysis_wanted(state->analysis_engine) ? state->analysis_engine : "");
     /* Saved with the file's own active profile: --profile is for one run. */

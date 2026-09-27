@@ -102,6 +102,33 @@ static void test_full(void)
     records_free(&l);
 }
 
+static void test_by_time_control(void)
+{
+    printf("== by time control ==\n");
+    snprintf(path, sizeof(path), "%s/tc.pgn", dir);
+    FILE *f = fopen(path, "w");
+    fputs("[Event \"x\"]\n[White \"saeed\"]\n[Black \"a\"]\n[Result \"1-0\"]\n[WhiteKind \"profile\"]\n"
+          "[BlackKind \"profile\"]\n[TimeControl \"60+0\"]\n[EndReason \"time\"]\n\n1-0\n\n", f);
+    fputs("[Event \"x\"]\n[White \"saeed\"]\n[Black \"a\"]\n[Result \"0-1\"]\n[WhiteKind \"profile\"]\n"
+          "[BlackKind \"profile\"]\n[TimeControl \"300+3\"]\n\n0-1\n\n", f);
+    fputs("[Event \"x\"]\n[White \"saeed\"]\n[Black \"a\"]\n[Result \"1/2-1/2\"]\n[WhiteKind \"profile\"]\n"
+          "[BlackKind \"profile\"]\n\n1/2-1/2\n\n", f);
+    fclose(f);
+    RecordList l;
+    records_load(path, &l);
+    Profile p;
+    memset(&p, 0, sizeof(p));
+    snprintf(p.name, sizeof(p.name), "saeed");
+    static StatsView v;
+    stats_view_build(&l, &p, NOW, &v);
+    check("bullet, blitz and untimed are counted",
+          v.by_tc[0].games == 1 && v.by_tc[0].wins == 1 && v.by_tc[1].games == 1 &&
+          v.by_tc[1].losses == 1 && v.by_tc[4].games == 1 && v.by_tc[4].draws == 1 &&
+          v.by_tc[2].games == 0 && !strcmp(v.by_tc[0].name, "bullet"));
+    check("time outs are an ending", v.timeouts == 1);
+    records_free(&l);
+}
+
 static void test_empty(void)
 {
     printf("== no games ==\n");
@@ -145,6 +172,7 @@ static void test_many_opponents(void)
 int main(void)
 {
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
+    test_by_time_control();
     test_full();
     test_empty();
     test_many_opponents();

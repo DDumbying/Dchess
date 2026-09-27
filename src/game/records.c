@@ -1,4 +1,5 @@
 #include "game/records.h"
+#include "game/timectl.h"
 #include "game/pgn.h"
 #include "game/book.h"
 #include "utils/cli.h"
@@ -100,6 +101,13 @@ int records_append(const char *path, const GameState *g, const Player p[2],
     add_tag(&h, "EndReason", records_end_reason(g->result));
     add_tag(&h, "PlyCount", plies);
     add_tag(&h, "Seconds", secs);
+    char wtc[24], btc[24];
+    if (tc_timed(&g->tc)) {
+        snprintf(wtc, sizeof(wtc), "%d+%d", g->tc.base_ms[WHITE] / 1000, g->tc.inc_ms[WHITE] / 1000);
+        snprintf(btc, sizeof(btc), "%d+%d", g->tc.base_ms[BLACK] / 1000, g->tc.inc_ms[BLACK] / 1000);
+        add_tag(&h, "TimeControl", wtc);
+        if (strcmp(wtc, btc)) add_tag(&h, "BlackTimeControl", btc);
+    }
     const char *eco = NULL, *opening = book_opening(g, &eco);
     if (opening) {
         add_tag(&h, "ECO", eco);
@@ -165,6 +173,17 @@ int records_parse_tag(const char *line, char *key, size_t kn, char *val, size_t 
     return 1;
 }
 
+/* PGN's "300+3" (seconds) as dchess writes it, "5+3"; Black's is
+ * appended as "/1+0". */
+static void pgn_tc(const char *v, char *out, size_t n, int black)
+{
+    double base, inc;
+    if (sscanf(v, "%lf+%lf", &base, &inc) != 2 || base <= 0) return;
+    size_t len = black ? strlen(out) : 0;
+    if (black && !len) return;
+    snprintf(out + len, n - len, "%s%g+%g", black ? "/" : "", base / 60.0, inc);
+}
+
 static SideKind kind_from(const char *v)
 {
     for (int i = 0; i < 4; i++)
@@ -189,6 +208,8 @@ static void set_field(Record *r, const char *k, const char *v, int *have)
     else if (!strcmp(k, "WhiteStrength")) COPY(r->white_strength, v);
     else if (!strcmp(k, "BlackStrength")) COPY(r->black_strength, v);
     else if (!strcmp(k, "EndReason"))     { COPY(r->end_reason, v); r->legacy = !strcmp(v, "legacy"); }
+    else if (!strcmp(k, "TimeControl"))   pgn_tc(v, r->tc, sizeof(r->tc), 0);
+    else if (!strcmp(k, "BlackTimeControl")) pgn_tc(v, r->tc, sizeof(r->tc), 1);
     else if (!strcmp(k, "ECO"))           COPY(r->eco, v);
     else if (!strcmp(k, "Opening"))       COPY(r->opening, v);
     else if (!strcmp(k, "PlyCount"))      r->plies = atoi(v);

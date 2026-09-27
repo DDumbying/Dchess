@@ -8,6 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "game/records.h"
+#include "game/timectl.h"
 #include "engine/move.h"
 #include "utils/bitboard.h"
 #include "utils/cli.h"
@@ -38,6 +39,7 @@ static void play(GameState *g, const char *text)
 
 static void finished(GameState *g, const char *result)
 {
+    memset(g, 0, sizeof(*g));
     game_reset(g);
     play(g, "e2e4");
     g->game_over = 1;
@@ -319,6 +321,37 @@ static void test_old_backslash(void)
     records_free(&l);
 }
 
+static void test_time_control_tags(void)
+{
+    printf("== time controls ==\n");
+    fresh("tc.pgn");
+    static GameState g;
+    Player p[2] = { prof("saeed"), prof("alice") };
+    TimeControl tc;
+    finished(&g, "White loses on time — Black wins!");
+    tc_parse("5+3", &tc);
+    g.tc = tc;
+    records_append(path, &g, p, NULL);
+    finished(&g, "Checkmate — White wins!");
+    tc_parse("5+0/1+0", &tc);
+    g.tc = tc;
+    records_append(path, &g, p, NULL);
+    finished(&g, "Checkmate — White wins!");
+    records_append(path, &g, p, NULL);
+    static char text[8192];
+    FILE *f = fopen(path, "r");
+    text[fread(text, 1, sizeof(text) - 1, f)] = '\0';
+    fclose(f);
+    check("TimeControl is written in seconds", strstr(text, "[TimeControl \"300+3\"]") != NULL);
+    check("odds add BlackTimeControl", strstr(text, "[BlackTimeControl \"60+0\"]") != NULL);
+    RecordList l;
+    records_load(path, &l);
+    check("and they read back", l.count == 3 && !strcmp(l.r[0].tc, "5+3") &&
+                                !strcmp(l.r[1].tc, "5+0/1+0") && l.r[2].tc[0] == '\0');
+    check("a flag is recorded as time", l.count == 3 && !strcmp(l.r[0].end_reason, "time"));
+    records_free(&l);
+}
+
 static void test_time_reason(void)
 {
     printf("== time outs ==\n");
@@ -393,6 +426,7 @@ int main(void)
     test_escaped_names();
     test_offsets();
     test_time_reason();
+    test_time_control_tags();
     test_old_backslash();
     test_speed();
 

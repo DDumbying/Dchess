@@ -23,7 +23,7 @@
 #include <limits.h>
 #include <wchar.h>
 
-enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_BOOK, ROW_ANALYSIS, ROW_THEME, ROW_START, ROW_COUNT };
+enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_CLOCK, ROW_BOOK, ROW_ANALYSIS, ROW_THEME, ROW_START, ROW_COUNT };
 enum { FOCUS_PROFILES, FOCUS_GAME, FOCUS_CARD };
 
 #define LEFT_W  24
@@ -31,7 +31,7 @@ enum { FOCUS_PROFILES, FOCUS_GAME, FOCUS_CARD };
 #define BLOCK_H  14      /* panel height of the dashboard block */
 #define BLOCK_W  132
 #define START_FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-#define GAME_ROWS  10
+#define GAME_ROWS  (ROW_START + 4)   /* the rows, START and the borders */
 
 typedef struct {
     Player     sel[2];
@@ -41,6 +41,8 @@ typedef struct {
     char       book[256], custom_book[256];   /* builtin, off or a path */
     char       book_start[256];               /* changed from this = remembered */
     char       analysis[ENGINE_NAME_MAX + 1]; /* off, builtin or an engine */
+    char       clock[32];                     /* "untimed", a preset, or custom */
+    int        clock_custom;                  /* the row shows "custom…" */
     int        row, focus, pcursor;   /* pcursor == count: "+ new profile" */
     int        csel, card_rows;       /* the card's selected game; how many it shows */
     char       msg[96];
@@ -99,6 +101,10 @@ static void apply_profile(TUIState *s, Launch *L)
     L->sel[WHITE] = tui_word_player(s, p->white, player_profile(p->name));
     L->sel[BLACK] = tui_word_player(s, p->black, player_builtin(DIFF_MEDIUM));
     snprintf(L->analysis, sizeof(L->analysis), "%s", p->analysis[0] ? p->analysis : "off");
+    if (!s->cli_clock[0]) {
+        snprintf(L->clock, sizeof(L->clock), "%s", p->clock[0] ? p->clock : "untimed");
+        L->clock_custom = 0;
+    }
     if (!s->cli_book[0]) {
         snprintf(L->book, sizeof(L->book), "%s", p->book[0] ? p->book : "builtin");
         snprintf(L->book_start, sizeof(L->book_start), "%s", L->book);
@@ -197,9 +203,9 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
     WINDOW *p = panel(h, w, y, x, title, L->focus == FOCUS_GAME);
     if (!p) return;
 
-    static const char *names[] = { "White", "Black", "Pos  ", "Book ", "Hints", "Theme" };
+    static const char *names[] = { "White", "Black", "Pos  ", "Clock", "Book ", "Hints", "Theme" };
     int board = !small && w >= 16 + 19 + 12 && h >= 12;
-    int top = board ? 1 + (h - 2 - 11) / 2 : 1, fy = board ? top + 2 : h >= GAME_ROWS ? 2 : 1;
+    int top = board ? 1 + (h - 2 - 11) / 2 : 1, fy = board ? top + 1 : h >= GAME_ROWS ? 2 : 1;
     int val_w = w - 16 - (board ? 19 : 0);
     if (val_w < 6) val_w = 6;
     for (int r = 0; r < ROW_START; r++) {
@@ -217,6 +223,8 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
             const char *slash = strrchr(L->book, '/');
             snprintf(label, sizeof(label), "%s", !strcmp(L->book, "builtin") ? "built-in"
                      : slash ? slash + 1 : L->book);
+        } else if (r == ROW_CLOCK) {
+            snprintf(label, sizeof(label), "%s", L->clock_custom ? "custom… (⏎ to type)" : L->clock);
         } else if (r == ROW_ANALYSIS) {
             snprintf(label, sizeof(label), "%s", !strcmp(L->analysis, "off") ? "off"
                      : !strcmp(L->analysis, "builtin") ? "analysis · dchess" : L->analysis);
@@ -468,6 +476,14 @@ static void change_row(TUIState *s, Launch *L, int dir)
         L->sel[L->row] = cycle_player(s, (i + c + dir) % c);
     } else if (L->row == ROW_POSITION) {
         L->use_custom_fen = !L->use_custom_fen;
+    } else if (L->row == ROW_CLOCK) {
+        static const char *presets[] = { "untimed", "1+0", "3+0", "3+2", "5+0", "5+3",
+                                         "10+0", "10+5", "15+10", "30+0" };
+        int n = (int)(sizeof(presets) / sizeof(presets[0])), i = n;   /* n = custom… */
+        for (int k = 0; k < n; k++) if (!L->clock_custom && !strcmp(L->clock, presets[k])) i = k;
+        i = (i + n + 1 + dir) % (n + 1);
+        L->clock_custom = i == n;
+        if (i < n) snprintf(L->clock, sizeof(L->clock), "%s", presets[i]);
     } else if (L->row == ROW_ANALYSIS) {
         /* off, builtin, then each registered engine */
         int n = 2 + s->engines.count, i = 0;
@@ -497,12 +513,22 @@ static int start(TUIState *s, Launch *L)
     chosen.theme = L->theme;
     chosen.theme_set = 1;
     snprintf(chosen.book, sizeof(chosen.book), "%s", s->cli_book);
+    snprintf(chosen.clock, sizeof(chosen.clock), "%s", s->cli_clock);
     snprintf(chosen.profile, sizeof(chosen.profile), "%s", active_name(s));
     if (L->use_custom_fen && L->fen[0])
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", L->fen);
     records_free(&L->rec);
     tui_init(s, &chosen);
     snprintf(s->analysis_engine, sizeof(s->analysis_engine), "%s", L->analysis);
+    TimeControl tc;
+    char now[32], cli[32] = "";
+    if (tc_parse(L->clock, &tc)) {
+        tc_format(&tc, now, sizeof(now));
+        TimeControl c;
+        if (s->cli_clock[0] && tc_parse(s->cli_clock, &c)) tc_format(&c, cli, sizeof(cli));
+        game_set_time_control(&s->game, &tc);
+        if (strcmp(now, cli)) s->cli_clock[0] = '\0';   /* chosen here: remembered */
+    }
     s->analysis_on = strcmp(L->analysis, "off") != 0;
     if (strcmp(L->book, L->book_start)) {   /* chosen here, so remembered like the book command */
         snprintf(s->book_choice, sizeof(s->book_choice), "%s", L->book);
@@ -525,6 +551,7 @@ int tui_launcher(TUIState *state)
     snprintf(L.book, sizeof(L.book), "%s", state->book_choice);
     snprintf(L.book_start, sizeof(L.book_start), "%s", L.book);
     snprintf(L.analysis, sizeof(L.analysis), "%s", state->analysis_engine[0] ? state->analysis_engine : "off");
+    tc_format(&state->game.tc, L.clock, sizeof(L.clock));
     if (strcmp(L.book, "builtin") && strcmp(L.book, "off"))
         snprintf(L.custom_book, sizeof(L.custom_book), "%s", L.book);
     records_path(L.games, sizeof(L.games));
@@ -615,7 +642,18 @@ int tui_launcher(TUIState *state)
         case KEY_RIGHT: case 'l': change_row(state, &L, +1); break;
         case '\n': case '\r': case KEY_ENTER:
             if (L.row == ROW_START) return start(state, &L);
-            if (L.row == ROW_POSITION && L.use_custom_fen) {
+            if (L.row == ROW_CLOCK && L.clock_custom) {
+                char text[32] = "";
+                TimeControl tc;
+                if (prompt("Clock: ", text, sizeof(text))) {
+                    if (tc_parse(text, &tc)) {
+                        tc_format(&tc, L.clock, sizeof(L.clock));
+                        L.clock_custom = 0;
+                    } else {
+                        say(&L, 1, "Use minutes+seconds, e.g. 5+3 or 5+0/1+0");
+                    }
+                }
+            } else if (L.row == ROW_POSITION && L.use_custom_fen) {
                 char fen[128];
                 snprintf(fen, sizeof(fen), "%s", L.fen);
                 Position probe;

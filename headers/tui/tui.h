@@ -56,6 +56,7 @@ typedef struct {
     Book     *book;          /* opening book for the built-in engine, or NULL */
     char      book_choice[256];   /* builtin, off or a .bin path */
     char      cli_book[256];      /* --book, kept for this run only, never saved */
+    char      cli_clock[32];      /* --clock, likewise */
     int       last_was_book;      /* last_search came from the book */
     int       file_active;    /* active profile as saved; --profile does not change it */
     int       theme_set;      /* theme chosen by flag or launcher, so it is remembered */

@@ -1,4 +1,5 @@
 #include "game/statsview.h"
+#include "game/timectl.h"
 #include "utils/constants.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +48,8 @@ static int by_games(const void *a, const void *b)
 void stats_view_build(const RecordList *l, const Profile *p, long now, StatsView *v)
 {
     memset(v, 0, sizeof(*v));
+    static const char *cats[5] = { "bullet", "blitz", "rapid", "classical", "untimed" };
+    for (int c = 0; c < 5; c++) v->by_tc[c].name = cats[c];
     const char *who = p->name;
     long plies = 0, seconds = 0;
     int run = 0;
@@ -94,6 +97,17 @@ void stats_view_build(const RecordList *l, const Profile *p, long now, StatsView
         else if (!strcmp(e, "repetition")) v->repetitions++;
         else if (!strcmp(e, "fifty-move")) v->fifty++;
         else if (!strcmp(e, "material"))   v->material++;
+        else if (!strcmp(e, "time"))       v->timeouts++;
+
+        TimeControl tc;
+        if (!r->tc[0] || !tc_parse(r->tc, &tc)) memset(&tc, 0, sizeof(tc));
+        const char *cat = tc_category(&tc);
+        for (int c = 0; c < 5; c++)
+            if (!strcmp(cat, cats[c])) {
+                SvTc *b = &v->by_tc[c];
+                b->games++;
+                if (o > 0) b->wins++; else if (o < 0) b->losses++; else b->draws++;
+            }
     }
 
     if (v->total.games) {

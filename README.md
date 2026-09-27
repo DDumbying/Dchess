@@ -43,6 +43,9 @@ One of these nerdy things built out of passion — to actually understand how `C
   every finished game a profile plays is saved to `~/.local/share/dchess/games.pgn`
 - Replay — step through any saved game or PGN file, and play on from any
   position in it
+- Time controls — presets and custom clocks with increments and time odds,
+  losing on time, engines that budget their own time, and a pause that
+  freezes both clocks
 - Analysis — an eval bar, the best move and the expected line from dchess
   or any UCI engine, while playing or replaying; a game review marks
   inaccuracies, mistakes and blunders
@@ -103,6 +106,7 @@ OPTIONS
   --theme <name>                  Color theme: gruvbox | tokyonight | btop | catppuccin
                                    (default: gruvbox)
   -s, --stats                     Show statistics in a full TUI screen and exit
+  --clock <M+S>                   Time control for this run, e.g. 5+3 or 5+0/1+0
   --replay <file.pgn>             Step through the games in a PGN file
   -V, --version                   Print version and exit
   -h, --help                      Show help and exit
@@ -142,6 +146,17 @@ reach it) or in the stats page's recent list, or run `dchess --replay FILE`.
 ←→ step through the moves, Home/End jump to either end, space plays them
 one a second, `p` plays on from the position shown with your usual setup,
 and Esc goes back.
+
+Games are untimed unless you pick a time control: the launcher's Clock row
+cycles 1+0, 3+0, 3+2, 5+0, 5+3, 10+0, 10+5, 15+10 and 30+0, or `custom…`
+takes minutes+seconds of increment (`7+2`, `0.5+0`) and White/Black odds
+(`5+0/1+0`). It is remembered per profile; `--clock` sets one for a single
+run. A side whose clock reaches zero loses on time (a draw if the other
+side cannot mate). Engines split their remaining time themselves, UCI
+engines get the real clocks, and under ten seconds a clock turns red. Space
+pauses and freezes both clocks in a timed game, even between two people.
+Saved games carry the standard `TimeControl` tag, and the stats page shows
+results by bullet, blitz, rapid and classical.
 
 Press `a` in a game or a replay to show analysis: an eval bar, the score
 and depth, the best move (its squares tinted on the board) and the line the
