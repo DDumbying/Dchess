@@ -248,9 +248,9 @@ static const int *pesto_eg[6] = { pesto_eg_pawn_table, pesto_eg_knight_table, pe
 
 /* The terms that measured as gains: PeSTO and king safety. The others,
  * with these hand-set weights, did not (docs/overview.md, round 10). */
-static EvalOptions eopt = { 1, 0, 0, 1, 0 };
+static EvalOptions eopt = { 1, 0, 1, 1, 0 };
 
-EvalOptions eval_default_options(void) { EvalOptions o = { 1, 0, 0, 1, 0 }; return o; }
+EvalOptions eval_default_options(void) { EvalOptions o = { 1, 0, 1, 1, 0 }; return o; }
 void eval_set_options(const EvalOptions *o) { eopt = *o; }
 
 static const U64 FILE_A = 0x0101010101010101ULL;
@@ -295,7 +295,7 @@ _Static_assert(sizeof(hand_set.v) / sizeof(int) == EP_COUNT, "hand_set lists eve
 #include "tuned_params.h"
 _Static_assert(TUNED_PARAM_COUNT == EP_COUNT, "tuned_params.h matches the EP_* layout");
 
-static EvalParams params = hand_set;
+static EvalParams params = tuned;
 
 const EvalParams *eval_default_params(void) { return &hand_set; }
 const EvalParams *eval_tuned_params(void)   { return &tuned; }

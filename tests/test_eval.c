@@ -214,16 +214,20 @@ static void test_mirror_symmetry(void)
     eval_set_options(&none);
 }
 
-/* What one term adds to White's side of the score. */
+/* What one term adds to White's side of the score, with the hand-set weights. */
 static int term(const char *fen, int which)
 {
     EvalOptions o = { 0 }, none = { 0 };
     int *f[] = { &o.pesto, &o.pawns, &o.mobility, &o.king, &o.extras };
     *f[which] = 1;
+    EvalParams saved = *eval_params();
+    eval_set_params(eval_default_params());
     eval_set_options(&o);
     int with = eval_fen(fen);
     eval_set_options(&none);
-    return with - eval_fen(fen);
+    int without = eval_fen(fen);
+    eval_set_params(&saved);
+    return with - without;
 }
 
 static void test_terms(void)
@@ -271,9 +275,20 @@ static void test_params_unchanged(void)
     eval_set_options(&none);
 }
 
+static void test_defaults(void)
+{
+    printf("== the defaults ==\n");
+    EvalOptions d = eval_default_options();
+    check("the default terms are PeSTO, king safety and mobility",
+          d.pesto && d.king && d.mobility && !d.pawns && !d.extras);
+    check("and the live weights start as the tuned ones",
+          !memcmp(eval_params(), eval_tuned_params(), sizeof(EvalParams)));
+}
+
 int main(void)
 {
     init_attacks();
+    test_defaults();
 
     printf("== piece-square table orientation (regression guard) ==\n");
     test_king_prefers_home_over_center_in_middlegame();

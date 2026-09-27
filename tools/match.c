@@ -5,7 +5,8 @@
  *
  * Options are a comma list starting from all (the defaults) or none:
  * search pvs, asp, nmp, lmr, ext, tt; evaluation pesto, pawns, mob, king,
- * xtra; "tuned" uses tools/tune.c's weights; "-name" turns one off. Every opening is played twice, colours
+ * xtra; "tuned" uses tools/tune.c's weights (on in all, "-tuned" for the
+ * hand-set ones); "-name" turns one off. Every opening is played twice, colours
  * swapped. The result is the candidate's score and the Elo difference with
  * a 95% error.
  *
@@ -48,6 +49,7 @@ static int parse_options(const char *list, Opts *all)
         if (!strcmp(n, "all")) {
             *o = search_default_options();
             *e = eval_default_options();
+            all->tuned = 1;
             if (!on) memset(all, 0, sizeof(*all));
         }
         else if (!strcmp(n, "none")) memset(all, 0, sizeof(*all));

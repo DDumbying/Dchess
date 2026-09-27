@@ -76,14 +76,15 @@ and the recent games — any of which opens as a replay.
   transposition table, move ordering (TT move, captures, killers, history)
   and quiescence search — Hard reaches about depth 12–13 in its 5 seconds
 - A tapered evaluation — PeSTO's material and piece-square tables for every
-  piece, plus king safety (pawn shield, open files) — each term measured
-  before it was kept
+  piece, plus king safety (pawn shield, open files) and piece mobility, with
+  weights Texel-tuned on Stockfish games — each term measured before it was
+  kept
 - A principal line and correct mate distances for analysis
 - Searches in a background thread, so the clocks and screen stay live, and
   `stop` takes its best move so far
 - A UCI engine too: `dchess --uci` (or dchess started through pipes, as GUIs
   do) plays in Arena, Cute Chess, BanksiaGUI and friends — and measures at
-  roughly 2400–2550 against a strength-limited Stockfish at 100 ms a move
+  roughly 2450–2550 against a strength-limited Stockfish at 100 ms a move
 
 **Interface**
 - ncurses with Unicode pieces, scaled to the terminal

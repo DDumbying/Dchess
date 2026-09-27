@@ -636,6 +636,61 @@ gap is clearer in the self-play numbers above (+75 and +26) than here.
 Stockfish calibrates `UCI_Elo` at much longer time controls, so these are
 estimates on its short-time-control scale, not an official rating.
 
+### Round 11 — the weights, tuned from games
+
+Round 10 left pawn structure, mobility and the extras switched off, with
+weights set by hand. Here the weights are fitted to games instead
+(Texel tuning).
+
+**The data.** `tools/genfens.c` has Stockfish 18 play itself at full
+strength from randomised book openings: 4998 games, 508,803 quiet positions
+from ply 10 on, each labelled with its game's result. One game in ten is
+held out to check the fit.
+
+**The fit.** `tools/tune.c` maps a score to an expected result with a
+sigmoid, fits its scale K (1.116), then moves each weight by ±1 while the
+error on the training games falls. It stops when a pass changes nothing, or
+when the held-out games' error rises twice.
+
+**The first attempt failed.** Tuning every weight at once, with every term
+on, lowered the held-out error by 2.3%, but no subset of those weights won
+a match: from −13 to −66 Elo. The weights had been fitted together, then
+played apart; mobility's "typical move count" had drifted to stand in for
+material.
+
+**Tuning per configuration** (`--terms`), with the typical counts frozen,
+and 80 games at 50 ms against PeSTO + king safety with hand-set weights:
+
+| Terms tuned and played | Held-out error | Match |
+|------|------|------|
+| PeSTO, king | 0.07717 → 0.07713 | 47.5%, −17 |
+| + pawn structure | 0.07847 → 0.07669 | 41.9%, −57 |
+| + extras | no change | 43.8%, −44 |
+| + mobility | 0.07752 → 0.07693 | 53.8%, +26 |
+
+Only mobility gained. Confirmed over 200 games, it scored 51.2%, +9
+(−20 to +37). That met the "doesn't lose" rule, so it is now on by default,
+with its tuned weights: a rook's and a queen's mobility count in the middle
+game, a bishop's a little, a knight's not at all (probably because its
+piece-square table already rewards the squares where it is mobile). King safety's open-file penalty
+roughly doubled.
+
+A better fit to the results is not the same thing as a stronger player.
+Pawn structure fitted the data best, yet lost the most, most likely
+because it costs search speed and overlaps PeSTO's pawn tables. Pawn structure and the
+extras stay off.
+
+**Against Stockfish** (60 games at 100 ms, as in Round 10):
+
+| dchess | @2300 | @2600 |
+|--------|------|------|
+| PeSTO + king safety (Round 10) | 66.7%, +120 | 41.7%, −58 |
+| + mobility, tuned weights | 73.3%, +176 | 44.2%, −41 |
+
+Both anchors moved the same way: ≈2475 against 2300 and ≈2560 against
+2600. Each gain is inside sixty games' error, but it agrees with the
+self-play result.
+
 ## 4. Current architecture
 
 ```
@@ -643,8 +698,9 @@ Dchess/
 ├── src/
 │   ├── engine/          — the chess engine; no ncurses
 │   │   ├── board.c, move.c, movegen.c, make.c   — bitboards, moves, legality
-│   │   ├── eval.c       — PeSTO tapered tables + king safety; switchable
-│   │   │                  EvalOptions (pawns, mobility, extras off)
+│   │   ├── eval.c       — PeSTO tapered tables, king safety and mobility,
+│   │   │                  with tuned weights; switchable EvalOptions
+│   │   │                  (pawns, extras off)
 │   │   ├── search.c     — iterative-deepening PVS with aspiration, null
 │   │   │                  move, LMR, check extensions, quiescence, TT,
 │   │   │                  killers/history, principal line; switchable
@@ -673,6 +729,8 @@ Dchess/
 ├── tests/               — one test program per core module, perft, a
 │                          scripted fake UCI engine
 ├── tools/match.c        — the search against itself, as Elo (make match)
+├── tools/genfens.c      — labelled positions from Stockfish self-play (make genfens)
+├── tools/tune.c         — Texel tuning of the evaluation's weights (make tune)
 ├── tools/demo/          — scripted asciinema recordings for the README
 ├── docs/                — guide.md, this journal, specs and plans
 └── assets/              — logo and the README's clips
@@ -746,8 +804,9 @@ the `ncurses` layer, which makes this more tractable than it might sound.
 
 ## 7. Roadmap
 
-**Next:** tune the evaluation's weights automatically, then switch the
-remaining terms back on if they measure as gains.
+**Next:** pawn structure with weights that win games, not just fit them:
+tuned together with a cheaper implementation, or tuned by match results
+instead of by error.
 
 **Then, roughly by payoff:**
 - A small pass over the deferred items in §5.
@@ -763,6 +822,7 @@ make && ./dchess            # the game (needs ncursesw)
 make test                   # every test program, perft included (no ncurses needed)
 make bench                  # search speed on fixed positions (./build/bench 8 none: the old search)
 make match ARGS="--base none --cand all"   # the search against itself, as Elo
+make genfens && make tune ARGS="--terms pesto,king,mob"   # retune the weights
 tools/demo/make-demos.sh    # re-record the README's clips (tmux, asciinema 3, agg)
 ```
 
