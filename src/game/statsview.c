@@ -11,7 +11,7 @@ static int side_of(const Record *r, const char *who)
     return -1;
 }
 
-static void opponent_name(const Record *r, int side, char *buf, size_t n)
+void stats_opponent_name(const Record *r, int side, char *buf, size_t n)
 {
     SideKind k = side == WHITE ? r->black_kind : r->white_kind;
     const char *name = side == WHITE ? r->black : r->white;
@@ -75,7 +75,7 @@ void stats_view_build(const RecordList *l, const Profile *p, long now, StatsView
         seconds += r->seconds;
 
         char name[PLAYER_NAME_MAX + 1];
-        opponent_name(r, side, name, sizeof(name));
+        stats_opponent_name(r, side, name, sizeof(name));
         SvOpponent *op = opponent(v, name);
         if (op) {
             op->games++;

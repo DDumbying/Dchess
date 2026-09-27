@@ -80,7 +80,8 @@ static void sparkline(WINDOW *w, int row, int col, int width, const float *t, in
 static void draw_summary(Page *pg, int h, int w, int y, int x)
 {
     char title[160];
-    snprintf(title, sizeof(title), "%s · %d games", pg->profiles->p[pg->index].name, pg->v.total.games);
+    snprintf(title, sizeof(title), "%s · %d game%s", pg->profiles->p[pg->index].name,
+             pg->v.total.games, pg->v.total.games == 1 ? "" : "s");
     WINDOW *p = panel(h, w, y, x, title, CP_ACC_BOARD);
     if (!p) return;
     const StatsView *v = &pg->v;
@@ -93,9 +94,11 @@ static void draw_summary(Page *pg, int h, int w, int y, int x)
     if (h > 3) {
         int ww = pct(v->as_white.wins, v->as_white.games), bw = pct(v->as_black.wins, v->as_black.games);
         wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 2, 2, "as White"); wattroff(p, COLOR_PAIR(CP_HINT));
-        colored(p, pct_pair(ww), 0, 2, 11, "%d%%", ww);
+        if (v->as_white.games) colored(p, pct_pair(ww), 0, 2, 11, "%d%%", ww);
+        else { wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 2, 11, "–"); wattroff(p, COLOR_PAIR(CP_HINT)); }
         wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 2, 17, "as Black"); wattroff(p, COLOR_PAIR(CP_HINT));
-        colored(p, pct_pair(bw), 0, 2, 26, "%d%%", bw);
+        if (v->as_black.games) colored(p, pct_pair(bw), 0, 2, 26, "%d%%", bw);
+        else { wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 2, 26, "–"); wattroff(p, COLOR_PAIR(CP_HINT)); }
     }
     delwin(p);
 }
@@ -204,7 +207,9 @@ static void draw_recent(Page *pg, int h, int w, int y, int x)
         wattron(p, COLOR_PAIR(pair) | A_BOLD);
         mvwprintw(p, 1 + i, 2, "%c", o > 0 ? 'W' : o < 0 ? 'L' : 'D');
         wattroff(p, COLOR_PAIR(pair) | A_BOLD);
-        put_clip(p, 1 + i, 4, name_w, white ? r->black : r->white);
+        char opp[PLAYER_NAME_MAX + 1];
+        stats_opponent_name(r, white ? WHITE : BLACK, opp, sizeof(opp));
+        put_clip(p, 1 + i, 4, name_w, opp);
         wattron(p, COLOR_PAIR(CP_HINT));
         mvwprintw(p, 1 + i, 5 + name_w, "%3d mv  %-7s %4s", (r->plies + 1) / 2, ending_word(r->end_reason), when);
         wattroff(p, COLOR_PAIR(CP_HINT));
@@ -339,7 +344,7 @@ void stats_mini(WINDOW *parent, const TUIState *s)
     WINDOW *shadow = panel_shadow(h, w, y, x);
     WINDOW *p = newwin(h, w, y, x);
     wbkgd(p, COLOR_PAIR(CP_CANVAS));
-    snprintf(title, sizeof(title), "%s · %d games", pr->name, v.total.games);
+    snprintf(title, sizeof(title), "%s · %d game%s", pr->name, v.total.games, v.total.games == 1 ? "" : "s");
     panel_frame(p, title, CP_ACC_BOARD);
     colored(p, CP_STATUS_OK, 1, 2, 2, "%dW", v.total.wins);
     colored(p, CP_ACC_CLOCK, 1, 2, 8, "%dD", v.total.draws);

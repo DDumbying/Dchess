@@ -91,6 +91,11 @@ static void test_full(void)
 
     check("mates 4, resigns 1, repetitions 1", v.mates == 4 && v.resigns == 1 && v.repetitions == 1);
     check("average 35 moves over recorded games", v.avg_plies == 35);
+    char nm[64];
+    stats_opponent_name(&l.r[4], WHITE, nm, sizeof(nm));
+    check("a dchess opponent is named like the table", strcmp(nm, "dchess Hard") == 0);
+    stats_opponent_name(&l.r[1], WHITE, nm, sizeof(nm));
+    check("a guest is 'Guest'", strcmp(nm, "Guest") == 0);
     check("recent is newest first, legacy included",
           v.recent_count == 7 && strcmp(v.recent[0]->white, "Fake") == 0);
     check("the trend covers every game", v.trend_count == 7);
