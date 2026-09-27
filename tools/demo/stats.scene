@@ -1,0 +1,5 @@
+w 4
+k Tab; w 1
+k Down; w 0.6; k Down; w 0.6; k Down; w 1.5
+k Right; w 2
+k Left; w 1.5

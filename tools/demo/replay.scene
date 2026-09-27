@@ -1,0 +1,7 @@
+w 1.5
+for i in 1 2 3 4 5 6; do k Right; w 0.7; done
+k a; w 2.5
+k r; w 3.5
+k Home; w 0.8
+k n; w 1.6; k n; w 1.6; k n; w 1.6
+k End; w 2

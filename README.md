@@ -5,7 +5,7 @@
 
 One of these nerdy things built out of passion — to actually understand how `C` works and how chess works technically, under the hood.
 
-**Links:** [GitHub](https://github.com/ddumbying/) · ~[Documentation](https://ddumbying.vercel.app/projects/dchess/)~ (*WIP*) </br>
+**Links:** [GitHub](https://github.com/ddumbying/) · [User guide](docs/guide.md) · [Project journal](docs/overview.md) · ~[Documentation](https://ddumbying.vercel.app/projects/dchess/)~ (*WIP*) </br>
 
 ## Overview
 
@@ -13,71 +13,94 @@ One of these nerdy things built out of passion — to actually understand how `C
   <img src="assets/gifs/demo.gif" width="100%"/>
 </p>
 
+A 5+3 game against dchess with analysis on: the eval bar, the engine's best
+move tinted on the board, the line it expects, the opening name, and the
+clocks counting down.
+
+## A quick tour
+
+**First run and the launcher.** Name your profile, pick a theme (the screen
+recolours as you go), and every later start opens the launcher: your
+profiles, the new game (players, position, clock, book, hints, theme) beside
+a mini-board, and your record.
+
+<p align="center"><img src="assets/gifs/welcome.gif" width="100%"/></p>
+
+**Replay and review.** Step through any saved game or PGN file, turn on
+analysis, and let `r` review every move — `?!`, `?` and `??` mark what each
+one cost, and `n`/`N` jump between them. `p` plays on from any position.
+
+<p align="center"><img src="assets/gifs/replay.gif" width="100%"/></p>
+
+**Stats.** Every finished game a profile plays is kept, so the stats page can
+show your record, trend, opponents, how games end, results by time control,
+and the recent games — any of which opens as a replay.
+
+<p align="center"><img src="assets/gifs/stats.gif" width="100%"/></p>
+
 ## What it has
 
-**Engine**
-- Bitboard-based board representation
-- Full move generation — pawns, castling, en passant, promotion
-- Iterative deepening alpha-beta search (depth 1, 2, 3, ... up to the
-  difficulty's cap or its time budget, whichever comes first) with a
-  transposition table and move ordering (TT move, then captures/promotions)
-- Quiescence search — keeps resolving captures/promotions/check-evasions
-  past the nominal depth so the engine doesn't misjudge a position mid-trade
-- Static evaluation with material values (centipawns) and piece-square tables
-  for all piece types, with a phase-tapered king PST (encourages castling and
-  king safety in the middlegame, centralization in the endgame)
-- 50-move rule detection
-- Threefold repetition detection via position hashing
-- Stalemate and checkmate detection
+**Play**
+- You, a friend or an engine on each side — including engine against engine,
+  and changing who plays mid-game
+- dchess at Easy, Medium or Hard, or any UCI engine you register (Stockfish,
+  Leela, …) with its own strength and Elo limit
+- Time controls: presets from 1+0 to 30+0, custom `M+S`, White/Black time
+  odds, losing on time, engines that budget their own clock, a red clock
+  under ten seconds, and a pause that freezes both clocks
+- An opening book — built-in main lines or any Polyglot `.bin` — and the
+  opening's ECO code and name as you play
+- Any starting position by FEN, undo, and a board that flips for two players
 
-**TUI**
-- ncurses interface with Unicode chess pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
-- Board scales to fill available terminal size
-- Four built-in color themes (gruvbox/tokyonight/btop/catppuccin), switchable
-  from the launcher (live preview), the CLI, or an in-game command
-- First-run welcome to name your profile and pick a theme
-- Launcher dashboard — profiles, the new-game setup with a live mini-board,
-  and a card with your record, streak and recent games; CLI flags remain a
-  scriptable alternative
-- Profiles — each person keeps their own history and remembered settings;
-  every finished game a profile plays is saved to `~/.local/share/dchess/games.pgn`
-- Replay — step through any saved game or PGN file, and play on from any
+**Analysis**
+- `a` shows an eval bar, the score and depth, the best move (tinted on the
+  board) and the line the engine expects, from dchess or a UCI engine
+- A game review marks inaccuracies, mistakes and blunders in any replay
+
+**Profiles, history and stats**
+- A first-run welcome, then profiles that each keep their own history and
+  remembered setup (players, clock, book, analysis engine, theme)
+- Every finished game is saved to `~/.local/share/dchess/games.pgn`, a
+  standard PGN file with tags for players, strength, time control, opening
+  and how it ended
+- A stats page: record, win rate as White and Black, trend, streaks, games
+  per week, opponents, endings, results by time control, recent games
+- Replay any saved game or any PGN file (`--replay`), and play on from any
   position in it
-- Time controls — presets and custom clocks with increments and time odds,
-  losing on time, engines that budget their own time, and a pause that
-  freezes both clocks
-- Analysis — an eval bar, the best move and the expected line from dchess
-  or any UCI engine, while playing or replaying; a game review marks
-  inaccuracies, mistakes and blunders
-- FEN import/export — start from, view, or load any position, not just the
-  standard setup
-- The engine thinks in a background thread — the clock, redraws, and
-  `quit` all keep working while it's calculating, even at "hard" difficulty
-- Cancellable search — `stop` takes the engine's current best guess
-  immediately; starting a new game or loading a position while it's
-  thinking cancels the stale search automatically instead of waiting
-- Vim-style modal input — normal mode for cursor navigation (`hjkl`/arrows), press `i` to enter command mode, `ESC` to return
-- Legal move highlighting — blue squares for valid destinations
-- Selected piece highlighted in green
-- Check highlighted on the board — red square, gold king
-- Last-move tint on from/to squares
-- Move history, captured pieces, material advantage displayed in the side panel
-- Live per-turn clock for both sides — starts counting on the first move, not at launch
-- Evaluation bar updates live after every engine response
-- Game-over popup appears immediately on checkmate/stalemate without needing a keypress
-- Each side is you, a friend or the engine at any level — including engine against engine — configurable at launch or mid-game
-- **Two-player local mode** — no engine, board flips 180° after each move so the next player faces their own pieces
 
-**Statistics**
-- Persistent stats saved to `~/.local/share/dchess/stats.dat`
-- Win/loss/draw breakdown by difficulty (easy / medium / hard)
-- Performance by color — games played and wins as white vs. black
-- Overall record with a stacked W/L/D bar
-- Avg moves per game, longest game, avg time per game, total play time
-- Rolling win-rate history graph — plots win rate and loss rate over time using a sliding 10-game window, with date labels and a 50% guide line. Keeps the last 256 games.
-- Two stat views:
-  - **Tab** (in-game overlay) — small centered popup with W/L/D bar, win rate, per-difficulty breakdown and avg time; dismisses on any key
-  - **Full stats screen** — all sections plus the history graph filling the remaining space; accessible via `dchess --stats` or `st` command in-game
+**Engine**
+- Bitboard board representation, full legal move generation (castling,
+  en passant, promotion), perft-verified
+- Iterative-deepening alpha-beta with a transposition table, move ordering
+  (TT move, captures, killers, history) and quiescence search
+- A tapered evaluation (material and piece-square tables, king safety that
+  shifts toward the endgame)
+- A principal line and correct mate distances for analysis
+- Searches in a background thread, so the clocks and screen stay live, and
+  `stop` takes its best move so far
+
+**Interface**
+- ncurses with Unicode pieces, scaled to the terminal
+- Four colour themes (gruvbox, tokyonight, btop, catppuccin) with a live
+  preview
+- Vim-style input: move a cursor with `hjkl`/arrows and Enter, or press `i`
+  and type moves and commands
+- Legal moves, the last move and check highlighted on the board
+
+## Getting started
+
+```bash
+make          # needs ncursesw and a C compiler
+./dchess
+```
+
+`make test` runs the test suites. The first start greets you with a name and
+theme; after that `dchess` opens the launcher. Pass any gameplay flag
+(`--no-menu`, `--color`, `--white`, …) to skip it.
+
+The [user guide](docs/guide.md) walks through everything in more depth:
+engines, time controls, analysis and review, replays, profiles and the files
+dchess keeps.
 
 ## CLI
 
@@ -98,28 +121,25 @@ OPTIONS
   --profile <name>                Play as this profile for this run
   --profiles                      List the profiles with their records and exit
   --book <builtin|off|path.bin>   Opening book for dchess's engine (default: built-in)
+  --clock <M+S>                   Time control for this run, e.g. 5+3 or 5+0/1+0
   --engines                       List the registered UCI engines and exit
   --fen <string>                  Start from a custom FEN position instead of the standard setup
+  --replay <file.pgn>             Step through the games in a PGN file
   -m, --menu                      Show the launcher to pick options visually,
                                    even if other flags were given
   --no-menu                       Skip the launcher and start immediately (classic instant-start)
   --theme <name>                  Color theme: gruvbox | tokyonight | btop | catppuccin
                                    (default: gruvbox)
   -s, --stats                     Show statistics in a full TUI screen and exit
-  --clock <M+S>                   Time control for this run, e.g. 5+3 or 5+0/1+0
-  --replay <file.pgn>             Step through the games in a PGN file
   -V, --version                   Print version and exit
   -h, --help                      Show help and exit
 
 EXAMPLES
   dchess                          Launcher (profiles, new game, your record)
   dchess --no-menu                Start immediately with defaults (white, medium)
-  dchess --color black            Play as black, no menu
-  dchess --difficulty hard        Hard mode, no menu
   dchess -c black -d easy         Black side, easy difficulty, no menu
+  dchess --no-menu --clock 5+3    A blitz game against dchess
   dchess --fen "<FEN string>"     Start from a custom position
-  dchess --menu -d hard           Launcher, pre-filled to hard difficulty
-  dchess --theme tokyonight       Start with the tokyonight color theme
   dchess --replay games.pgn       Pick a game from a PGN file and step through it
   dchess --two-player             Local two-player, board flips each turn
   dchess --white hard --black easy
@@ -129,100 +149,73 @@ EXAMPLES
   dchess --stats                  View your stats
 ```
 
-The first time, `dchess` greets you: type your name, pick a theme with ←→,
-and press Enter. After that, running `dchess` with no arguments shows the
-launcher: your profiles (Tab to focus; `n` new, `r` rename, `d` delete, ↑↓
-switch), the new game setup (players, position, opening book, theme) beside
-a mini-board of the starting position, and your profile's record and recent
-games, so you don't need to remember flags. Pressing `s`
-shows the active profile's stats; `ESC`
-quits dchess entirely rather than starting a game. Passing any gameplay
-flag (`--color`, `--difficulty`, `--two-player`, `--fen`, `--theme`) skips
-it and starts immediately, so scripts and muscle-memory invocations keep
-working exactly as before.
-
-To replay a game, press ⏎ on it in the launcher's profile card (Tab to
-reach it) or in the stats page's recent list, or run `dchess --replay FILE`.
-←→ step through the moves, Home/End jump to either end, space plays them
-one a second, `p` plays on from the position shown with your usual setup,
-and Esc goes back.
-
-Games are untimed unless you pick a time control: the launcher's Clock row
-cycles 1+0, 3+0, 3+2, 5+0, 5+3, 10+0, 10+5, 15+10 and 30+0, or `custom…`
-takes minutes+seconds of increment (`7+2`, `0.5+0`) and White/Black odds
-(`5+0/1+0`). It is remembered per profile; `--clock` sets one for a single
-run. A side whose clock reaches zero loses on time (a draw if the other
-side cannot mate). Engines split their remaining time themselves, UCI
-engines get the real clocks, and under ten seconds a clock turns red. Space
-pauses and freezes both clocks in a timed game, even between two people.
-Saved games carry the standard `TimeControl` tag, and the stats page shows
-results by bullet, blitz, rapid and classical.
-
-Press `a` in a game or a replay to show analysis: an eval bar, the score
-and depth, the best move (its squares tinted on the board) and the line the
-engine expects. The launcher's Hints row, or the `analyse
-<builtin|off|name>` command, picks the engine and remembers it. The
-built-in engine analyses only while it is not also thinking about its own
-move. In a replay, `r` reviews every move: `?!`, `?` and `??` mark the
-moves that lost 0.5, 1 and 3 pawns, and `n`/`N` jump between them.
-
-Pressing `e` opens the Engines screen, where you add a UCI engine by its path
-(dchess starts it and reads its name), set its strength (time per move or
-depth, plus an Elo cap when the engine supports one), test it, or delete it.
-Registered engines then appear in the White and Black choices.
-
-## Build
-
-```bash
-make
-./dchess
-```
-
-Requires `ncursesw`.
-
 ## Controls
 
-**Cursor — normal mode (default)**
+**Game screen — normal mode (default)**
 ```
-h / ←       move cursor left
-l / →       move cursor right
-k / ↑       move cursor up
-j / ↓       move cursor down
-Enter       select piece / confirm move
-Esc         deselect
-i           enter command/insert mode
-Tab         open in-game stats popup (any key to close)
-Space       pause / resume the engines
+h j k l / arrows   move the cursor
+Enter              select a piece / confirm a move
+Esc                deselect
+i                  command mode (type moves and commands)
+a                  analysis on / off
+u                  take back a move
+Space              pause / resume (freezes the clocks in a timed game)
+Tab                stats popup (any key closes it)
 ```
 
-**Command mode** (press `i` to enter, `ESC` to exit)
+**Command mode** (press `i`, `Esc` to leave)
 ```
-e2e4        make a move in algebraic notation
-go          play one engine move for the side to move, even while paused
-stop        have a thinking engine return its best move now, instead
-            of waiting out the rest of its time budget
-new         reset the board
-flip        turn the board around
-pause / resume
-            hold and restart the engines (Space does both)
-white|black human
+e2e4               a move in coordinates
+go                 one engine move for the side to move, even while paused
+stop               a thinking engine plays its best move so far
+new · undo         a new game · take back a move
+flip · swap        turn the board · exchange the players
+pause / resume     hold and restart the engines (Space does both)
+white|black human [name|guest]
 white|black engine [easy|medium|hard|name]
-            change who plays a side, mid-game
-swap        exchange the two players
-engines     list the registered UCI engines
+                   change who plays a side, mid-game
+analyse <builtin|off|name>
+                   choose the analysis engine
 book <builtin|off|path>
-            change the opening book
-depth N     change search depth (1–8) mid-game
-eval        show current position evaluation
-fen         show the current position as a FEN string
-loadfen <FEN>
-            load a custom position mid-game
-theme <name>
-            switch color theme: gruvbox | tokyonight | btop | catppuccin
-stats       open the full stats screen
-help        list in-game commands
-quit / q    exit
+                   change the opening book
+engines            list the registered UCI engines
+depth N            change dchess's search depth (1–8)
+eval · fen         show the evaluation · the position as FEN
+loadfen <FEN>      load a position
+pgn [path]         save the game as PGN
+theme <name>       gruvbox | tokyonight | btop | catppuccin
+stats · help       the stats screen · the command list
+resign · quit      resign for the human side · leave
 ```
+
+**Launcher**
+```
+↑↓ / ←→            move between rows / change a value
+Tab                profiles → new game → your card
+n · r · d          new · rename · delete a profile
+⏎                  start (or replay the game selected on your card)
+e · s · Esc        engines screen · stats · quit
+```
+
+**Replay**
+```
+←→ · Home/End      step · jump to the start or end
+Space              play the moves one a second
+a · r · n/N        analysis · review every move · next/previous marked move
+p                  play on from this position
+Esc                back
+```
+
+## Where things live
+
+| File | What |
+|------|------|
+| `~/.config/dchess/profiles.conf` | profiles and their remembered setup |
+| `~/.config/dchess/engines.conf` | registered UCI engines |
+| `~/.local/share/dchess/games.pgn` | every finished game, standard PGN |
+| `~/.local/share/dchess/stats.dat` | pre-profile stats, imported on first run |
+
+The two config files follow `XDG_CONFIG_HOME` when it is set.
 
 ## Scope
 
