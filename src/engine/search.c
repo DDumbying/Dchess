@@ -321,7 +321,15 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         }
         legal++;
 
-        int score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+        int score;
+        if (!opt.pvs || legal == 1) {
+            score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+        } else {
+            /* Later moves only have to prove they are no better. */
+            score = -alpha_beta(pos, depth-1, ply+1, -alpha-1, -alpha);
+            if (score > alpha && score < beta && !search_aborted)
+                score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+        }
         memcpy(pos, &saved, sizeof(Position));
 
         if (search_aborted) return alpha;   /* nothing from here is trustworthy */
@@ -347,6 +355,56 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
 
     tt_store(key, depth, alpha, (alpha > orig_alpha) ? TT_EXACT : TT_ALPHA, best_move);
     return alpha;
+}
+
+typedef struct { Move best; int score, legal; Move pv[8]; int pv_len; } RootResult;
+
+/* One iteration at the root inside (alpha, beta). A score at or below the
+ * starting alpha means every move failed low; at or above beta, one move
+ * failed high. */
+static RootResult root_search(Position *pos, int depth, int alpha, int beta)
+{
+    RootResult rr;
+    memset(&rr, 0, sizeof(rr));
+    rr.score = alpha;
+    MoveList ml;
+    generate_moves(pos, &ml);
+    TTEntry *hit = tt_probe(hash_position(pos));
+    int order[MAX_MOVES];
+    score_moves(pos, &ml, hit ? hit->best : 0, 0, order);
+
+    for (int i = 0; i < ml.count; i++) {
+        pick_move(&ml, order, i);
+        Position saved;
+        memcpy(&saved, pos, sizeof(Position));
+        if (!make_move(pos, ml.moves[i])) {
+            memcpy(pos, &saved, sizeof(Position));
+            continue;
+        }
+        rr.legal++;
+        int score;
+        if (!opt.pvs || rr.legal == 1) {
+            score = -alpha_beta(pos, depth - 1, 1, -beta, -alpha);
+        } else {
+            score = -alpha_beta(pos, depth - 1, 1, -alpha - 1, -alpha);
+            if (score > alpha && score < beta && !search_aborted)
+                score = -alpha_beta(pos, depth - 1, 1, -beta, -alpha);
+        }
+        memcpy(pos, &saved, sizeof(Position));
+        if (search_aborted) break;   /* this iteration's numbers are unreliable */
+
+        if (score > alpha) {
+            alpha = score;
+            rr.best  = ml.moves[i];
+            rr.score = score;
+            rr.pv[0] = ml.moves[i];
+            rr.pv_len = 1;
+            for (int k = 1; k < pv_len[1] && rr.pv_len < 8; k++)
+                rr.pv[rr.pv_len++] = pv_table[1][k];
+            if (score >= beta) break;
+        }
+    }
+    return rr;
 }
 
 SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
@@ -376,57 +434,30 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
          * subject to the time budget, if one was given. */
         time_limited = (depth > 1) && (time_limit_ms > 0);
 
-        MoveList ml;
-        generate_moves(pos, &ml);
         U64 root_key = hash_position(pos);
-        TTEntry *hit = tt_probe(root_key);
-        int order[MAX_MOVES];
-        score_moves(pos, &ml, hit ? hit->best : 0, 0, order);
-
-        int alpha = -INF, beta = INF;
-        Move iter_best_move  = 0;
-        int  iter_best_score = -INF;
-        Move iter_pv[8];
-        int  iter_pv_len = 0;
-        int  legal = 0;
-
-        for (int i = 0; i < ml.count; i++) {
-            pick_move(&ml, order, i);
-
-            Position saved;
-            memcpy(&saved, pos, sizeof(Position));
-
-            if (!make_move(pos, ml.moves[i])) {
-                memcpy(pos, &saved, sizeof(Position));
-                continue;
-            }
-            legal++;
-
-            int score = -alpha_beta(pos, depth - 1, 1, -beta, -alpha);
-            memcpy(pos, &saved, sizeof(Position));
-
-            if (search_aborted) break; /* this iteration's numbers are unreliable */
-
-            if (score > alpha) {
-                alpha = score;
-                iter_best_move  = ml.moves[i];
-                iter_best_score = score;
-                iter_pv[0] = ml.moves[i];
-                iter_pv_len = 1;
-                for (int k = 1; k < pv_len[1] && iter_pv_len < 8; k++)
-                    iter_pv[iter_pv_len++] = pv_table[1][k];
-            }
+        RootResult rr;
+        int a = -INF, b = INF, prev = best.best_score;
+        int asp = opt.aspiration && depth >= 4 && best.best_move && abs(prev) < MATE_BOUND;
+        if (asp) { a = prev - 50; b = prev + 50; }
+        for (;;) {
+            rr = root_search(pos, depth, a, b);
+            if (search_aborted || !asp) break;
+            /* Outside the window: widen that side, then open it fully. */
+            if (rr.score <= a && a > -INF)      a = a == prev - 50 ? prev - 200 : -INF;
+            else if (rr.score >= b && b < INF)  b = b == prev + 50 ? prev + 200 : INF;
+            else break;
         }
+        int legal = rr.legal;
 
         if (search_aborted) break; /* keep the previous (complete) iteration's `best` */
 
-        best.best_move     = iter_best_move;
-        memcpy(best.pv, iter_pv, sizeof(iter_pv));
-        best.pv_len        = iter_pv_len;
-        best.best_score     = iter_best_score;
-        best.depth_reached  = depth;
-        if (iter_best_move)
-            tt_store(root_key, depth, alpha, TT_EXACT, iter_best_move);
+        best.best_move     = rr.best;
+        memcpy(best.pv, rr.pv, sizeof(rr.pv));
+        best.pv_len        = rr.pv_len;
+        best.best_score    = rr.best ? rr.score : -INF;
+        best.depth_reached = depth;
+        if (rr.best)
+            tt_store(root_key, depth, rr.score, TT_EXACT, rr.best);
 
         if (legal == 0) break; /* checkmate/stalemate: nothing deeper to find */
         if (time_limit_ms > 0 && deadline_passed()) break;
