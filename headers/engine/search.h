@@ -10,6 +10,8 @@ typedef struct {
     long nodes;
     int  depth_reached; /* deepest iteration fully completed */
     long elapsed_ms;
+    Move pv[8];         /* the expected line, starting with best_move */
+    int  pv_len;
 } SearchResult;
 
 /* Iterative deepening: searches depth 1, 2, 3, ... up to max_depth,

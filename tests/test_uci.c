@@ -49,6 +49,8 @@ static void test_info(void)
     uci_parse_info("info depth 12 score mate -3 nodes 50 pv e1e2", &i);
     check("a mate score", i.has_score && i.is_mate && i.mate_in == -3);
     check("being mated is a large negative score", uci_info_score(&i) == -(MATE_SCORE - 3));
+    uci_parse_info("info depth 5 score cp 35 pv e2e4 e7e5 g1f3", &i);
+    check("pv moves are read", i.pv_len == 3 && !strcmp(i.pv[0], "e2e4") && !strcmp(i.pv[2], "g1f3"));
     uci_parse_info("info depth 9 score mate 2", &i);
     check("mating is a large positive score", uci_info_score(&i) == MATE_SCORE - 2);
 

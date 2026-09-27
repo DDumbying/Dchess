@@ -8,7 +8,10 @@
 #include "engine/search.h"
 #include "engine/fen.h"
 #include "engine/make.h"
+#include "engine/move.h"
 #include "utils/bitboard.h"
+#include <stdlib.h>
+#include <time.h>
 
 static int failures = 0;
 
@@ -67,11 +70,75 @@ static void test_pv(void)
     check("and every move is legal in turn", legal_line(&pos, line, n));
 }
 
+static int wait_result(Analyser *a, Analysis *out, int ms)
+{
+    U64 key;
+    struct timespec t = { 0, 10 * 1000000L };
+    for (int i = 0; i < ms / 10; i++) {
+        if (analyser_poll(a, out, &key)) return 1;
+        nanosleep(&t, NULL);
+    }
+    return 0;
+}
+
+static void test_builtin(void)
+{
+    printf("== built-in analyser ==\n");
+    static GameState g;
+    game_reset(&g);
+    Analyser *a = analyser_builtin(300);
+    Analysis r;
+    check("the start position is analysed", analyser_start(a, &g) && wait_result(a, &r, 3000));
+    Move m;
+    check("with a legal best move", r.best && game_find_move(&g, FROM(r.best), TO(r.best), 0, &m));
+    check("and a line that starts with it", r.line_len >= 1 && r.depth >= 1);
+    game_load_fen(&g, "7k/6Q1/6K1/8/8/8/8/8 b - - 0 1");
+    game_update_status(&g);
+    check("a finished game is not analysed", analyser_start(a, &g) == 0);
+    analyser_free(a);
+}
+
+static void test_uci(void)
+{
+    printf("== UCI analyser ==\n");
+    setenv("FAKE_UCI_MODE", "analyse", 1);
+    EngineEntry e;
+    memset(&e, 0, sizeof(e));
+    snprintf(e.name, sizeof(e.name), "Fake");
+    snprintf(e.path, sizeof(e.path), "build/fake_uci");
+    e.limit_ms = 100;
+    static GameState g;
+    game_reset(&g);
+    Analyser *a = analyser_uci(&e, 100);
+    Analysis r;
+    check("the engine's score is White's view", analyser_start(a, &g) && wait_result(a, &r, 5000) &&
+                                                r.score_cp == 35);
+    check("and its line is in SAN", r.line_len == 3 && !strcmp(r.line[0], "e4") && !strcmp(r.line[2], "Nf3"));
+    int from, to, promo;
+    Move m;
+    parse_move_str("e2e4", &from, &to, &promo);
+    game_find_move(&g, from, to, promo, &m);
+    game_play(&g, m);
+    game_update_status(&g);
+    check("with Black to move the score flips", analyser_start(a, &g) && wait_result(a, &r, 5000) &&
+                                                r.score_cp == -35);
+    analyser_free(a);
+    setenv("FAKE_UCI_MODE", "crash", 1);
+    a = analyser_uci(&e, 100);
+    game_reset(&g);
+    check("a crashing engine reports an error", analyser_start(a, &g) && wait_result(a, &r, 5000) &&
+                                                !r.best && analyser_error(a)[0]);
+    analyser_free(a);
+    unsetenv("FAKE_UCI_MODE");
+}
+
 int main(void)
 {
     init_attacks();
     test_grades();
     test_pv();
+    test_builtin();
+    test_uci();
     if (failures) {
         printf("\n%d analysis test(s) FAILED.\n", failures);
         return 1;

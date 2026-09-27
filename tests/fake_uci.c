@@ -124,6 +124,7 @@ int main(int argc, char **argv)
             say("info depth 1 score cp 12 nodes 20 nps 1000");
             if (strcmp(mode, "slow") == 0 || strcmp(mode, "deaf") == 0) continue;
             say("info depth 2 score cp 15 nodes 400 nps 2000");
+            if (strcmp(mode, "analyse") == 0) say("info depth 5 score cp 35 pv e2e4 e7e5 g1f3");
             if (strcmp(mode, "illegal") == 0) say("bestmove e2e5");
             else bestmove();
             if (strcmp(mode, "once") == 0) break;      /* exits right after its move */

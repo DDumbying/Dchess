@@ -33,7 +33,10 @@ typedef struct {
 static void *worker(void *arg)
 {
     Builtin *b = arg;
+    Position root = b->snapshot;
     SearchResult r = search(&b->snapshot, b->depth, b->time_ms);
+    /* Still this thread's search, so the table is ours to read. */
+    r.pv_len = search_pv(&root, r.best_move, r.pv, 8);
 
     pthread_mutex_lock(&b->mutex);
     b->result = r;
