@@ -8,6 +8,7 @@
 #include "tui/commands.h"
 #include "tui/stats_tui.h"
 #include "tui/launcher.h"
+#include "tui/welcome.h"
 #include "game/records.h"
 #include "engine/board.h"
 #include "engine/movegen.h"
@@ -24,6 +25,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <unistd.h>
 #include <time.h>
 
 
@@ -286,8 +289,15 @@ void tui_init(TUIState *state, const CliArgs *args)
 
     char games[512];
     records_path(games, sizeof(games));
-    if (!profiles_load(&state->profiles))
-        profiles_first_run(&state->profiles, getenv("USER"), &old, games, NULL);
+    char conf[512];
+    if (!profiles_load(&state->profiles)) {
+        /* A missing file on a launcher start gets the welcome instead. */
+        if (state->show_onboarding && profiles_path(conf, sizeof(conf)) &&
+            access(conf, F_OK) != 0 && errno == ENOENT)
+            state->first_run = 1;
+        else
+            profiles_first_run(&state->profiles, getenv("USER"), &old, games, NULL);
+    }
     state->file_active = state->profiles.active;
     if (args && args->profile[0]) {
         int i = profiles_find(&state->profiles, args->profile);
@@ -522,6 +532,10 @@ void tui_run(TUIState *state)
 
     init_colors(state->theme);
 
+    if (state->first_run && !tui_welcome(state)) {
+        endwin();
+        return;
+    }
     if (state->show_onboarding && !tui_launcher(state)) {
         endwin();
         return; /* the player quit from the launcher */
