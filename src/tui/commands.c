@@ -662,7 +662,7 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
                  "e2e4 go stop pause resume undo new resign swap flip depth N eval fen pgn "
-                 "loadfen stats engines book quit | white|black human|engine [level|name]");
+                 "loadfen stats engines book analyse quit | white|black human|engine [level|name]");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;

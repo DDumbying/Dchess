@@ -15,6 +15,15 @@
 
 /* View and controller. The game itself lives in `game`, and the rules
  * logic belongs there, not here. */
+/* A replay's game review: one analysis per position, filled in turn. */
+typedef struct {
+    Analysis      at[MAX_MOVE_HISTORY + 1];
+    unsigned char have[MAX_MOVE_HISTORY + 1];
+    int           next, running, waiting, first_side;
+    U64           key;
+    Analyser     *an;
+} ReplayReview;
+
 typedef struct {
     /* Advance only via game_play(). */
     GameState game;
@@ -68,6 +77,7 @@ typedef struct {
     int show_onboarding;
     /* Replay mode: the game is shown at replay_ply of *replay. */
     ReplayGame *replay;
+    ReplayReview *review;
     int         replay_ply, replay_auto;
     ReplayList *replay_list;             /* --replay: the file's games */
     /* Analysis: an engine's view of the position shown. */

@@ -153,6 +153,8 @@ void cli_help(void)
         "    resign      Resign for the human side and end the game\n"
         "    book <builtin|off|path>\n"
         "                Change the opening book\n"
+        "    analyse <builtin|off|name>\n"
+        "                Choose the analysis engine ('a' toggles analysis)\n"
         "    engines     List the registered UCI engines\n"
         "    depth N     Change search depth (1–8) mid-game\n"
         "    eval        Show the current position evaluation\n"

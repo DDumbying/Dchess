@@ -8,4 +8,8 @@
 int replay_browse(TUIState *s, ReplayList *l, const char *path);
 int replay_open(TUIState *s, const char *path, long offset);
 
+/* Move j of the replay (0 = the first), once the review has both sides
+ * of it: its grade, and the centipawns it lost. */
+Grade replay_grade(const TUIState *s, int j, int *loss);
+
 #endif
