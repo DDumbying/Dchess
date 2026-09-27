@@ -82,6 +82,9 @@ void tui_init(TUIState *state, const CliArgs *args);
 void tui_run(TUIState *state);
 void tui_cleanup(void);
 
+/* A profile's remembered white/black word as a player. */
+Player tui_word_player(const TUIState *s, const char *w, Player fallback);
+
 /* The game screen, for modes that draw it outside tui_run(). */
 typedef struct Screen Screen;
 Screen *tui_screen_open(TUIState *state);

@@ -75,6 +75,7 @@ static void test_round_trip(void)
     pgn_write(&g, &h, path);
     check("a written game reads back", replay_read(path, 0, &rg, err, sizeof(err)) == 1 && !rg.err[0]);
     check("with the same moves", !strcmp(sans(&rg), "e4 e5 Nf3 Nc6 Bb5 a6 O-O"));
+    check("and each move's SAN is kept", rg.count == 7 && !strcmp(rg.san[4], "Bb5") && !strcmp(rg.san[6], "O-O"));
 }
 
 static void test_skipping(void)

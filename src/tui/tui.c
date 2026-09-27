@@ -461,6 +461,17 @@ static void screen_handle_resize(Screen *sc)
     screen_paint(sc);
 }
 
+Player tui_word_player(const TUIState *s, const char *w, Player fallback)
+{
+    if (!w[0]) return fallback;
+    if (strcasecmp(w, "guest") == 0) return player_human();
+    int lv = players_level_from_name(w);
+    if (lv >= 0) return player_builtin(lv);
+    if (profiles_find(&s->profiles, w) >= 0) return player_profile(w);
+    if (engines_find(&s->engines, w)) return player_uci(w);
+    return fallback;
+}
+
 Screen *tui_screen_open(TUIState *state)
 {
     Screen *sc = malloc(sizeof(*sc));

@@ -17,6 +17,7 @@ typedef struct {
     ReplayEntry info;
     char fen[FEN_BUFSIZE];          /* start position; "" = standard */
     Move moves[MAX_MOVE_HISTORY];
+    char san[MAX_MOVE_HISTORY][8];  /* each move as dchess writes it */
     int  count;
     char err[96];                   /* "" or "stopped at move 23: Qxh9" */
 } ReplayGame;

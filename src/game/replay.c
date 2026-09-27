@@ -171,6 +171,7 @@ static void play_movetext(const char *t, GameState *g, ReplayGame *out)
         if (!mv) goto bad;
         game_play(g, mv);
         game_update_status(g);
+        memcpy(out->san[out->count], g->move_history[g->move_count - 1], sizeof(out->san[0]));
         out->moves[out->count++] = mv;
         continue;
 bad:

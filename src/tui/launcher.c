@@ -76,16 +76,6 @@ static int cycle_index(const TUIState *s, const Player *p)
     return 0;
 }
 
-static Player word_player(const TUIState *s, const char *w, Player fallback)
-{
-    if (!w[0]) return fallback;
-    if (strcasecmp(w, "guest") == 0) return player_human();
-    int lv = players_level_from_name(w);
-    if (lv >= 0) return player_builtin(lv);
-    if (profiles_find(&s->profiles, w) >= 0) return player_profile(w);
-    if (engines_find(&s->engines, w)) return player_uci(w);
-    return fallback;
-}
 
 static void say(Launch *L, int err, const char *text)
 {
@@ -103,8 +93,8 @@ static void reload(Launch *L)
 static void apply_profile(TUIState *s, Launch *L)
 {
     const Profile *p = &s->profiles.p[s->profiles.active];
-    L->sel[WHITE] = word_player(s, p->white, player_profile(p->name));
-    L->sel[BLACK] = word_player(s, p->black, player_builtin(DIFF_MEDIUM));
+    L->sel[WHITE] = tui_word_player(s, p->white, player_profile(p->name));
+    L->sel[BLACK] = tui_word_player(s, p->black, player_builtin(DIFF_MEDIUM));
     if (!s->cli_book[0]) {
         snprintf(L->book, sizeof(L->book), "%s", p->book[0] ? p->book : "builtin");
         snprintf(L->book_start, sizeof(L->book_start), "%s", L->book);

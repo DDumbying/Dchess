@@ -1,6 +1,8 @@
 #include "tui/replay_tui.h"
 #include "tui/colors.h"
 #include "tui/render.h"
+#include "engine/fen.h"
+#include "utils/theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +28,33 @@ static void step(TUIState *s, int dir)
     } else if (dir < 0 && s->replay_ply > 0) {
         goto_ply(s, s->replay_ply - 1);
     }
+}
+
+/* The current position becomes a new game with the active profile's
+ * remembered setup. */
+static void play_from_here(TUIState *s)
+{
+    CliArgs a;
+    memset(&a, 0, sizeof(a));
+    a.no_menu = 1;
+    position_to_fen(&s->game.pos, s->game.halfmove_clock, s->game.move_count / 2 + 1,
+                    a.fen, sizeof(a.fen));
+    a.players[WHITE] = player_human();
+    a.players[BLACK] = player_builtin(DIFF_MEDIUM);
+    a.human_active[WHITE] = 1;
+    if (s->profiles.count) {
+        const Profile *p = &s->profiles.p[s->profiles.active];
+        a.players[WHITE] = tui_word_player(s, p->white, player_profile(p->name));
+        a.players[BLACK] = tui_word_player(s, p->black, player_builtin(DIFF_MEDIUM));
+        int t = p->theme[0] ? theme_from_name(p->theme) : -1;
+        if (t >= 0) { a.theme = t; a.theme_set = 1; }
+        snprintf(a.profile, sizeof(a.profile), "%s", p->name);
+    }
+    if (!a.theme_set) { a.theme = s->theme; a.theme_set = 1; }
+    int move = s->game.move_count / 2 + 1;
+    tui_init(s, &a);
+    game_update_status(&s->game);   /* a finished position shows as finished */
+    snprintf(s->status, sizeof(s->status), "Playing on from move %d", move);
 }
 
 int replay_open(TUIState *s, const char *path, long offset)
@@ -66,15 +95,21 @@ int replay_open(TUIState *s, const char *path, long offset)
         case KEY_RIGHT: case 'l':   step(s, 1); break;
         case KEY_HOME:  case 'g':   goto_ply(s, 0); break;
         case KEY_END:   case 'G':   goto_ply(s, g->count); break;
+        case ' ':
+            s->replay_auto = !s->replay_auto && s->replay_ply < g->count;
+            break;
+        case 'p':
+            play_from_here(s);
+            result = 1;
+            break;
         default: break;
         }
+        if (result) break;
     }
     wtimeout(in, 100);
     tui_screen_close(sc);
-    if (!result) {
-        free(g);
-        s->replay = NULL;
-    }
+    free(g);
+    if (!result) s->replay = NULL;   /* play-from-here's tui_init cleared it */
     return result;
 }
 
