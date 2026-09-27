@@ -227,6 +227,33 @@ static void test_atomic_save(void)
     check("and a good save leaves no temporary file", access(tmp, F_OK) != 0);
 }
 
+static void test_symlink_save(void)
+{
+    printf("== saving through a symlink ==\n");
+    char path[512], real[512], buf[256];
+    engines_path(path, sizeof(path));
+    snprintf(real, sizeof(real), "%s/real.conf", dir);
+    remove(path);
+    FILE *f = fopen(real, "w");
+    fputs("[Old]\npath = /bin/old\n", f);
+    fclose(f);
+    if (symlink(real, path) != 0) { perror("symlink"); failures++; return; }
+    EngineList l = { .count = 1 };
+    snprintf(l.e[0].name, sizeof(l.e[0].name), "New");
+    snprintf(l.e[0].path, sizeof(l.e[0].path), "/bin/new");
+    l.e[0].limit_ms = 1000;
+    engines_save(&l);
+    struct stat st;
+    check("the link stays a link", lstat(path, &st) == 0 && S_ISLNK(st.st_mode));
+    f = fopen(real, "r");
+    size_t n = f ? fread(buf, 1, sizeof(buf) - 1, f) : 0;
+    buf[n] = '\0';
+    if (f) fclose(f);
+    check("and its target gets the save", strstr(buf, "[New]") != NULL);
+    remove(path);
+    remove(real);
+}
+
 int main(void)
 {
     if (!mkdtemp(dir)) { perror("mkdtemp"); return 1; }
@@ -240,6 +267,7 @@ int main(void)
     test_labels();
     test_save_failure();
     test_atomic_save();
+    test_symlink_save();
 
     char path[512], sub[512];
     engines_path(path, sizeof(path));

@@ -196,6 +196,9 @@ int engines_save(const EngineList *l)
 {
     char path[512], tmp[600];
     if (!engines_path(path, sizeof(path)) || !make_dirs(path)) return 0;
+    char *real = realpath(path, NULL);         /* save through a symlink */
+    if (real && strlen(real) < sizeof(path)) strcpy(path, real);
+    free(real);
     /* Written aside and renamed over, so a failed save loses nothing. */
     snprintf(tmp, sizeof(tmp), "%s.tmp", path);
     FILE *f = fopen(tmp, "w");
@@ -213,7 +216,11 @@ int engines_save(const EngineList *l)
         remove(tmp);
         return 0;
     }
-    return rename(tmp, path) == 0;
+    if (rename(tmp, path) != 0) {
+        remove(tmp);
+        return 0;
+    }
+    return 1;
 }
 
 void engine_strength_label(const EngineEntry *e, char *buf, size_t n)
