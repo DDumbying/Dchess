@@ -562,7 +562,17 @@ void tui_run(TUIState *state)
 
     init_colors(state->theme);
 
-    if (state->replay_list) {
+    if (state->stats_only) {
+        if (!state->profiles.count) {
+            endwin();
+            printf("No profiles yet. Play a game first.\n");
+            return;
+        }
+        if (!stats_screen(state, 1)) {
+            endwin();
+            return;
+        }
+    } else if (state->replay_list) {
         ReplayList *list = state->replay_list;
         char file[512];
         snprintf(file, sizeof(file), "%s", state->replay_path);

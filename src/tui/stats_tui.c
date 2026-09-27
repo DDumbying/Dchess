@@ -1,4 +1,5 @@
 #include "tui/stats_tui.h"
+#include "tui/replay_tui.h"
 #include "tui/colors.h"
 #include "tui/panels.h"
 #include "tui/panel.h"
@@ -15,6 +16,10 @@
 enum { FOCUS_OPP, FOCUS_RECENT };
 
 typedef struct {
+    TUIState    *s;
+    int          can_replay;
+    int          rec_sel;
+    char         msg[96], games[512];
     ProfileList *profiles;
     int          index;           /* profile shown */
     RecordList   rec;
@@ -196,6 +201,8 @@ static void draw_recent(Page *pg, int h, int w, int y, int x)
     const StatsView *v = &pg->v;
     const char *who = pg->profiles->p[pg->index].name;
     int rows = h - 2, name_w = w - 28 > 6 ? w - 28 : 6;
+    if (pg->rec_sel < pg->rec_top) pg->rec_top = pg->rec_sel;
+    if (rows > 0 && pg->rec_sel >= pg->rec_top + rows) pg->rec_top = pg->rec_sel - rows + 1;
     if (pg->rec_top > v->recent_count - rows) pg->rec_top = v->recent_count - rows > 0 ? v->recent_count - rows : 0;
     for (int i = 0; i < rows && pg->rec_top + i < v->recent_count; i++) {
         const Record *r = v->recent[pg->rec_top + i];
@@ -204,6 +211,11 @@ static void draw_recent(Page *pg, int h, int w, int y, int x)
         char when[16];
         age(records_time(r), when, sizeof(when));
         int pair = o > 0 ? CP_STATUS_OK : o < 0 ? CP_STATUS_ERR : CP_ACC_CLOCK;
+        if (pg->focus == FOCUS_RECENT && pg->rec_top + i == pg->rec_sel) {
+            wattron(p, A_REVERSE);
+            mvwprintw(p, 1 + i, 1, "%*s", w - 2, "");
+            wattroff(p, A_REVERSE);
+        }
         wattron(p, COLOR_PAIR(pair) | A_BOLD);
         mvwprintw(p, 1 + i, 2, "%c", o > 0 ? 'W' : o < 0 ? 'L' : 'D');
         wattroff(p, COLOR_PAIR(pair) | A_BOLD);
@@ -241,37 +253,69 @@ static void draw(Page *pg)
         draw_opponents(pg, oh, cols, 4, 0);
         draw_recent(pg, body - 4 - oh, cols, 4 + oh, 0);
     }
-    attron(COLOR_PAIR(CP_HINT));
-    mvw_fit(stdscr, rows - 1, 1, cols - 2, "←→ profile  tab panel  ↑↓ scroll  esc back");
-    attroff(COLOR_PAIR(CP_HINT));
+    attron(COLOR_PAIR(pg->msg[0] ? CP_STATUS_ERR : CP_HINT));
+    mvw_fit(stdscr, rows - 1, 1, cols - 2, pg->msg[0] ? pg->msg
+            : pg->focus == FOCUS_RECENT ? "←→ profile  tab panel  ↑↓ move  ⏎ replay  esc back"
+            : "←→ profile  tab panel  ↑↓ scroll  esc back");
+    attroff(COLOR_PAIR(pg->msg[0] ? CP_STATUS_ERR : CP_HINT));
     refresh();
 }
 
 static void rebuild(Page *pg)
 {
     stats_view_build(&pg->rec, &pg->profiles->p[pg->index], (long)time(NULL), &pg->v);
-    pg->opp_top = pg->rec_top = 0;
+    pg->opp_top = pg->rec_top = pg->rec_sel = 0;
 }
 
-static void run(ProfileList *profiles, int start)
+/* Opens the selected game; 1 when the player chose to play on from it. */
+static int open_selected(Page *pg)
+{
+    if (pg->rec_sel >= pg->v.recent_count) return 0;
+    const Record *r = pg->v.recent[pg->rec_sel];
+    if (r->legacy) { snprintf(pg->msg, sizeof(pg->msg), "no moves saved"); return 0; }
+    if (!pg->can_replay) {
+        snprintf(pg->msg, sizeof(pg->msg), "replays open from the launcher, not during a game");
+        return 0;
+    }
+    int play = replay_open(pg->s, pg->games, r->offset);
+    if (!play && pg->s->status[0]) snprintf(pg->msg, sizeof(pg->msg), "%.*s", (int)sizeof(pg->msg) - 1, pg->s->status);
+    clear();
+    return play;
+}
+
+static int run(TUIState *s, int can_replay, ProfileList *profiles, int start)
 {
     Page pg;
-    char games[512];
     memset(&pg, 0, sizeof(pg));
+    pg.s = s;
+    pg.can_replay = can_replay;
     pg.profiles = profiles;
     pg.index = start;
-    records_path(games, sizeof(games));
-    records_load(games, &pg.rec);
+    records_path(pg.games, sizeof(pg.games));
+    records_load(pg.games, &pg.rec);
     rebuild(&pg);
     keypad(stdscr, TRUE);
-    int resized = 0;
+    int resized = 0, play = 0;
 
     for (;;) {
         draw(&pg);
         int ch = getch();
         int n = profiles->count;
+        pg.msg[0] = '\0';
         if (ch == KEY_RESIZE) resized = 1;
         if (ch == 27 || ch == 'q') break;
+        if (pg.focus == FOCUS_RECENT && (ch == '\n' || ch == '\r' || ch == KEY_ENTER)) {
+            if ((play = open_selected(&pg))) break;
+            continue;
+        }
+        if (pg.focus == FOCUS_RECENT && (ch == KEY_UP || ch == 'k')) {
+            if (pg.rec_sel > 0) pg.rec_sel--;
+            continue;
+        }
+        if (pg.focus == FOCUS_RECENT && (ch == KEY_DOWN || ch == 'j')) {
+            if (pg.rec_sel < pg.v.recent_count - 1) pg.rec_sel++;
+            continue;
+        }
         if (ch == '\t') pg.focus = pg.focus == FOCUS_OPP ? FOCUS_RECENT : FOCUS_OPP;
         else if ((ch == KEY_LEFT || ch == 'h') && n > 1) { pg.index = (pg.index + n - 1) % n; rebuild(&pg); }
         else if ((ch == KEY_RIGHT || ch == 'l') && n > 1) { pg.index = (pg.index + 1) % n; rebuild(&pg); }
@@ -286,40 +330,14 @@ static void run(ProfileList *profiles, int start)
     records_free(&pg.rec);
     clear();
     /* The caller's own layout also needs rebuilding. */
-    if (resized) ungetch(KEY_RESIZE);
+    if (resized && !play) ungetch(KEY_RESIZE);
+    return play;
 }
 
-void stats_screen(TUIState *s)
+int stats_screen(TUIState *s, int can_replay)
 {
-    if (!s->profiles.count) return;
-    run(&s->profiles, s->profiles.active);
-}
-
-void stats_standalone(const char *profile)
-{
-    ProfileList l;
-    if (!profiles_load(&l)) {
-        /* First run happens here too, so an upgrade shows its old games. */
-        DchessStats old;
-        char games[512];
-        stats_load(&old);
-        records_path(games, sizeof(games));
-        profiles_first_run(&l, getenv("USER"), &old, games, NULL);
-    }
-    if (!l.count) {
-        printf("No profiles yet. Play a game first.\n");
-        return;
-    }
-    int i = profile && profile[0] ? profiles_find(&l, profile) : -1;
-    int theme = theme_from_name(l.p[i >= 0 ? i : l.active].theme);
-
-    initscr();
-    cbreak();
-    noecho();
-    curs_set(0);
-    init_colors(theme >= 0 ? theme : 0);
-    run(&l, i >= 0 ? i : l.active);
-    endwin();
+    if (!s->profiles.count) return 0;
+    return run(s, can_replay, &s->profiles, s->profiles.active);
 }
 
 void stats_mini(WINDOW *parent, const TUIState *s)

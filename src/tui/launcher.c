@@ -5,6 +5,7 @@
 #include "tui/engines_tui.h"
 #include "tui/panels.h"
 #include "tui/render.h"
+#include "tui/replay_tui.h"
 #include "tui/stats_tui.h"
 #include "engine/fen.h"
 #include "game/records.h"
@@ -23,7 +24,7 @@
 #include <wchar.h>
 
 enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_BOOK, ROW_THEME, ROW_START, ROW_COUNT };
-enum { FOCUS_PROFILES, FOCUS_GAME };
+enum { FOCUS_PROFILES, FOCUS_GAME, FOCUS_CARD };
 
 #define LEFT_W  24
 #define CARD_W  28
@@ -40,6 +41,7 @@ typedef struct {
     char       book[256], custom_book[256];   /* builtin, off or a path */
     char       book_start[256];               /* changed from this = remembered */
     int        row, focus, pcursor;   /* pcursor == count: "+ new profile" */
+    int        csel, card_rows;       /* the card's selected game; how many it shows */
     char       msg[96];
     int        msg_err;
     RecordList rec;
@@ -79,7 +81,7 @@ static int cycle_index(const TUIState *s, const Player *p)
 
 static void say(Launch *L, int err, const char *text)
 {
-    snprintf(L->msg, sizeof(L->msg), "%s", text);
+    snprintf(L->msg, sizeof(L->msg), "%.*s", (int)sizeof(L->msg) - 1, text);
     L->msg_err = err;
 }
 
@@ -114,6 +116,7 @@ static void set_active(TUIState *s, Launch *L, int i)
     s->profiles.active = i;
     s->file_active = i;
     L->pcursor = i;
+    L->csel = 0;
     profiles_save(&s->profiles);
     apply_profile(s, L);
 }
@@ -241,15 +244,18 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
     delwin(p);
 }
 
+/* Built by draw_card; ⏎ on the card reads it. */
+static StatsView card_view;
+
 static void draw_card(TUIState *s, Launch *L, int h, int y, int x)
 {
     const Profile *pr = &s->profiles.p[s->profiles.active];
-    WINDOW *p = panel(h, CARD_W, y, x, pr->name, 0);
+    WINDOW *p = panel(h, CARD_W, y, x, pr->name, L->focus == FOCUS_CARD);
     if (!p) return;
-    static StatsView sv;
-    stats_view_build(&L->rec, pr, (long)time(NULL), &sv);
+    stats_view_build(&L->rec, pr, (long)time(NULL), &card_view);
+    L->card_rows = 0;
     int in = CARD_W - 4;
-    RecordTally t = sv.total;
+    RecordTally t = card_view.total;
     if (!t.games) {
         wattron(p, COLOR_PAIR(CP_HINT));
         mvw_fit(p, 1, 2, in, "no games yet");
@@ -269,15 +275,20 @@ static void draw_card(TUIState *s, Launch *L, int h, int y, int x)
     wattroff(p, COLOR_PAIR(CP_STATUS_OK));
     mvwprintw(p, 2, 2 + bar, " %3d%%", pct);
     int row = 3;
-    if (sv.streak) {
-        snprintf(line, sizeof(line), "streak %c%d", sv.streak, sv.streak_len);
+    if (card_view.streak) {
+        snprintf(line, sizeof(line), "streak %c%d", card_view.streak, card_view.streak_len);
         wattron(p, COLOR_PAIR(CP_HINT));
         mvw_fit(p, row++, 2, in, line);
         wattroff(p, COLOR_PAIR(CP_HINT));
     }
     row++;
-    for (int i = 0; i < sv.recent_count && row < h - 1; i++, row++) {
-        const Record *r = sv.recent[i];
+    for (int i = 0; i < card_view.recent_count && row < h - 1; i++, row++) {
+        const Record *r = card_view.recent[i];
+        if (L->focus == FOCUS_CARD && i == L->csel) {
+            wattron(p, A_REVERSE);
+            mvwprintw(p, row, 1, "%*s", CARD_W - 2, "");
+            wattroff(p, A_REVERSE);
+        }
         int mine_white = r->white_kind == KIND_PROFILE && strcmp(r->white, pr->name) == 0;
         int o = mine_white ? r->result : -r->result;
         char opp[PLAYER_NAME_MAX + 1], when[16];
@@ -291,6 +302,7 @@ static void draw_card(TUIState *s, Launch *L, int h, int y, int x)
         wattron(p, COLOR_PAIR(CP_HINT));
         mvwprintw(p, row, CARD_W - 5, "%3s", when);
         wattroff(p, COLOR_PAIR(CP_HINT));
+        L->card_rows = i + 1;
     }
     delwin(p);
 }
@@ -333,6 +345,7 @@ static void draw(TUIState *s, Launch *L)
         draw_profiles(s, L, ph, py, x0);
         draw_game(s, L, ph, gw, py, x0 + LEFT_W, 0);
         if (card) draw_card(s, L, ph, py, x0 + w - CARD_W);
+        else L->card_rows = 0;
         y0 = py + ph;
     }
 
@@ -430,11 +443,6 @@ static void delete_profile(TUIState *s, Launch *L)
     say(L, 0, "Deleted");
 }
 
-static void show_stats(TUIState *s)
-{
-    stats_screen(s);
-}
-
 static void change_row(TUIState *s, Launch *L, int dir)
 {
     if (L->row <= ROW_BLACK) {
@@ -501,7 +509,8 @@ int tui_launcher(TUIState *state)
         int rows, cols, ch = getch();
         getmaxyx(stdscr, rows, cols);
         int small = cols < 80 || rows < 20;
-        if (small) L.focus = FOCUS_GAME;
+        int card = !small && (cols < BLOCK_W ? cols : BLOCK_W) >= 100 && state->profiles.count;
+        if (small || (L.focus == FOCUS_CARD && !card)) L.focus = FOCUS_GAME;
         say(&L, 0, "");
 
         switch (ch) {
@@ -509,7 +518,9 @@ int tui_launcher(TUIState *state)
             records_free(&L.rec);
             return 0;
         case '\t':
-            if (!small) L.focus = L.focus == FOCUS_GAME ? FOCUS_PROFILES : FOCUS_GAME;
+            if (!small)
+                L.focus = L.focus == FOCUS_PROFILES ? FOCUS_GAME
+                        : L.focus == FOCUS_GAME && card ? FOCUS_CARD : FOCUS_PROFILES;
             break;
         case 'e': case 'E':
             engines_screen(&state->engines);
@@ -518,7 +529,10 @@ int tui_launcher(TUIState *state)
             clear();
             break;
         case 's': case 'S':
-            show_stats(state);
+            if (stats_screen(state, 1)) {
+                records_free(&L.rec);
+                return 1;
+            }
             break;
         case 'p': case 'P':
             if (small && state->profiles.count)
@@ -526,6 +540,24 @@ int tui_launcher(TUIState *state)
             break;
         default:
             break;
+        }
+
+        if (L.focus == FOCUS_CARD) {
+            if ((ch == KEY_UP || ch == 'k') && L.csel > 0) L.csel--;
+            else if ((ch == KEY_DOWN || ch == 'j') && L.csel < L.card_rows - 1) L.csel++;
+            else if ((ch == '\n' || ch == '\r' || ch == KEY_ENTER) && L.csel < L.card_rows) {
+                const Record *r = card_view.recent[L.csel];
+                if (r->legacy) {
+                    say(&L, 1, "no moves saved");
+                } else if (replay_open(state, L.games, r->offset)) {
+                    records_free(&L.rec);
+                    return 1;
+                } else {
+                    clear();
+                    if (state->status[0]) say(&L, 1, state->status);
+                }
+            }
+            continue;
         }
 
         if (L.focus == FOCUS_PROFILES) {
