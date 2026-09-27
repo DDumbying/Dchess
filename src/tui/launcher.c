@@ -413,6 +413,7 @@ static int start(TUIState *s, Launch *L)
     chosen.players[BLACK] = L->sel[BLACK];
     chosen.theme = L->theme;
     chosen.theme_set = 1;
+    snprintf(chosen.book, sizeof(chosen.book), "%s", s->cli_book);
     snprintf(chosen.profile, sizeof(chosen.profile), "%s", active_name(s));
     if (L->use_custom_fen && L->fen[0])
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", L->fen);

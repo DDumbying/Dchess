@@ -41,7 +41,8 @@ void tui_remember_setup(TUIState *state)
         snprintf(p->theme, sizeof(p->theme), "%s", theme_name(state->theme));
     player_word(&state->players[WHITE], p->white, sizeof(p->white));
     player_word(&state->players[BLACK], p->black, sizeof(p->black));
-    snprintf(p->book, sizeof(p->book), "%s", state->book_choice);
+    if (!state->cli_book[0])   /* --book is for one run */
+        snprintf(p->book, sizeof(p->book), "%s", state->book_choice);
     /* Saved with the file's own active profile: --profile is for one run. */
     int run = state->profiles.active;
     state->profiles.active = state->file_active;
@@ -83,6 +84,7 @@ static void load_book(TUIState *state)
         state->book = book_open(state->book_choice, err, sizeof(err));
         if (state->book) return;
         snprintf(state->status, sizeof(state->status), "%s, using the built-in book", err);
+        snprintf(state->book_choice, sizeof(state->book_choice), "builtin");
     }
     state->book = book_builtin();
 }
@@ -307,6 +309,7 @@ int handle_command(TUIState *state, const char *cmd) {
             return 1;
         }
         snprintf(state->book_choice, sizeof(state->book_choice), "%s", cmd + 5);
+        state->cli_book[0] = '\0';   /* a choice made here is remembered */
         snprintf(state->status, sizeof(state->status), "Book: %s", state->book_choice);
         cancel_engine_search(state);
         for (int side = WHITE; side <= BLACK; side++) {
@@ -317,6 +320,7 @@ int handle_command(TUIState *state, const char *cmd) {
         state->go_driver = NULL;
         load_book(state);
         tui_attach_players(state);
+        tui_remember_setup(state);
         return 1;
     }
     if (strcmp(cmd, "pause") == 0) {

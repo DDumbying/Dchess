@@ -295,8 +295,10 @@ void tui_init(TUIState *state, const CliArgs *args)
     }
     state->theme_set = args ? args->theme_set : 0;
     const char *pb = state->profiles.count ? state->profiles.p[state->profiles.active].book : "";
+    if (args && args->book[0])
+        snprintf(state->cli_book, sizeof(state->cli_book), "%s", args->book);
     snprintf(state->book_choice, sizeof(state->book_choice), "%s",
-             args && args->book[0] ? args->book : pb[0] ? pb : "builtin");
+             state->cli_book[0] ? state->cli_book : pb[0] ? pb : "builtin");
     if (!state->theme_set && state->profiles.count) {
         int t = theme_from_name(state->profiles.p[state->profiles.active].theme);
         if (t >= 0) state->theme = t;

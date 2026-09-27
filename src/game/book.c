@@ -282,7 +282,8 @@ Book *book_open(const char *path, char *err, size_t n)
         snprintf(err, n, "cannot open book %s", path);
         return NULL;
     }
-    if (st.st_size % 16 != 0 || st.st_size > BOOK_MAX_BYTES) {
+    if (!S_ISREG(st.st_mode) || st.st_size == 0 || st.st_size % 16 != 0 ||
+        st.st_size > BOOK_MAX_BYTES) {
         snprintf(err, n, "%s is not a Polyglot book", path);
         return NULL;
     }
@@ -309,6 +310,11 @@ Book *book_open(const char *path, char *err, size_t n)
         e->weight = r[10] << 8 | r[11];
     }
     fclose(f);
+    if (b->count < count) {
+        snprintf(err, n, "cannot read book %s", path);
+        book_free(b);
+        return NULL;
+    }
     return b;
 }
 
@@ -396,9 +402,9 @@ Move book_pick(const Book *b, const GameState *g, int level, unsigned *rng)
     int weights[64], n = 0, total = 0;
     for (int i = lo; i < b->count && b->e[i].key == key && n < 64; i++) {
         Move m;
-        if (!decode(g, &b->e[i], &m)) continue;
+        if (b->e[i].weight <= 0 || !decode(g, &b->e[i], &m)) continue;   /* weight 0: never */
         moves[n] = m;
-        weights[n] = b->e[i].weight > 0 ? b->e[i].weight : 1;
+        weights[n] = b->e[i].weight;
         total += weights[n++];
     }
     if (!n) return 0;

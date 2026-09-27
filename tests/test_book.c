@@ -110,10 +110,11 @@ static void test_file_book(void)
         { book_key(&g.pos), pg_move(e2, e4, 0), 3 },
         { book_key(&g.pos), pg_move(d2, d4, 0), 1 },
         { book_key(&g.pos), pg_move(e2, e5, 0), 5 },            /* illegal */
+        { book_key(&g.pos), pg_move(g1, f3, 0), 0 },            /* weight 0: never */
         { book_key(&c.pos), pg_move(e1, h1, 0), 1 },            /* castling, king takes rook */
         { book_key(&pr.pos), pg_move(a7, a8, 4), 1 },           /* promotion to a queen */
     };
-    write_bin(path, r, 5);
+    write_bin(path, r, 6);
     Book *b = book_open(path, err, sizeof(err));
     check("a .bin opens", b != NULL);
 
@@ -125,7 +126,7 @@ static void test_file_book(void)
         else if (FROM(m) == d2 && TO(m) == d4) n_d4++;
         else other++;
     }
-    check("only legal moves are picked", other == 0);
+    check("only legal, weighted moves are picked (never weight 0)", other == 0);
     check("weights are respected (about 3:1)", n_e4 > 240 && n_e4 < 360 && n_d4 > 40);
     Move castle = book_pick(b, &c, DIFF_HARD, &rng);
     check("king-takes-rook becomes castling", FROM(castle) == e1 && TO(castle) == g1);
@@ -147,6 +148,13 @@ static void test_file_book(void)
     check("a huge file is refused without reading it",
           fd >= 0 && ftruncate(fd, 600L * 1024 * 1024) == 0 && close(fd) == 0 &&
           !book_open(path, err, sizeof(err)));
+    remove(path);
+
+    err[0] = '\0';
+    check("a directory is refused", !book_open("tests", err, sizeof(err)) && err[0]);
+    fclose(fopen(path, "wb"));
+    err[0] = '\0';
+    check("an empty file is refused", !book_open(path, err, sizeof(err)) && err[0]);
     remove(path);
 }
 
