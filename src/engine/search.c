@@ -124,9 +124,16 @@ typedef struct {
     int    score;
     TTFlag flag;
     Move   best;
+    unsigned char age;     /* the search() that stored it */
 } TTEntry;
 
 static TTEntry *tt = NULL;
+
+/* tt_depth is off: it did not measure as a gain (see docs/overview.md). */
+static SearchOptions opt = { 1, 1, 1, 1, 1, 0 };
+
+SearchOptions search_default_options(void) { SearchOptions o = { 1, 1, 1, 1, 1, 0 }; return o; }
+void search_set_options(const SearchOptions *o) { opt = *o; }
 
 static void tt_ensure(void) {
     if (!tt) tt = calloc(TT_SIZE, sizeof(TTEntry));
@@ -143,9 +150,8 @@ static TTEntry *tt_probe(U64 key) {
     return (e->key == key) ? e : NULL;
 }
 
-/* Mate scores are relative to the ply they were found at, so caching them
- * verbatim and reusing at a different ply would report the wrong mate
- * distance. Simplest safe fix: just don't cache them. */
+static unsigned char search_age;
+
 static int is_mate_score(int s) {
     return s > MATE_BOUND || s < -MATE_BOUND;
 }
@@ -164,10 +170,32 @@ static void pv_extend(int ply, Move m)
     pv_len[ply] = n > ply + 1 ? n : ply + 1;
 }
 
-static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best) {
-    if (!tt || is_mate_score(score)) return;
+/* Mate scores count plies from the root, so they are stored counting from
+ * this node and turned back on probe; without the depth-preferred table
+ * they are not stored at all, as before. */
+static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best, int ply) {
+    if (!tt) return;
     TTEntry *e = &tt[key % TT_SIZE];
+    if (!opt.tt_depth) {
+        if (is_mate_score(score)) return;
+    } else {
+        /* A deeper result from this search stays unless the new one is exact. */
+        int keep = e->key && e->age == search_age && depth < e->depth && flag != TT_EXACT;
+        if (keep) return;
+        if (score > MATE_BOUND)  score += ply;
+        if (score < -MATE_BOUND) score -= ply;
+    }
     e->key = key; e->depth = depth; e->score = score; e->flag = flag; e->best = best;
+    e->age = search_age;
+}
+
+/* The entry's score as seen from this node's ply. */
+static int tt_score(const TTEntry *e, int ply)
+{
+    int s = e->score;
+    if (opt.tt_depth && s > MATE_BOUND)  s -= ply;
+    if (opt.tt_depth && s < -MATE_BOUND) s += ply;
+    return s;
 }
 
 /* Put the TT's remembered best move (if any) first, then sort the rest
@@ -271,6 +299,18 @@ static int quiescence(Position *pos, int alpha, int beta, int qply, int ply) {
     return alpha;
 }
 
+/* A null move at this ply: the next one may not be another. */
+static unsigned char null_played[MAX_DEPTH + 2];
+
+/* Two pieces besides pawns and the king: with fewer, passing is often the
+ * best move there is (zugzwang), so a null move proves nothing. */
+static int has_pieces(const Position *pos, int side)
+{
+    int o = side == WHITE ? 0 : 6;
+    return count_bits(pos->bitboards[N + o] | pos->bitboards[B + o] |
+                      pos->bitboards[R + o] | pos->bitboards[Q + o]) >= 2;
+}
+
 static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     node_count++;
     if (ply < PV_PLIES) pv_len[ply] = ply;
@@ -281,6 +321,9 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     if (cancel_check_due() && atomic_load(&cancel_requested))
         search_aborted = 1;
 
+    if (ply >= MAX_DEPTH - 1) return quiescence(pos, alpha, beta, 0, ply);
+    int in_check = is_in_check(pos, pos->side);
+    if (opt.check_ext && in_check) depth++;   /* no horizon in the middle of a check */
     if (depth == 0) return quiescence(pos, alpha, beta, 0, ply);
 
     U64 key = hash_position(pos);
@@ -288,11 +331,31 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     TTEntry *hit = tt_probe(key);
     if (hit) {
         tt_move = hit->best;
-        if (hit->depth >= depth) {
-            if (hit->flag == TT_EXACT) return hit->score;
-            if (hit->flag == TT_ALPHA && hit->score <= alpha) return alpha;
-            if (hit->flag == TT_BETA  && hit->score >= beta)  return beta;
+        /* On the principal line the search itself must run, or the line
+         * it reports would stop at the first table hit. */
+        int pv_node = beta - alpha > 1;
+        if (hit->depth >= depth && !(opt.tt_depth && pv_node)) {
+            int hs = tt_score(hit, ply);
+            if (hit->flag == TT_EXACT) return hs;
+            if (hit->flag == TT_ALPHA && hs <= alpha) return alpha;
+            if (hit->flag == TT_BETA  && hs >= beta)  return beta;
         }
+    }
+
+    /* Null move: if passing still beats beta, a real move surely does. */
+    if (opt.null_move && depth >= 3 && ply < MAX_DEPTH && !null_played[ply] &&
+        beta < MATE_BOUND && has_pieces(pos, pos->side) &&
+        !in_check && evaluate(pos) >= beta) {
+        Position saved = *pos;
+        pos->side ^= 1;
+        pos->enpassant = NO_SQ;
+        int R = 2 + (depth > 6);
+        null_played[ply + 1] = 1;
+        int score = -alpha_beta(pos, depth - 1 - R, ply + 1, -beta, -beta + 1);
+        null_played[ply + 1] = 0;
+        *pos = saved;
+        if (search_aborted) return alpha;
+        if (score >= beta) return beta;
     }
 
     MoveList ml;
@@ -316,13 +379,39 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         }
         legal++;
 
-        int score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+        Move m = ml.moves[i];
+        int reduce = 0;
+        /* Quiet moves late in the ordering are rarely best: look shallower
+         * first, and properly only if they surprise. */
+        if (opt.lmr && legal >= 4 && depth >= 3 && !in_check &&
+            !(FLAGS(m) & (FLAG_CAPTURE | FLAG_PROMOTION)) &&
+            m != killers[ply][0] && m != killers[ply][1] && !is_in_check(pos, pos->side))
+            reduce = legal >= 8 && depth >= 6 ? 2 : 1;
+
+        int score;
+        if (legal == 1) {
+            score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+        } else {
+            score = alpha + 1;
+            if (reduce)
+                score = -alpha_beta(pos, depth-1-reduce, ply+1, -alpha-1, -alpha);
+            if (score > alpha && !search_aborted) {
+                if (opt.pvs) {
+                    /* Later moves only have to prove they are no better. */
+                    score = -alpha_beta(pos, depth-1, ply+1, -alpha-1, -alpha);
+                    if (score > alpha && score < beta && !search_aborted)
+                        score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+                } else {
+                    score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
+                }
+            }
+        }
         memcpy(pos, &saved, sizeof(Position));
 
         if (search_aborted) return alpha;   /* nothing from here is trustworthy */
         if (score >= beta) {
             record_cutoff(ml.moves[i], depth, ply);
-            tt_store(key, depth, beta, TT_BETA, ml.moves[i]);
+            tt_store(key, depth, beta, TT_BETA, ml.moves[i], ply);
             return beta;
         }
         if (score > alpha) {
@@ -334,14 +423,61 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
 
     if (legal == 0) {
         /* Checkmate or stalemate */
-        int score = is_in_check(pos, pos->side)
-            ? -(MATE_SCORE - ply)
-            : 0;
-        return score;
+        return in_check ? -(MATE_SCORE - ply) : 0;
     }
 
-    tt_store(key, depth, alpha, (alpha > orig_alpha) ? TT_EXACT : TT_ALPHA, best_move);
+    tt_store(key, depth, alpha, (alpha > orig_alpha) ? TT_EXACT : TT_ALPHA, best_move, ply);
     return alpha;
+}
+
+typedef struct { Move best; int score, legal; Move pv[8]; int pv_len; } RootResult;
+
+/* One iteration at the root inside (alpha, beta). A score at or below the
+ * starting alpha means every move failed low; at or above beta, one move
+ * failed high. */
+static RootResult root_search(Position *pos, int depth, int alpha, int beta)
+{
+    RootResult rr;
+    memset(&rr, 0, sizeof(rr));
+    rr.score = alpha;
+    MoveList ml;
+    generate_moves(pos, &ml);
+    TTEntry *hit = tt_probe(hash_position(pos));
+    int order[MAX_MOVES];
+    score_moves(pos, &ml, hit ? hit->best : 0, 0, order);
+
+    for (int i = 0; i < ml.count; i++) {
+        pick_move(&ml, order, i);
+        Position saved;
+        memcpy(&saved, pos, sizeof(Position));
+        if (!make_move(pos, ml.moves[i])) {
+            memcpy(pos, &saved, sizeof(Position));
+            continue;
+        }
+        rr.legal++;
+        int score;
+        if (!opt.pvs || rr.legal == 1) {
+            score = -alpha_beta(pos, depth - 1, 1, -beta, -alpha);
+        } else {
+            score = -alpha_beta(pos, depth - 1, 1, -alpha - 1, -alpha);
+            if (score > alpha && score < beta && !search_aborted)
+                score = -alpha_beta(pos, depth - 1, 1, -beta, -alpha);
+        }
+        memcpy(pos, &saved, sizeof(Position));
+        if (search_aborted) break;   /* this iteration's numbers are unreliable */
+
+        if (score > alpha) {
+            alpha = score;
+            rr.best  = ml.moves[i];
+            rr.score = score;
+            rr.pv[0] = ml.moves[i];
+            rr.pv_len = 1;
+            for (int k = 1; k < pv_len[1] && rr.pv_len < 8; k++)
+                rr.pv[rr.pv_len++] = pv_table[1][k];
+            if (score >= beta) break;
+        }
+    }
+    return rr;
 }
 
 SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
@@ -349,6 +485,7 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
     struct timespec started;
     clock_gettime(CLOCK_MONOTONIC, &started);
     node_count = 0;
+    search_age++;
     tt_ensure();
     memset(killers, 0, sizeof(killers));
     memset(history, 0, sizeof(history));
@@ -371,59 +508,37 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
          * subject to the time budget, if one was given. */
         time_limited = (depth > 1) && (time_limit_ms > 0);
 
-        MoveList ml;
-        generate_moves(pos, &ml);
         U64 root_key = hash_position(pos);
-        TTEntry *hit = tt_probe(root_key);
-        int order[MAX_MOVES];
-        score_moves(pos, &ml, hit ? hit->best : 0, 0, order);
-
-        int alpha = -INF, beta = INF;
-        Move iter_best_move  = 0;
-        int  iter_best_score = -INF;
-        Move iter_pv[8];
-        int  iter_pv_len = 0;
-        int  legal = 0;
-
-        for (int i = 0; i < ml.count; i++) {
-            pick_move(&ml, order, i);
-
-            Position saved;
-            memcpy(&saved, pos, sizeof(Position));
-
-            if (!make_move(pos, ml.moves[i])) {
-                memcpy(pos, &saved, sizeof(Position));
-                continue;
-            }
-            legal++;
-
-            int score = -alpha_beta(pos, depth - 1, 1, -beta, -alpha);
-            memcpy(pos, &saved, sizeof(Position));
-
-            if (search_aborted) break; /* this iteration's numbers are unreliable */
-
-            if (score > alpha) {
-                alpha = score;
-                iter_best_move  = ml.moves[i];
-                iter_best_score = score;
-                iter_pv[0] = ml.moves[i];
-                iter_pv_len = 1;
-                for (int k = 1; k < pv_len[1] && iter_pv_len < 8; k++)
-                    iter_pv[iter_pv_len++] = pv_table[1][k];
-            }
+        RootResult rr;
+        int a = -INF, b = INF, prev = best.best_score;
+        int asp = opt.aspiration && depth >= 4 && best.best_move && abs(prev) < MATE_BOUND;
+        if (asp) { a = prev - 50; b = prev + 50; }
+        for (;;) {
+            rr = root_search(pos, depth, a, b);
+            if (search_aborted || !asp) break;
+            /* Outside the window: widen that side, then open it fully. */
+            if (rr.score <= a && a > -INF)      a = a == prev - 50 ? prev - 200 : -INF;
+            else if (rr.score >= b && b < INF)  b = b == prev + 50 ? prev + 200 : INF;
+            else break;
         }
+        int legal = rr.legal;
 
         if (search_aborted) break; /* keep the previous (complete) iteration's `best` */
 
-        best.best_move     = iter_best_move;
-        memcpy(best.pv, iter_pv, sizeof(iter_pv));
-        best.pv_len        = iter_pv_len;
-        best.best_score     = iter_best_score;
-        best.depth_reached  = depth;
-        if (iter_best_move)
-            tt_store(root_key, depth, alpha, TT_EXACT, iter_best_move);
+        best.best_move     = rr.best;
+        memcpy(best.pv, rr.pv, sizeof(rr.pv));
+        best.pv_len        = rr.pv_len;
+        best.best_score    = rr.best ? rr.score : -INF;
+        best.depth_reached = depth;
+        if (rr.best)
+            tt_store(root_key, depth, rr.score, TT_EXACT, rr.best, 0);
 
         if (legal == 0) break; /* checkmate/stalemate: nothing deeper to find */
+        if (legal == 1 && depth >= 2) break;   /* a forced move: nothing to choose */
+        /* A mate is settled once the depth is well past it: pruning can hide
+         * a shorter one at low depth, not at twice its length. */
+        int to_mate = MATE_SCORE - abs(best.best_score);
+        if (abs(best.best_score) > MATE_BOUND && depth >= 2 * to_mate + 2) break;
         if (time_limit_ms > 0 && deadline_passed()) break;
     }
 

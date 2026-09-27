@@ -16,19 +16,12 @@
 #include <string.h>
 
 /* Depth table ─────────────────────────────────────────────────────────── */
-static const int diff_to_depth[3] = { 2, 5, 8 };
+/* Easy and Medium are depth-capped to keep their feel; Hard searches as
+ * deep as its time allows (with pruning and reductions it reaches about
+ * depth 12-13 in 5 s from ordinary positions). */
+static const int diff_to_depth[3] = { 2, 5, MAX_DEPTH };
 
-/* Time budget table (ms) ──────────────────────────────────────────────
- * Generous on purpose, but not unlimited: measured against the opening
- * position, this engine's depth 7 takes ~26s and depth 8 ~170s to
- * complete (no null-move pruning or late-move reductions to tame the
- * branching factor), while producing the *same* recommended move as
- * depth 6 did in well under a second. So a large budget mostly just
- * waits, without a corresponding strength gain, on calm positions --
- * hard's budget below is sized to usually finish depth 6 comfortably
- * and sometimes reach into depth 7 on sharper or simpler (lower
- * branching factor) positions, without committing to depth 7/8's full
- * cost on every single move. */
+/* Time budget table (ms). */
 static const int diff_to_time_ms[3] = { 1500, 3000, 5000 };
 
 int cli_depth_for_difficulty(int difficulty)
@@ -62,7 +55,7 @@ void cli_help(void)
         "          Set the engine strength.\n"
         "            easy   – depth 2, up to 1.5s  (quick, forgiving)\n"
         "            medium – depth 5, up to 3s   (balanced)  [default]\n"
-        "            hard   – depth 8, up to 5s   (challenging, slower)\n"
+        "            hard   – as deep as it gets in 5s (challenging)\n"
         "\n"
         "    -2, --two-player\n"
         "          Two people at one keyboard; no engine. The board flips\n"

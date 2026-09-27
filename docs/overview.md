@@ -547,6 +547,51 @@ never include ncurses, so everything testable is tested — around twenty test
 programs, plus scripted tmux sessions for the screens. The README's clips
 are recorded the same way (`tools/demo/`).
 
+### Round 9 — a stronger search, measured
+
+The search gained the standard techniques that tame the branching factor,
+each behind a switch (`SearchOptions`) so it could be measured on its own
+with `tools/match.c`: the same program plays itself with two option sets,
+from 40 book openings with colours swapped, and reports the score with an
+Elo difference and 95% error. Each step was kept only if it did not lose to
+the step before (80 games at 50 ms a move):
+
+| Step | Score | Elo |
+|------|-------|-----|
+| principal-variation search | 53.1% | +22 |
+| aspiration windows | 51.2% | +9 |
+| null-move pruning | 51.2% | +9 |
+| late-move reductions | 55.6% | +39 |
+| check extensions | 51.9% | +13 |
+| depth-preferred table | 48.8% | −9 — not measurable here, left off |
+
+All of it together against the plain search, 200 games at 50 ms: **59.8%,
++69 Elo (+38 .. +100)** — and that is at a speed where both reach only a
+few plies; at Hard's 5 seconds the depth gap is much wider.
+
+Two findings worth keeping:
+
+- **Null move and zugzwang.** Allowing a null move whenever the side to move
+  had any piece broke Morphy's mate in two and a classic zugzwang test —
+  both are single-piece zugzwangs. Requiring two pieces besides pawns and
+  the king fixed both.
+- **The table and the principal line.** A table that keeps deeper entries
+  gives more cutoffs, and every cutoff on the principal line cut the line
+  short (analysis showed one move). No table cutoffs at PV nodes fixed it.
+  The table itself cannot be judged by this harness — it clears the table
+  every move, and a 50 ms search never fills it — so it stays off until it
+  can be tested with longer searches.
+- **An uncapped Hard wasted time.** With no depth cap, a forced move or an
+  already-found mate kept deepening for the whole 5 seconds; the search now
+  stops on a single legal move, and on a mate once the depth is twice its
+  length.
+
+The payoff: at depth 8 the benchmark needs 6.8 M nodes and 1 s instead of
+89 M and 12 s, and in its 5 seconds Hard now reaches about depth 12–13
+instead of 7–9. Hard's depth cap is gone; Easy and Medium keep theirs.
+`tests/test_search.c` pins mates, the zugzwang, a tactics count and that the
+search with every option off is exactly the old one.
+
 ## 4. Current architecture
 
 ```
@@ -555,8 +600,10 @@ Dchess/
 │   ├── engine/          — the chess engine; no ncurses
 │   │   ├── board.c, move.c, movegen.c, make.c   — bitboards, moves, legality
 │   │   ├── eval.c       — material + piece-square tables, tapered king
-│   │   ├── search.c     — iterative deepening, alpha-beta, quiescence, TT,
-│   │   │                  killers/history, principal line
+│   │   ├── search.c     — iterative-deepening PVS with aspiration, null
+│   │   │                  move, LMR, check extensions, quiescence, TT,
+│   │   │                  killers/history, principal line; switchable
+│   │   │                  SearchOptions
 │   │   ├── hash.c, fen.c
 │   ├── game/            — everything about a game; no ncurses
 │   │   ├── game.c       — the played game: log, undo, draws, clocks, flags
@@ -579,6 +626,7 @@ Dchess/
 ├── headers/             — mirrors src/
 ├── tests/               — one test program per core module, perft, a
 │                          scripted fake UCI engine
+├── tools/match.c        — the search against itself, as Elo (make match)
 ├── tools/demo/          — scripted asciinema recordings for the README
 ├── docs/                — guide.md, this journal, specs and plans
 └── assets/              — logo and the README's clips
@@ -600,10 +648,10 @@ Worth knowing if you pick the project up:
 
 ## 5. What's still genuinely open
 
-1. **Playing strength.** No null-move pruning, late-move reductions or
-   aspiration windows, and the transposition table always replaces. Hard
-   reaches about depth 6 in its time; these would let it search deeper and
-   make analysis better at the same time. This is next.
+1. **The evaluation is the weak half now.** The search reaches depth 12–13,
+   but it evaluates with material and piece-square tables only (king
+   tapering aside): no pawn structure, mobility, king safety or passed
+   pawns. That is where the next strength is.
 2. **A single built-in search.** See §4 — re-entrancy would let dchess
    analyse while it plays.
 3. **Full-position copies per node** instead of incremental make/unmake.
@@ -653,9 +701,9 @@ the `ncurses` layer, which makes this more tractable than it might sound.
 
 ## 7. Roadmap
 
-**Next:** a stronger engine — null-move pruning, late-move reductions,
-aspiration windows, check extensions and a better replacement scheme,
-each measured with a match against the previous version.
+**Next:** a better evaluation — pawn structure, passed pawns, mobility
+and king safety, tapered for every piece — measured with `make match` the
+same way the search was.
 
 **Then, roughly by payoff:**
 - A small pass over the deferred items in §5.
@@ -663,6 +711,7 @@ each measured with a match against the previous version.
   replay and analysis machinery.
 - A UCI engine mode (`dchess --uci`), so dchess can play in any GUI and be
   measured against other engines properly.
+- The depth-preferred table, re-measured with longer searches.
 - Incremental make/unmake and a re-entrant search.
 
 ## 8. Quick reference: verifying any of this yourself
@@ -670,7 +719,8 @@ each measured with a match against the previous version.
 ```bash
 make && ./dchess            # the game (needs ncursesw)
 make test                   # every test program, perft included (no ncurses needed)
-make bench                  # search speed on fixed positions
+make bench                  # search speed on fixed positions (./build/bench 8 none: the old search)
+make match ARGS="--base none --cand all"   # the search against itself, as Elo
 tools/demo/make-demos.sh    # re-record the README's clips (tmux, asciinema 3, agg)
 ```
 

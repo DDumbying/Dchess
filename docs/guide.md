@@ -77,7 +77,7 @@ Useful commands (all typed after `i`):
 |-------|-------|---------------|
 | Easy | 2 | up to 1.5 s |
 | Medium | 5 | up to 3 s |
-| Hard | 8 | up to 5 s |
+| Hard | as deep as it gets (about 12–13) | up to 5 s |
 
 In a timed game it budgets from its clock instead, still capped at its
 level's depth.
