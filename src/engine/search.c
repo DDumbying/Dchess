@@ -276,6 +276,18 @@ static int quiescence(Position *pos, int alpha, int beta, int qply, int ply) {
     return alpha;
 }
 
+/* A null move at this ply: the next one may not be another. */
+static unsigned char null_played[MAX_DEPTH + 2];
+
+/* Two pieces besides pawns and the king: with fewer, passing is often the
+ * best move there is (zugzwang), so a null move proves nothing. */
+static int has_pieces(const Position *pos, int side)
+{
+    int o = side == WHITE ? 0 : 6;
+    return count_bits(pos->bitboards[N + o] | pos->bitboards[B + o] |
+                      pos->bitboards[R + o] | pos->bitboards[Q + o]) >= 2;
+}
+
 static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     node_count++;
     if (ply < PV_PLIES) pv_len[ply] = ply;
@@ -298,6 +310,22 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
             if (hit->flag == TT_ALPHA && hit->score <= alpha) return alpha;
             if (hit->flag == TT_BETA  && hit->score >= beta)  return beta;
         }
+    }
+
+    /* Null move: if passing still beats beta, a real move surely does. */
+    if (opt.null_move && depth >= 3 && ply < MAX_DEPTH && !null_played[ply] &&
+        beta < MATE_BOUND && has_pieces(pos, pos->side) &&
+        !is_in_check(pos, pos->side) && evaluate(pos) >= beta) {
+        Position saved = *pos;
+        pos->side ^= 1;
+        pos->enpassant = NO_SQ;
+        int R = 2 + (depth > 6);
+        null_played[ply + 1] = 1;
+        int score = -alpha_beta(pos, depth - 1 - R, ply + 1, -beta, -beta + 1);
+        null_played[ply + 1] = 0;
+        *pos = saved;
+        if (search_aborted) return alpha;
+        if (score >= beta) return beta;
     }
 
     MoveList ml;
