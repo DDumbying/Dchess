@@ -226,8 +226,8 @@ doesn't exit, it just enters the chessboard"). ESC now quits the program
 outright; the only way into a game is explicitly selecting "Start Game".
 
 **Color themes** (`src/utils/theme.c`, `headers/utils/theme.h`). Four
-built-in palettes -- `classic` (the original), `midnight`, `forest`,
-`contrast` -- selectable via `--theme <name>` on the CLI, a "Theme" row in
+built-in palettes -- `gruvbox` (the default), `tokyonight`, `btop`,
+`catppuccin` -- selectable via `--theme <name>` on the CLI, a "Theme" row in
 onboarding with a live preview (the palette actually changes on screen as
 you cycle left/right, since `init_colors()` is safe to call repeatedly),
 or an in-game `theme <name>` command. The palette table itself is

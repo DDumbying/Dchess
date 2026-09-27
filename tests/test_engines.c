@@ -208,6 +208,10 @@ static void test_save_failure(void)
 static void test_atomic_save(void)
 {
     printf("== saving is atomic ==\n");
+    if (geteuid() == 0) {                  /* root writes through a read-only directory */
+        printf("  (running as root; skipped)\n");
+        return;
+    }
     char path[512], sub[512], buf[256];
     write_conf("[Keep]\npath = /bin/keep\n");
     engines_path(path, sizeof(path));

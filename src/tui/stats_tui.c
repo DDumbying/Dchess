@@ -211,11 +211,6 @@ static void draw_recent(Page *pg, int h, int w, int y, int x)
         char when[16];
         age(records_time(r), when, sizeof(when));
         int pair = o > 0 ? CP_STATUS_OK : o < 0 ? CP_STATUS_ERR : CP_ACC_CLOCK;
-        if (pg->focus == FOCUS_RECENT && pg->rec_top + i == pg->rec_sel) {
-            wattron(p, A_REVERSE);
-            mvwprintw(p, 1 + i, 1, "%*s", w - 2, "");
-            wattroff(p, A_REVERSE);
-        }
         wattron(p, COLOR_PAIR(pair) | A_BOLD);
         mvwprintw(p, 1 + i, 2, "%c", o > 0 ? 'W' : o < 0 ? 'L' : 'D');
         wattroff(p, COLOR_PAIR(pair) | A_BOLD);
@@ -225,6 +220,8 @@ static void draw_recent(Page *pg, int h, int w, int y, int x)
         wattron(p, COLOR_PAIR(CP_HINT));
         mvwprintw(p, 1 + i, 5 + name_w, "%3d mv  %-7s %4s", (r->plies + 1) / 2, ending_word(r->end_reason), when);
         wattroff(p, COLOR_PAIR(CP_HINT));
+        if (pg->focus == FOCUS_RECENT && pg->rec_top + i == pg->rec_sel)
+            mvwchgat(p, 1 + i, 1, w - 2, A_REVERSE, CP_CANVAS, NULL);
     }
     if (!v->recent_count) {
         wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, 1, 2, "no games yet"); wattroff(p, COLOR_PAIR(CP_HINT));
@@ -255,7 +252,8 @@ static void draw(Page *pg)
     }
     attron(COLOR_PAIR(pg->msg[0] ? CP_STATUS_ERR : CP_HINT));
     mvw_fit(stdscr, rows - 1, 1, cols - 2, pg->msg[0] ? pg->msg
-            : pg->focus == FOCUS_RECENT ? "←→ profile  tab panel  ↑↓ move  ⏎ replay  esc back"
+            : pg->focus == FOCUS_RECENT && pg->can_replay ? "←→ profile  tab panel  ↑↓ move  ⏎ replay  esc back"
+            : pg->focus == FOCUS_RECENT ? "←→ profile  tab panel  ↑↓ move  esc back"
             : "←→ profile  tab panel  ↑↓ scroll  esc back");
     attroff(COLOR_PAIR(pg->msg[0] ? CP_STATUS_ERR : CP_HINT));
     refresh();

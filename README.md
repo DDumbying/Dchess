@@ -33,7 +33,7 @@ One of these nerdy things built out of passion — to actually understand how `C
 **TUI**
 - ncurses interface with Unicode chess pieces (♙♘♗♖♕♔ / ♟♞♝♜♛♚)
 - Board scales to fill available terminal size
-- Four built-in color themes (classic/midnight/forest/contrast), switchable
+- Four built-in color themes (gruvbox/tokyonight/btop/catppuccin), switchable
   from the launcher (live preview), the CLI, or an in-game command
 - First-run welcome to name your profile and pick a theme
 - Launcher dashboard — profiles, the new-game setup with a live mini-board,
@@ -97,8 +97,8 @@ OPTIONS
   -m, --menu                      Show the launcher to pick options visually,
                                    even if other flags were given
   --no-menu                       Skip the launcher and start immediately (classic instant-start)
-  --theme <name>                  Color theme: classic | midnight | forest | contrast
-                                   (default: classic)
+  --theme <name>                  Color theme: gruvbox | tokyonight | btop | catppuccin
+                                   (default: gruvbox)
   -s, --stats                     Show statistics in a full TUI screen and exit
   --replay <file.pgn>             Step through the games in a PGN file
   -V, --version                   Print version and exit
@@ -112,7 +112,7 @@ EXAMPLES
   dchess -c black -d easy         Black side, easy difficulty, no menu
   dchess --fen "<FEN string>"     Start from a custom position
   dchess --menu -d hard           Launcher, pre-filled to hard difficulty
-  dchess --theme midnight         Start with the midnight color theme
+  dchess --theme tokyonight       Start with the tokyonight color theme
   dchess --replay games.pgn       Pick a game from a PGN file and step through it
   dchess --two-player             Local two-player, board flips each turn
   dchess --white hard --black easy
@@ -192,8 +192,8 @@ fen         show the current position as a FEN string
 loadfen <FEN>
             load a custom position mid-game
 theme <name>
-            switch color theme: classic | midnight | forest | contrast
-st          open the full stats screen
+            switch color theme: gruvbox | tokyonight | btop | catppuccin
+stats       open the full stats screen
 help        list in-game commands
 quit / q    exit
 ```

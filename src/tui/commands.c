@@ -420,6 +420,8 @@ int handle_command(TUIState *state, const char *cmd) {
     if (pc > 0) {
         state->engine_error[0] = '\0';
         state->selected = 0;
+        if (!players_automated(state->players, WHITE) && !players_automated(state->players, BLACK))
+            state->paused = 0;   /* nothing left to pause */
         memset(state->highlight, 0, sizeof(state->highlight));
         for (int side = WHITE; side <= BLACK; side++)
             if (!same_player(&before[side], &state->players[side]))

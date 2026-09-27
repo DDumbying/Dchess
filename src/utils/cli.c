@@ -10,6 +10,8 @@
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
 #include <string.h>
 
 /* Depth table ─────────────────────────────────────────────────────────── */
@@ -83,7 +85,8 @@ void cli_help(void)
         "    --replay <file.pgn>\n"
         "          Step through the games in a PGN file; pick one when there\n"
         "          are several.\n"
-        "\n"        "    --book <builtin|off|path.bin>\n"
+        "\n"
+        "    --book <builtin|off|path.bin>\n"
         "          Opening book for dchess's engine: the built-in one, none,\n"
         "          or a Polyglot .bin, for this run. The in-game 'book' command\n"
         "          sets the one remembered per profile.\n"
@@ -210,7 +213,14 @@ static int known_engine(const char *name, char *err, size_t n)
 static int known_profile(const char *name, char *err, size_t n)
 {
     ProfileList l;
-    profiles_load(&l);
+    char path[512];
+    if (!profiles_load(&l) && profiles_path(path, sizeof(path)) &&
+        access(path, F_OK) != 0 && errno == ENOENT) {
+        /* No profiles yet: the first run will create one for a valid $USER. */
+        const char *user = getenv("USER");
+        ProfileList probe = { .count = 0 };
+        if (user && !strcmp(user, name) && profiles_add(&probe, NULL, user, NULL, 0)) return 1;
+    }
     if (profiles_find(&l, name) >= 0) return 1;
     char names[160] = "";
     for (int i = 0; i < l.count; i++) {
@@ -317,7 +327,6 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
-        /* --engines ─────────────────────────────────────────────────── */
         if (strcmp(a, "--replay") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),
@@ -358,6 +367,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             snprintf(args->profile, sizeof(args->profile), "%s", val);
             continue;
         }
+        /* --engines ─────────────────────────────────────────────────── */
         if (strcmp(a, "--engines") == 0) {
             args->list_engines = 1;
             return 0;

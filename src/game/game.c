@@ -129,7 +129,9 @@ int game_load_fen(GameState *g, const char *fen)
     snprintf(g->start_fen, sizeof(g->start_fen), "%s", fen);
 
     /* The FEN fullmove number counts move *pairs* from 1, so this is an
-     * approximation of half-moves played, used only for display. */
+     * approximation of half-moves played, used for move numbers. Past
+     * move 256 it is capped so the history keeps room to play. */
+    if (fm > MAX_MOVE_HISTORY / 4) fm = MAX_MOVE_HISTORY / 4;   /* leave room to play */
     g->move_count = (fm - 1) * 2 + (g->pos.side == BLACK ? 1 : 0);
     g->log_start  = g->move_count;
     g->clock_side = g->pos.side;

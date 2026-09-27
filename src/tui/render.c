@@ -526,8 +526,13 @@ void render_piece(WINDOW *win, int r, int c, int piece, attr_t attr)
 void render_all(WINDOW *board, WINDOW *side, WINDOW *cmd, const TUIState *state)
 {
     werase(board);
-    char title[64];
-    players_matchup(state->players, title, sizeof(title));
+    char title[2 * PLAYER_NAME_MAX + 8];
+    if (state->replay) {
+        const ReplayEntry *e = &state->replay->info;
+        snprintf(title, sizeof(title), "%s vs %s", e->white[0] ? e->white : "?", e->black[0] ? e->black : "?");
+    } else {
+        players_matchup(state->players, title, sizeof(title));
+    }
     panel_frame(board, title, CP_ACC_BOARD);
 
     int bh, bw;

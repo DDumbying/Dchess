@@ -9,6 +9,7 @@
 #include "utils/engines.h"
 #include "game/profiles.h"
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static int failures = 0;
@@ -112,6 +113,33 @@ static void test_profiles_cli(void)
           parse(&a, "--stats --profile alice") == 0 && a.show_stats && strcmp(a.profile, "alice") == 0);
     check("--stats with an unknown profile is an error", parse(&a, "--stats --profile bob") != 0);
     check("--profiles asks for the list", parse(&a, "--profiles") == 0 && a.list_profiles);
+    static char fresh[] = "/tmp/dchess-cli-fresh-XXXXXX";
+    if (mkdtemp(fresh)) {
+        setenv("XDG_CONFIG_HOME", fresh, 1);
+        setenv("USER", "newbie", 1);
+        check("a fresh install accepts the profile its first run creates",
+              parse(&a, "--stats --profile newbie") == 0 && strcmp(a.profile, "newbie") == 0);
+        check("but not another name", parse(&a, "--stats --profile other") != 0);
+        char conf[600];
+        snprintf(conf, sizeof(conf), "%s/dchess", fresh);
+        mkdir(conf, 0755);
+        snprintf(conf, sizeof(conf), "%s/dchess/profiles.conf", fresh);
+        FILE *cf = fopen(conf, "w");
+        if (cf) fclose(cf);
+        chmod(conf, 0);
+        if (geteuid() != 0)
+            check("an unreadable profiles.conf is not a fresh install",
+                  parse(&a, "--stats --profile newbie") != 0);
+        chmod(conf, 0644);
+        remove(conf);
+        snprintf(conf, sizeof(conf), "%s/dchess", fresh);
+        rmdir(conf);
+        setenv("USER", "a;b", 1);
+        check("nor is a $USER that cannot be a profile", parse(&a, "--profile a;b") != 0);
+        unsetenv("USER");
+        setenv("XDG_CONFIG_HOME", pdir, 1);
+        rmdir(fresh);
+    }
     check("--white alice is that profile",
           parse(&a, "--white alice") == 0 && human(&a.players[WHITE]) &&
           strcmp(a.players[WHITE].name, "alice") == 0 && !a.human_active[WHITE]);

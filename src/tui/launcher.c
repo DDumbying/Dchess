@@ -190,14 +190,14 @@ static void draw_profiles(TUIState *s, Launch *L, int h, int y, int x)
 static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int small)
 {
     char title[64];
-    if (small) snprintf(title, sizeof(title), "new game · %s", active_name(s));
+    if (small && active_name(s)[0]) snprintf(title, sizeof(title), "new game · %s", active_name(s));
     else       snprintf(title, sizeof(title), "new game");
     WINDOW *p = panel(h, w, y, x, title, L->focus == FOCUS_GAME);
     if (!p) return;
 
     static const char *names[] = { "White", "Black", "Pos  ", "Book ", "Theme" };
     int board = !small && w >= 16 + 19 + 12 && h >= 12;
-    int top = board ? 1 + (h - 2 - 11) / 2 : 1, fy = board ? top + 2 : 2;
+    int top = board ? 1 + (h - 2 - 11) / 2 : 1, fy = board ? top + 2 : h >= GAME_ROWS ? 2 : 1;
     int val_w = w - 16 - (board ? 19 : 0);
     if (val_w < 6) val_w = 6;
     for (int r = 0; r < ROW_START; r++) {
@@ -239,10 +239,14 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
     }
     int on = L->focus == FOCUS_GAME && L->row == ROW_START;
     wattron(p, COLOR_PAIR(CP_STATUS_OK) | A_BOLD | (on ? A_REVERSE : 0));
-    mvwprintw(p, board ? top + 10 : h - 2, (w - 18) / 2 > 1 ? (w - 18) / 2 : 1, "  ▶ START GAME  ");
+    mvwprintw(p, board ? top + 10 : h >= GAME_ROWS ? h - 2 : fy + ROW_START, (w - 18) / 2 > 1 ? (w - 18) / 2 : 1,
+              "  ▶ START GAME  ");
     wattroff(p, COLOR_PAIR(CP_STATUS_OK) | A_BOLD | (on ? A_REVERSE : 0));
     delwin(p);
 }
+
+/* The message line, set by draw(): prompts appear there. */
+static int msg_row = -1, msg_col = 2;
 
 /* Built by draw_card; ⏎ on the card reads it. */
 static StatsView card_view;
@@ -284,11 +288,6 @@ static void draw_card(TUIState *s, Launch *L, int h, int y, int x)
     row++;
     for (int i = 0; i < card_view.recent_count && row < h - 1; i++, row++) {
         const Record *r = card_view.recent[i];
-        if (L->focus == FOCUS_CARD && i == L->csel) {
-            wattron(p, A_REVERSE);
-            mvwprintw(p, row, 1, "%*s", CARD_W - 2, "");
-            wattroff(p, A_REVERSE);
-        }
         int mine_white = r->white_kind == KIND_PROFILE && strcmp(r->white, pr->name) == 0;
         int o = mine_white ? r->result : -r->result;
         char opp[PLAYER_NAME_MAX + 1], when[16];
@@ -303,7 +302,10 @@ static void draw_card(TUIState *s, Launch *L, int h, int y, int x)
         mvwprintw(p, row, CARD_W - 5, "%3s", when);
         wattroff(p, COLOR_PAIR(CP_HINT));
         L->card_rows = i + 1;
+        if (L->focus == FOCUS_CARD && i == L->csel)
+            mvwchgat(p, row, 1, CARD_W - 2, A_REVERSE, CP_CANVAS, NULL);
     }
+    if (L->csel >= L->card_rows) L->csel = L->card_rows ? L->card_rows - 1 : 0;
     delwin(p);
 }
 
@@ -311,7 +313,8 @@ static void draw_header(TUIState *s, Launch *L, int hdr, int y, int x, int cols)
 {
     draw_logo(stdscr, y, x + 1, hdr == 1);
     char who[160];
-    snprintf(who, sizeof(who), "%s · %s", active_name(s), theme_name(L->theme));
+    if (active_name(s)[0]) snprintf(who, sizeof(who), "%s · %s", active_name(s), theme_name(L->theme));
+    else                   snprintf(who, sizeof(who), "%s", theme_name(L->theme));
     int w = text_width(who), room = cols - logo_width(hdr == 1) - 4;
     if (room < 8) return;
     if (w > room) w = room;
@@ -330,6 +333,11 @@ static void draw(TUIState *s, Launch *L)
     erase();
 
     int bh = rows - 2 - hdr, x0 = 0, y0 = 0, w = cols;
+    if (small && bh < ROW_START + 3) {   /* the rows and START need this much */
+        mvw_fit(stdscr, rows / 2, cols > 18 ? (cols - 18) / 2 : 0, cols < 18 ? cols : 18, "terminal too small");
+        refresh();
+        return;
+    }
     if (small) {
         draw_header(s, L, hdr, 0, 0, cols);
         draw_game(s, L, GAME_ROWS < bh ? GAME_ROWS : bh, cols, hdr, 0, 1);
@@ -351,12 +359,14 @@ static void draw(TUIState *s, Launch *L)
 
     int pair = L->msg_err ? CP_STATUS_ERR : CP_STATUS_OK;
     attron(COLOR_PAIR(pair));
-    if (small) mvw_fit(stdscr, rows - 2, 2, cols - 4, L->msg);
-    else if (y0 < rows - 1) mvw_fit(stdscr, y0, x0 + LEFT_W + 2, w - LEFT_W - 4, L->msg);
+    msg_row = small || y0 >= rows - 1 ? rows - 2 : y0;
+    msg_col = small ? 2 : x0 + LEFT_W + 2;
+    mvw_fit(stdscr, msg_row, msg_col, small ? cols - 4 : w - LEFT_W - 4, L->msg);
     attroff(COLOR_PAIR(pair));
     attron(COLOR_PAIR(CP_HINT));
     mvw_fit(stdscr, rows - 1, 1, cols - 2, small
              ? "⏎ play  ↑↓ move  ←→ change  p profile  e engines  s stats  esc quit"
+             : L->focus == FOCUS_CARD ? "⏎ replay  ↑↓ move  tab panel  e engines  s stats  esc quit"
              : "⏎ play  tab panel  ↑↓ move  ←→ change  n new  r rename  d delete  e engines  s stats  esc quit");
     attroff(COLOR_PAIR(CP_HINT));
     refresh();
@@ -364,16 +374,19 @@ static void draw(TUIState *s, Launch *L)
 
 static int prompt(const char *label, char *buf, size_t size)
 {
-    int rows = getmaxy(stdscr);
-    int len = (int)strlen(buf), col = 2 + (int)strlen(label);
+    int row = msg_row >= 0 ? msg_row : getmaxy(stdscr) - 2;
+    int len = (int)strlen(buf);
     curs_set(1);
     for (;;) {
-        move(rows - 2, 0);
+        /* Beside the block while it fits, else from the left edge. */
+        int x = msg_col + (int)strlen(label) + text_width(buf) + 2 > getmaxx(stdscr) ? 2 : msg_col;
+        int col = x + (int)strlen(label);
+        move(row, 0);
         clrtoeol();
         attron(COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
-        mvprintw(rows - 2, 2, "%s", label);
+        mvprintw(row, x, "%s", label);
         attroff(COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
-        mvprintw(rows - 2, col, "%s", buf);
+        mvprintw(row, col, "%s", buf);
         refresh();
         wint_t ch;
         int kind = get_wch(&ch);
