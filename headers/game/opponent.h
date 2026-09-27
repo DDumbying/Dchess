@@ -9,7 +9,10 @@
  * then poll from the main loop until its result comes back. */
 typedef struct Opponent Opponent;
 
-Opponent *opponent_builtin(int depth, int time_ms);
+typedef struct Book Book;
+
+/* Plays from `book` (may be NULL) within `level`'s book depth, then searches. */
+Opponent *opponent_builtin(int depth, int time_ms, const Book *book, int level);
 
 /* 0 while a search is already running. */
 int  opponent_start (Opponent *o, const GameState *g);

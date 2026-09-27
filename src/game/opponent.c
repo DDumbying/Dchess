@@ -1,6 +1,8 @@
 #include "game/opponent_impl.h"
+#include "game/book.h"
 #include <pthread.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 int opponent_start(Opponent *o, const GameState *g)            { return o->ops->start(o, g); }
@@ -23,6 +25,9 @@ typedef struct {
     SearchResult    result;
     Position        snapshot;   /* the worker's private copy */
     U64             key;
+    const Book     *book;       /* may be NULL */
+    int             level;
+    unsigned        rng;
 } Builtin;
 
 static void *worker(void *arg)
@@ -53,6 +58,15 @@ static int builtin_start(Opponent *o, const GameState *g)
     b->key      = game_hash(g);
     b->ready    = 0;
     b->busy     = 1;
+
+    Move m = book_pick(b->book, g, b->level, &b->rng);
+    if (m) {
+        memset(&b->result, 0, sizeof(b->result));
+        b->result.best_move = m;
+        b->ready    = 1;
+        b->threaded = 0;
+        return 1;
+    }
     b->threaded = (pthread_create(&b->thread, NULL, worker, b) == 0);
     if (!b->threaded) worker(b);   /* no thread to be had: search here instead */
     return 1;
@@ -120,13 +134,16 @@ static const OpponentOps builtin_ops = {
     builtin_cancel, builtin_destroy, builtin_error,
 };
 
-Opponent *opponent_builtin(int depth, int time_ms)
+Opponent *opponent_builtin(int depth, int time_ms, const Book *book, int level)
 {
     Builtin *b = calloc(1, sizeof(*b));
     if (!b) return NULL;
     b->base.ops = &builtin_ops;
     b->depth    = depth;
     b->time_ms  = time_ms;
+    b->book     = book;
+    b->level    = level;
+    b->rng      = (unsigned)time(NULL) ^ (unsigned)(size_t)b;
     pthread_mutex_init(&b->mutex, NULL);
     return &b->base;
 }

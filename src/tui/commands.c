@@ -63,7 +63,7 @@ static void attach(TUIState *state, int side)
 
     const Player *p = &state->players[side];
     if (p->kind == PLAYER_BUILTIN) {
-        state->drivers[side] = opponent_builtin(p->depth, p->time_ms);
+        state->drivers[side] = opponent_builtin(p->depth, p->time_ms, state->book, p->level);
     } else if (p->kind == PLAYER_UCI) {
         const EngineEntry *e = engines_find(&state->engines, p->name);
         if (e) state->drivers[side] = opponent_uci(e);
@@ -76,7 +76,7 @@ void tui_attach_players(TUIState *state)
     attach(state, BLACK);
     if (!state->go_driver) {
         Player m = player_builtin(DIFF_MEDIUM);
-        state->go_driver = opponent_builtin(m.depth, m.time_ms);
+        state->go_driver = opponent_builtin(m.depth, m.time_ms, state->book, DIFF_MEDIUM);
     }
 }
 

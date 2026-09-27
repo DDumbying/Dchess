@@ -6,6 +6,8 @@
 #include <time.h>
 #include "game/opponent.h"
 #include "game/game.h"
+#include "game/book.h"
+#include "utils/cli.h"
 #include "engine/move.h"
 #include "utils/bitboard.h"
 
@@ -49,7 +51,7 @@ static void test_finds_mate(void)
 
     SearchResult r;
     U64 key = 0;
-    Opponent *o = opponent_builtin(3, 5000);
+    Opponent *o = opponent_builtin(3, 5000, NULL, DIFF_HARD);
     check("the driver is created", o != NULL);
     check("poll before any start returns 0", !opponent_poll(o, &r, &key));
     check("start is accepted", opponent_start(o, &g));
@@ -70,7 +72,7 @@ static void test_cancel(void)
 
     SearchResult r;
     U64 key;
-    Opponent *o = opponent_builtin(20, 20000);
+    Opponent *o = opponent_builtin(20, 20000, NULL, DIFF_HARD);
     opponent_start(o, &g);
     long t0 = now_ms();
     opponent_cancel(o);
@@ -91,7 +93,7 @@ static void test_stop(void)
 
     SearchResult r;
     U64 key = 0;
-    Opponent *o = opponent_builtin(20, 20000);
+    Opponent *o = opponent_builtin(20, 20000, NULL, DIFF_HARD);
     opponent_start(o, &g);
     nap(200);
     long t0 = now_ms();
@@ -102,6 +104,26 @@ static void test_stop(void)
     opponent_free(o);
 }
 
+
+static void test_book_move(void)
+{
+    printf("== book moves ==\n");
+    GameState g;
+    game_reset(&g);
+    Book *b = book_builtin();
+    SearchResult r;
+    U64 key;
+    Opponent *o = opponent_builtin(8, 5000, b, DIFF_HARD);
+    long t0 = now_ms();
+    opponent_start(o, &g);
+    check("a book move comes back at once", wait_result(o, &r, &key, 50) && now_ms() - t0 < 50);
+    Move m;
+    check("it is legal, with depth 0",
+          r.best_move && r.depth_reached == 0 && game_find_move(&g, FROM(r.best_move), TO(r.best_move), 0, &m));
+    opponent_free(o);
+    book_free(b);
+}
+
 int main(void)
 {
     init_attacks();
@@ -109,6 +131,7 @@ int main(void)
     test_finds_mate();
     test_cancel();
     test_stop();
+    test_book_move();
 
     if (failures) {
         printf("\n%d opponent test(s) FAILED.\n", failures);
