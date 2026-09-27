@@ -38,7 +38,7 @@ One of these nerdy things built out of passion — to actually understand how `C
 - Launcher dashboard — profiles with their records, recent games, a win-rate
   sparkline, and the new-game setup; CLI flags remain a scriptable alternative
 - Profiles — each person keeps their own history and remembered settings;
-  every finished game is saved to `~/.local/share/dchess/games.pgn`
+  every finished game a profile plays is saved to `~/.local/share/dchess/games.pgn`
 - FEN import/export — start from, view, or load any position, not just the
   standard setup
 - The engine thinks in a background thread — the clock, redraws, and

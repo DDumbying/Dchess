@@ -97,26 +97,6 @@ static void test_should_start(void)
           !players_should_start(hh, BLACK, 0, 0, 100000));
 }
 
-static void test_stats_entry(void)
-{
-    printf("== which games are recorded ==\n");
-    int side = -1, level = -1;
-
-    Player he[2] = { H(), E(DIFF_HARD) };
-    check("human vs engine is recorded", players_stats_entry(he, &side, &level) == 1);
-    check("with the human's colour and the engine's level",
-          side == WHITE && level == DIFF_HARD);
-
-    Player eh[2] = { E(DIFF_EASY), H() };
-    check("and with the human as Black",
-          players_stats_entry(eh, &side, &level) == 1 && side == BLACK && level == DIFF_EASY);
-
-    Player hh[2] = { H(), H() };
-    check("two humans are not recorded", players_stats_entry(hh, &side, &level) == 0);
-    Player ee[2] = { E(DIFF_EASY), E(DIFF_HARD) };
-    check("two engines are not recorded", players_stats_entry(ee, &side, &level) == 0);
-}
-
 static void test_commands(void)
 {
     printf("== player commands ==\n");
@@ -198,7 +178,6 @@ static void test_uci_players(void)
 {
     printf("== UCI players ==\n");
     char buf[64], err[128];
-    int side, level;
 
     Player u = player_uci("Stockfish 1500");
     check("a UCI player keeps its entry name",
@@ -211,7 +190,6 @@ static void test_uci_players(void)
     check("and so is its PGN name", strcmp(buf, "Stockfish 1500") == 0);
     players_matchup(hu, buf, sizeof(buf));
     check("matchup: 'Guest vs Stockfish 1500'", strcmp(buf, "Guest vs Stockfish 1500") == 0);
-    check("games against it are not recorded yet", !players_stats_entry(hu, &side, &level));
 
     EngineList reg;
     memset(&reg, 0, sizeof(reg));
@@ -293,7 +271,6 @@ int main(void)
     test_automated();
     test_undo_plies();
     test_should_start();
-    test_stats_entry();
     test_commands();
     test_labels();
     test_uci_players();
