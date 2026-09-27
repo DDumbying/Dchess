@@ -327,7 +327,7 @@ static int play_uci(GameState *g, const char *s, Move *out)
 Book *book_builtin(void)
 {
     Book *b = calloc(1, sizeof(*b));
-    GameState *g = malloc(sizeof(GameState));
+    GameState *g = calloc(1, sizeof(GameState));
     int cap = 4096;
     if (b) b->e = malloc((size_t)cap * sizeof(Entry));
     if (!b || !g || !b->e) {
@@ -424,7 +424,7 @@ static int   name_count;
 static void load_names(void)
 {
     if (names) return;
-    GameState *g = malloc(sizeof(GameState));
+    GameState *g = calloc(1, sizeof(GameState));
     names = malloc((size_t)OPENINGS_COUNT * sizeof(Name));
     if (!g || !names) {
         free(g);

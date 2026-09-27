@@ -366,6 +366,7 @@ int game_undo(GameState *g)
     g->result[0] = '\0';
 
     g->clock_side = g->pos.side;
+    if (g->undo_count == 0) g->clock_started = 0;   /* back before move 1 */
     start_turn(g);
 
     return 1;

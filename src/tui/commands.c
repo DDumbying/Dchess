@@ -64,6 +64,15 @@ void tui_remember_setup(TUIState *state)
     state->profiles.active = run;
 }
 
+/* The engines' pause and a timed game's clocks go together. */
+static void set_paused(TUIState *s, int on)
+{
+    s->paused = on;
+    if (!tc_timed(&s->game.tc)) return;
+    if (on) game_clock_pause(&s->game);
+    else    game_clock_resume(&s->game);
+}
+
 void cancel_engine_search(TUIState *state)
 {
     if (!state->thinking) return;
@@ -167,7 +176,7 @@ void tui_undo(TUIState *state)
         game_undo(&state->game);
 
     /* Otherwise the engine would play the move straight back. */
-    if (both_engines(state)) state->paused = 1;
+    if (both_engines(state)) set_paused(state, 1);
 
     int cp;
     if (game_last_eval(&state->game, &cp))
@@ -189,7 +198,7 @@ void tui_new_game(TUIState *state)
     memset(&state->last_search, 0, sizeof(state->last_search));
     state->last_was_book = 0;
     state->last_search_by[0] = '\0';
-    state->paused = 0;
+    set_paused(state, 0);
     state->engine_error[0] = '\0';
 
     state->selected  = 0;
@@ -230,7 +239,7 @@ static void apply_engine_result(TUIState *state, SearchResult res, const char *b
         if (has_legal_moves(&state->game.pos)) {
             /* Or the next tick would start the same search again; only an
              * engine to move would. */
-            state->paused = players_automated(state->players, state->game.pos.side);
+            set_paused(state, players_automated(state->players, state->game.pos.side));
             snprintf(state->status, sizeof(state->status), "%s",
                      state->paused ? "Search stopped before it found a move — paused"
                                    : "Search stopped before it found a move");
@@ -330,7 +339,7 @@ static void start_thinking(TUIState *state, Opponent *o, const char *by)
     }
     if (!o) {
         /* Pausing stops the next tick from trying again at once. */
-        state->paused = 1;
+        set_paused(state, 1);
         snprintf(state->status, sizeof(state->status),
                  "Could not start %s — paused", by);
         return;
@@ -355,7 +364,7 @@ int drive_turn(TUIState *state)
 
         if (err) {
             snprintf(state->engine_error, sizeof(state->engine_error), "%s", err);
-            state->paused = 1;
+            set_paused(state, 1);
             snprintf(state->status, sizeof(state->status), "%s — paused", err);
             return 1;
         }
@@ -369,8 +378,10 @@ int drive_turn(TUIState *state)
     }
 
     int side = state->game.pos.side;
-    if (!players_should_start(state->players, side, state->paused,
-                              state->game.game_over, now_ms() - state->last_move_ms))
+    /* The pause between engine moves is for watching; a timed game's
+     * clock would pay for it. */
+    long since = tc_timed(&state->game.tc) ? 1L << 30 : now_ms() - state->last_move_ms;
+    if (!players_should_start(state->players, side, state->paused, state->game.game_over, since))
         return 0;
 
     char by[48];
@@ -439,9 +450,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "pause") == 0) {
         cancel_engine_search(state);
-        state->paused = 1;
+        set_paused(state, 1);
         if (timed) {
-            game_clock_pause(&state->game);
             snprintf(state->status, sizeof(state->status), "Clocks paused — Space or 'resume' to continue");
         } else {
             snprintf(state->status, sizeof(state->status),
@@ -450,8 +460,7 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "resume") == 0) {
-        state->paused = 0;
-        game_clock_resume(&state->game);
+        set_paused(state, 0);
         state->selected = 0;   /* the engine may move the piece that was picked up */
         memset(state->highlight, 0, sizeof(state->highlight));
         snprintf(state->status, sizeof(state->status), "Resumed");
@@ -538,7 +547,7 @@ int handle_command(TUIState *state, const char *cmd) {
         state->engine_error[0] = '\0';
         state->selected = 0;
         if (!players_automated(state->players, WHITE) && !players_automated(state->players, BLACK))
-            state->paused = 0;   /* nothing left to pause */
+            set_paused(state, 0);   /* nothing left to pause */
         memset(state->highlight, 0, sizeof(state->highlight));
         for (int side = WHITE; side <= BLACK; side++)
             if (!same_player(&before[side], &state->players[side]))

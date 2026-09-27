@@ -168,13 +168,16 @@ static void draw_endings(Page *pg, int h, int w, int y, int x)
                      CP_STATUS_ERR };
     int most = 1, bar = w - 20 > 4 ? w - 20 : 4, row = 1;
     for (int i = 0; i < 7; i++) if (counts[i] > most) most = counts[i];
-    for (int i = 0; i < 7 && row < h - 2; i++, row++) {
+    /* Only the endings that happened, so the time controls below fit too. */
+    for (int i = 0; i < 7 && row < h - 2; i++) {
+        if (!counts[i]) continue;
         int fill = dash_bar_fill(counts[i], most, bar);
         wattron(p, COLOR_PAIR(CP_HINT)); mvwprintw(p, row, 2, "%-10s", names[i]); wattroff(p, COLOR_PAIR(CP_HINT));
         wattron(p, COLOR_PAIR(pairs[i]));
         for (int c = 0; c < bar; c++) mvwprintw(p, row, 13 + c, "%s", c < fill ? "█" : "░");
         wattroff(p, COLOR_PAIR(pairs[i]));
         mvwprintw(p, row, 14 + bar, "%3d", counts[i]);
+        row++;
     }
     /* The time controls played, below the endings while there is room. */
     int timed_any = 0;

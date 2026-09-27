@@ -653,6 +653,11 @@ static void test_time_control(void)
     fake_now += 1000;
     check("and resuming runs it again", game_time_left(&g, WHITE) == 300000 + 2000 - 1000);
 
+    game_undo(&g);
+    game_undo(&g);
+    fake_now += 5000;
+    check("undoing to the start stops the clock again", game_time_left(&g, WHITE) == 300000 &&
+                                                        game_time_left(&g, BLACK) == 300000);
     game_reset(&g);
     game_clock_pause(&g);
     game_clock_resume(&g);

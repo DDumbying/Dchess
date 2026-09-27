@@ -91,8 +91,8 @@ void game_clock_resume(GameState *g);
 /* Ends the game when the side to move has run out; 1 when it just did. */
 int  game_check_flag(GameState *g);
 
-/* Returns 0 and leaves `g` untouched on a malformed FEN. Keeps the clocks
- * running. */
+/* Returns 0 and leaves `g` untouched on a malformed FEN. An untimed game
+ * keeps its clocks running; a timed one starts them afresh. */
 int game_load_fen(GameState *g, const char *fen);
 
 /* `promo` is a FLAG_PROMO_* flag, or 0 for "queen if this is a promotion
