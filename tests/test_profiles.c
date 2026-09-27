@@ -99,7 +99,13 @@ static void test_rename_remove(void)
     profiles_add(&l, NULL, "alice", err, sizeof(err));
     records_append_legacy(games, "saeed", 1700000000L, 1);
 
+    snprintf(l.p[0].white, sizeof(l.p[0].white), "saeed");
+    snprintf(l.p[1].black, sizeof(l.p[1].black), "saeed");
+    snprintf(l.p[1].white, sizeof(l.p[1].white), "alice");
     check("rename", profiles_rename(&l, NULL, 0, "neo", games, err, sizeof(err)) == 1);
+    check("remembered setups follow the new name",
+          strcmp(l.p[0].white, "neo") == 0 && strcmp(l.p[1].black, "neo") == 0 &&
+          strcmp(l.p[1].white, "alice") == 0);
     check("the list follows", profiles_find(&l, "neo") == 0);
     RecordList r;
     records_load(games, &r);

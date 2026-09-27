@@ -107,6 +107,17 @@ int records_append(const char *path, const GameState *g, const Player p[2],
     return pgn_append(g, &h, path) == 0;
 }
 
+/* A tag value with " and \\ escaped, as PGN requires. */
+static void escape(const char *in, char *out, size_t n)
+{
+    size_t o = 0;
+    for (; *in && o + 2 < n; in++) {
+        if (*in == '"' || *in == '\\') out[o++] = '\\';
+        out[o++] = *in;
+    }
+    out[o] = '\0';
+}
+
 int records_append_legacy(const char *path, const char *profile, long timestamp, int result)
 {
     FILE *f = fopen(path, "a");
@@ -120,11 +131,13 @@ int records_append_legacy(const char *path, const char *profile, long timestamp,
     strftime(d, sizeof(d), "%Y.%m.%d", &tm);
     strftime(h, sizeof(h), "%H:%M:%S", &tm);
     const char *res = result > 0 ? "1-0" : result < 0 ? "0-1" : "1/2-1/2";
+    char esc[2 * PLAYER_NAME_MAX + 2];
+    escape(profile, esc, sizeof(esc));
 
     fprintf(f, "[Event \"Casual game\"]\n[Site \"dchess\"]\n[Date \"%s\"]\n[Round \"-\"]\n"
                "[White \"%s\"]\n[Black \"dchess\"]\n[Result \"%s\"]\n[Time \"%s\"]\n"
                "[WhiteKind \"profile\"]\n[BlackKind \"dchess\"]\n[EndReason \"legacy\"]\n"
-               "[PlyCount \"0\"]\n[Seconds \"0\"]\n\n%s\n", d, profile, res, h, res);
+               "[PlyCount \"0\"]\n[Seconds \"0\"]\n\n%s\n", d, esc, res, h, res);
     int ok = !ferror(f);
     return fclose(f) == 0 && ok;
 }
@@ -139,11 +152,15 @@ static int parse_tag(const char *line, char *key, size_t kn, char *val, size_t v
     if (!q1 || q2 <= q1 || q2[1] != ']') return 0;
     size_t klen = (size_t)(sp - line - 1), vlen = (size_t)(q2 - q1 - 1);
     if (klen == 0 || klen >= kn) return 0;
-    if (vlen >= vn) vlen = vn - 1;
     memcpy(key, line + 1, klen);
     key[klen] = '\0';
-    memcpy(val, q1 + 1, vlen);
-    val[vlen] = '\0';
+    size_t o = 0;
+    for (const char *c = q1 + 1; c < q2 && o + 1 < vn; c++) {
+        if (*c == '\\' && c + 1 < q2 && (c[1] == '"' || c[1] == '\\')) c++;
+        val[o++] = *c;
+    }
+    val[o] = '\0';
+    (void)vlen;
     return 1;
 }
 
@@ -247,7 +264,11 @@ static void flush_tags(FILE *out, char tags[][1024], int n, const char *old, con
         if (is_tag && !strcmp(v, old) &&
             ((!strcmp(k, "White") && !strcmp(wk, "profile")) ||
              (!strcmp(k, "Black") && !strcmp(bk, "profile"))))
-            fprintf(out, "[%s \"%s\"]\n", k, new_name);
+        {
+            char esc[2 * PLAYER_NAME_MAX + 2];
+            escape(new_name, esc, sizeof(esc));
+            fprintf(out, "[%s \"%s\"]\n", k, esc);
+        }
         else
             fprintf(out, "%s\n", tags[i]);
     }

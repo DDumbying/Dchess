@@ -7,6 +7,7 @@
 #include "tui/stats_tui.h"
 #include "engine/fen.h"
 #include "game/records.h"
+#include "game/statsview.h"
 #include "utils/cli.h"
 #include "utils/constants.h"
 #include "utils/dash.h"
@@ -168,8 +169,9 @@ static void draw_profiles(TUIState *s, Launch *L, int h, int y)
             snprintf(wdl, sizeof(wdl), "%d-%d-%d", t.wins, t.draws, t.losses);
             int act = i == s->profiles.active;
             if (act) wattron(p, COLOR_PAIR(CP_STATUS_OK) | A_BOLD);
-            mvwprintw(p, 1 + i - top, 1, "%s%-*.*s%*s", act ? "▸" : " ",
-                      LEFT_W - 12, LEFT_W - 12, pr->name, 9, wdl);
+            mvwprintw(p, 1 + i - top, 1, "%s", act ? "▸" : " ");
+            mvw_fit(p, 1 + i - top, 2, LEFT_W - 12, pr->name);
+            mvwprintw(p, 1 + i - top, LEFT_W - 10, "%9s", wdl);
             if (act) wattroff(p, COLOR_PAIR(CP_STATUS_OK) | A_BOLD);
         }
         if (on) wattroff(p, A_REVERSE);
@@ -192,14 +194,15 @@ static void draw_recent(TUIState *s, Launch *L, int h, int y)
     for (int i = 0; i < n; i++) {
         int mine_white = r[i]->white_kind == KIND_PROFILE && strcmp(r[i]->white, active_name(s)) == 0;
         int o = mine_white ? r[i]->result : -r[i]->result;
-        const char *opp = mine_white ? r[i]->black : r[i]->white;
+        char opp[PLAYER_NAME_MAX + 1];
+        stats_opponent_name(r[i], mine_white ? WHITE : BLACK, opp, sizeof(opp));
         char when[16];
         age(records_time(r[i]), when, sizeof(when));
         int pair = o > 0 ? CP_STATUS_OK : o < 0 ? CP_STATUS_ERR : CP_ACC_CLOCK;
         wattron(p, COLOR_PAIR(pair) | A_BOLD);
         mvwprintw(p, 1 + i, 2, "%c", o > 0 ? 'W' : o < 0 ? 'L' : 'D');
         wattroff(p, COLOR_PAIR(pair) | A_BOLD);
-        mvwprintw(p, 1 + i, 4, "%-*.*s", LEFT_W - 11, LEFT_W - 11, opp);
+        mvw_fit(p, 1 + i, 4, LEFT_W - 11, opp);
         wattron(p, COLOR_PAIR(CP_HINT));
         mvwprintw(p, 1 + i, LEFT_W - 5, "%3s", when);
         wattroff(p, COLOR_PAIR(CP_HINT));
@@ -240,7 +243,9 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
         mvwprintw(p, 2 + r, 3, "%s", names[r]);
         wattroff(p, COLOR_PAIR(CP_HINT));
         if (on) wattron(p, A_REVERSE);
-        mvwprintw(p, 2 + r, 10, "%s %-*.*s %s", on ? "◂" : " ", val_w, val_w, label, on ? "▸" : " ");
+        mvwprintw(p, 2 + r, 10, "%s ", on ? "◂" : " ");
+        mvw_fit(p, 2 + r, 12, val_w, label);
+        mvwprintw(p, 2 + r, 12 + val_w, " %s", on ? "▸" : " ");
         if (on) wattroff(p, A_REVERSE);
     }
     int on = L->focus == FOCUS_GAME && L->row == ROW_START;
@@ -295,10 +300,10 @@ static void draw(TUIState *s, Launch *L)
 
     int pair = L->msg_err ? CP_STATUS_ERR : CP_STATUS_OK;
     attron(COLOR_PAIR(pair));
-    mvprintw(rows - 2, small ? 2 : LEFT_W + 2, "%.*s", cols - LEFT_W - 4 > 10 ? cols - LEFT_W - 4 : cols - 4, L->msg);
+    mvw_fit(stdscr, rows - 2, small ? 2 : LEFT_W + 2, cols - LEFT_W - 4 > 10 ? cols - LEFT_W - 4 : cols - 4, L->msg);
     attroff(COLOR_PAIR(pair));
     attron(COLOR_PAIR(CP_HINT));
-    mvprintw(rows - 1, 1, "%.*s", cols - 2, small
+    mvw_fit(stdscr, rows - 1, 1, cols - 2, small
              ? "↑↓ move  ←→ change  p profile  e engines  s stats  esc quit"
              : "tab panel  ↑↓ move  ←→ change  n new  r rename  d delete  e engines  s stats  esc quit");
     attroff(COLOR_PAIR(CP_HINT));

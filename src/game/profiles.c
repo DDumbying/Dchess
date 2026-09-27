@@ -86,6 +86,13 @@ int profiles_rename(ProfileList *l, const EngineList *e, int i, const char *name
         set_err(err, n, "could not relabel the game history");
         return 0;
     }
+    /* Remembered setups name players by word; keep them pointing here. */
+    for (int j = 0; j < l->count; j++) {
+        if (strcmp(l->p[j].white, l->p[i].name) == 0)
+            snprintf(l->p[j].white, sizeof(l->p[j].white), "%s", name);
+        if (strcmp(l->p[j].black, l->p[i].name) == 0)
+            snprintf(l->p[j].black, sizeof(l->p[j].black), "%s", name);
+    }
     snprintf(l->p[i].name, sizeof(l->p[i].name), "%s", name);
     return 1;
 }

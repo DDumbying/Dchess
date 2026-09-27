@@ -430,6 +430,29 @@ static void test_probe_not_an_engine(void)
     check("no child process is left", no_children());
 }
 
+
+static void test_driver_exits(void)
+{
+    printf("== driver: engine exits after moving ==\n");
+    mode("once");
+    GameState g;
+    game_reset(&g);
+    EngineEntry e = fake(0, 100, 0);
+    SearchResult r;
+    U64 key;
+    Opponent *o = opponent_uci(&e);
+    opponent_start(o, &g);
+    check("a move sent just before exiting is kept",
+          wait_result(o, &r, &key, 3000) && is_legal(&g, r.best_move) && opponent_error(o) == NULL);
+    game_play(&g, r.best_move);
+    nap(100);
+    opponent_start(o, &g);
+    check("an engine that died between moves is relaunched",
+          wait_result(o, &r, &key, 3000) && is_legal(&g, r.best_move) && opponent_error(o) == NULL);
+    opponent_free(o);
+    check("no child process is left", no_children());
+}
+
 int main(void)
 {
     init_attacks();
@@ -443,6 +466,7 @@ int main(void)
     test_driver_stop_cancel();
     test_driver_failures();
     test_driver_edges();
+    test_driver_exits();
     test_probe();
     test_probe_not_an_engine();
 

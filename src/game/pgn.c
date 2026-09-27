@@ -83,20 +83,31 @@ static void write_movetext(FILE *f, const GameState *g)
     fputc('\n', f);
 }
 
+/* PGN escapes " and \\ inside tag values. */
+static void tag(FILE *f, const char *key, const char *value)
+{
+    fprintf(f, "[%s \"", key);
+    for (const char *c = value; *c; c++) {
+        if (*c == '"' || *c == '\\') fputc('\\', f);
+        fputc(*c, f);
+    }
+    fputs("\"]\n", f);
+}
+
 static int emit(FILE *f, const GameState *g, const PgnHeader *h)
 {
     char date[16];
     today(date, sizeof(date));
 
-    fprintf(f, "[Event \"%s\"]\n",  h && h->event ? h->event : "Casual game");
-    fprintf(f, "[Site \"%s\"]\n",   h && h->site  ? h->site  : "dchess");
-    fprintf(f, "[Date \"%s\"]\n",   date);
-    fprintf(f, "[Round \"-\"]\n");
-    fprintf(f, "[White \"%s\"]\n",  h && h->white ? h->white : "White");
-    fprintf(f, "[Black \"%s\"]\n",  h && h->black ? h->black : "Black");
-    fprintf(f, "[Result \"%s\"]\n", result_token(g));
+    tag(f, "Event",  h && h->event ? h->event : "Casual game");
+    tag(f, "Site",   h && h->site  ? h->site  : "dchess");
+    tag(f, "Date",   date);
+    tag(f, "Round",  "-");
+    tag(f, "White",  h && h->white ? h->white : "White");
+    tag(f, "Black",  h && h->black ? h->black : "Black");
+    tag(f, "Result", result_token(g));
     for (int i = 0; h && i < h->extra_count && i < 16; i++)
-        fprintf(f, "[%s \"%s\"]\n", h->extra[i][0], h->extra[i][1]);
+        tag(f, h->extra[i][0], h->extra[i][1]);
 
     /* A game that did not start from the standard position is unreadable
      * without these two. */

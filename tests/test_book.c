@@ -150,6 +150,16 @@ static void test_file_book(void)
           !book_open(path, err, sizeof(err)));
     remove(path);
 
+    GameState bc;
+    game_reset(&bc);
+    play_line(&bc, "e2e4 e7e5 g1f3 g8f6 f1c4 f8c5 d2d3");
+    Raw bogus[] = { { book_key(&bc.pos), pg_move(e8, h1, 0), 1 } };
+    write_bin(path, bogus, 1);
+    Book *bb = book_open(path, err, sizeof(err));
+    check("a king move to the wrong rank is not castling", bb && book_pick(bb, &bc, DIFF_HARD, &rng) == 0);
+    book_free(bb);
+    remove(path);
+
     err[0] = '\0';
     check("a directory is refused", !book_open("tests", err, sizeof(err)) && err[0]);
     fclose(fopen(path, "wb"));

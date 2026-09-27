@@ -37,8 +37,6 @@ int  players_undo_plies(const Player p[2], int side_to_move, int undo_count);
 int  players_should_start(const Player p[2], int side_to_move, int paused,
                           int game_over, long since_last_move_ms);
 
-/* 1 when exactly one side is human and the other is the built-in engine. */
-int  players_stats_entry(const Player p[2], int *human_side, int *level);
 
 /* 1 applied, 0 not a player command, -1 invalid with a message in err.
  * `engines` resolves names after "engine", `names` (active profile first)

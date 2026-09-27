@@ -5,6 +5,7 @@
 #include "engine/fen.h"
 #include "utils/theme.h"
 #include "utils/engines.h"
+#include "utils/text.h"
 #include "game/records.h"
 #include <strings.h>
 #include <stdio.h>
@@ -233,7 +234,8 @@ void cli_list_profiles(void)
     for (int i = 0; i < l.count; i++) {
         const Profile *p = &l.p[i];
         RecordTally t = records_tally(&r, p->name);
-        printf("  %s %-24s %d-%d-%d\n", i == l.active ? "*" : " ", p->name,
+        int pad = 24 - text_width(p->name);
+        printf("  %s %s%*s %d-%d-%d\n", i == l.active ? "*" : " ", p->name, pad > 0 ? pad : 0, "",
                t.wins + p->legacy_wins, t.draws + p->legacy_draws, t.losses + p->legacy_losses);
     }
     records_free(&r);
@@ -308,8 +310,8 @@ int cli_parse(int argc, char **argv, CliArgs *args)
 
         /* --stats / -s ─────────────────────────────────────────────── */
         if (strcmp(a, "--stats") == 0 || strcmp(a, "-s") == 0) {
-            args->show_stats = 1;
-            return 0;
+            args->show_stats = 1;   /* keeps parsing: --profile may follow */
+            continue;
         }
 
         /* --engines ─────────────────────────────────────────────────── */

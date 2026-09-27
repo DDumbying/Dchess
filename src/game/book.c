@@ -379,8 +379,8 @@ static int decode(const GameState *g, const Entry *e, Move *out)
 {
     int to = e->to, piece = game_piece_at(g, e->from);
     if ((piece == K && e->from == e1) || (piece == k && e->from == e8)) {
-        if (e->to == h1 || e->to == h8) to = e->from + 2;
-        else if (e->to == a1 || e->to == a8) to = e->from - 2;
+        if (e->to == e->from + 3) to = e->from + 2;        /* onto its own h-rook */
+        else if (e->to == e->from - 4) to = e->from - 2;   /* onto its own a-rook */
     }
     return game_find_move(g, e->from, to, e->promo, out);
 }

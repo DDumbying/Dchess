@@ -77,17 +77,6 @@ int players_should_start(const Player p[2], int side_to_move, int paused,
     return 1;
 }
 
-int players_stats_entry(const Player p[2], int *human_side, int *level)
-{
-    if (humans(p) != 1) return 0;
-    int h = (p[WHITE].kind == PLAYER_HUMAN) ? WHITE : BLACK;
-    int e = (h == WHITE) ? BLACK : WHITE;
-    if (p[e].kind != PLAYER_BUILTIN) return 0;
-    if (human_side) *human_side = h;
-    if (level)      *level      = p[e].level;
-    return 1;
-}
-
 int players_apply_command(Player p[2], const char *cmd, char *err, size_t n,
                           const EngineList *engines,
                           const char *const *names, int count)

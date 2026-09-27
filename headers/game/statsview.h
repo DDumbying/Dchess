@@ -28,6 +28,9 @@ typedef struct {
     const Record *recent[256]; int recent_count; /* newest first; points into the list */
 } StatsView;
 
+/* How the page names the side opposite `side`: "dchess Hard", "Guest", a name. */
+void stats_opponent_name(const Record *r, int side, char *buf, size_t n);
+
 void stats_view_build(const RecordList *l, const Profile *p, long now, StatsView *out);
 
 #endif

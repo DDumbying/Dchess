@@ -290,6 +290,62 @@ static void test_opening_tags(void)
     records_free(&l);
 }
 
+
+static void test_old_backslash(void)
+{
+    printf("== names written before escaping ==\n");
+    fresh("old.pgn");
+    GameState g;
+    Player p[2] = { prof("aQb"), prof("alice") };
+    finished(&g, "Checkmate — White wins!");
+    records_append(path, &g, p, NULL);
+    static char text[4096];
+    FILE *f = fopen(path, "r");
+    size_t n = fread(text, 1, sizeof(text) - 1, f);
+    fclose(f);
+    text[n] = '\0';
+    char *q = strstr(text, "aQb");
+    if (q) q[1] = '\\';
+    f = fopen(path, "w");
+    fwrite(text, 1, n, f);
+    fclose(f);
+    RecordList l;
+    records_load(path, &l);
+    check("an old unescaped backslash reads as written", l.count == 1 && strcmp(l.r[0].white, "a\\b") == 0);
+    records_free(&l);
+    records_rename(path, "a\\b", "c");
+    records_load(path, &l);
+    check("and rename still finds it", l.count == 1 && strcmp(l.r[0].white, "c") == 0);
+    records_free(&l);
+}
+
+static void test_escaped_names(void)
+{
+    printf("== names with quotes ==\n");
+    fresh("quote.pgn");
+    GameState g;
+    Player p[2] = { prof("Big \"Al\""), prof("back\\slash") };
+    finished(&g, "Checkmate — White wins!");
+    records_append(path, &g, p, NULL);
+    RecordList l;
+    records_load(path, &l);
+    check("a quote survives the round trip", l.count == 1 && strcmp(l.r[0].white, "Big \"Al\"") == 0);
+    check("so does a backslash", l.count == 1 && strcmp(l.r[0].black, "back\\slash") == 0);
+    records_free(&l);
+    records_rename(path, "back\\slash", "Mr \"X\"");
+    records_append_legacy(path, "Q\"uote", 1700000000L, 1);
+    records_load(path, &l);
+    static char text[4096];
+    FILE *f = fopen(path, "r");
+    text[fread(text, 1, sizeof(text) - 1, f)] = '\0';
+    fclose(f);
+    check("rename writes an escaped name",
+          l.count == 2 && strcmp(l.r[0].black, "Mr \"X\"") == 0 && strstr(text, "[Black \"Mr \\\"X\\\"\"]"));
+    check("legacy stubs escape too",
+          l.count == 2 && strcmp(l.r[1].white, "Q\"uote") == 0 && strstr(text, "[White \"Q\\\"uote\"]"));
+    records_free(&l);
+}
+
 int main(void)
 {
     init_attacks();
@@ -304,6 +360,8 @@ int main(void)
     test_damaged_event();
     test_unicode_record();
     test_opening_tags();
+    test_escaped_names();
+    test_old_backslash();
     test_speed();
 
     char cmd[600];

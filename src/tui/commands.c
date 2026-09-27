@@ -206,10 +206,12 @@ static void apply_engine_result(TUIState *state, SearchResult res, const char *b
         /* A stopped search also comes back empty (see search.h), so ask
          * the board whether the game is really over. */
         if (has_legal_moves(&state->game.pos)) {
-            /* Or the next tick would start the same search again. */
-            state->paused = 1;
-            snprintf(state->status, sizeof(state->status),
-                     "Search stopped before it found a move — paused");
+            /* Or the next tick would start the same search again; only an
+             * engine to move would. */
+            state->paused = players_automated(state->players, state->game.pos.side);
+            snprintf(state->status, sizeof(state->status), "%s",
+                     state->paused ? "Search stopped before it found a move — paused"
+                                   : "Search stopped before it found a move");
             return;
         }
         game_update_status(&state->game);
@@ -323,6 +325,11 @@ int handle_command(TUIState *state, const char *cmd) {
         tui_remember_setup(state);
         return 1;
     }
+    if ((strcmp(cmd, "pause") == 0 || strcmp(cmd, "resume") == 0) &&
+        !players_automated(state->players, WHITE) && !players_automated(state->players, BLACK)) {
+        snprintf(state->status, sizeof(state->status), "No engine to pause");
+        return 1;
+    }
     if (strcmp(cmd, "pause") == 0) {
         cancel_engine_search(state);
         state->paused = 1;
@@ -332,6 +339,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "resume") == 0) {
         state->paused = 0;
+        state->selected = 0;   /* the engine may move the piece that was picked up */
+        memset(state->highlight, 0, sizeof(state->highlight));
         snprintf(state->status, sizeof(state->status), "Resumed");
         return 1;
     }
@@ -410,6 +419,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (pc > 0) {
         state->engine_error[0] = '\0';
+        state->selected = 0;
+        memset(state->highlight, 0, sizeof(state->highlight));
         for (int side = WHITE; side <= BLACK; side++)
             if (!same_player(&before[side], &state->players[side]))
                 attach(state, side);
