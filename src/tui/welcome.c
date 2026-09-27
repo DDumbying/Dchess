@@ -51,7 +51,12 @@ static void draw(const TUIState *s, const char *name, const char *msg, int msg_e
     mvaddstr(y, x, "Your name");
     mvaddstr(y + 1, x, "Theme");
     attroff(COLOR_PAIR(CP_LABEL));
-    snprintf(field, sizeof(field), "%s▏", name);
+    const char *shown = name;                /* the typed end stays in view */
+    while (text_width(shown) > 23) {
+        shown++;
+        while (((unsigned char)*shown & 0xC0) == 0x80) shown++;
+    }
+    snprintf(field, sizeof(field), "%s▏", shown);
     attron(COLOR_PAIR(CP_INFO_VAL) | A_BOLD);
     mvw_fit(stdscr, y, x + 12, 24, field);
     snprintf(field, sizeof(field), "◂ %s ▸", theme_name(s->theme));
@@ -89,8 +94,9 @@ static int finish(TUIState *s, const char *name, char *msg, size_t n)
         s->first_run = 2;   /* made in memory only; the launcher says so */
     }
     s->file_active = s->profiles.active;
-    if (s->players[WHITE].kind == PLAYER_HUMAN && !s->players[WHITE].name[0])
-        s->players[WHITE] = player_profile(s->profiles.p[s->profiles.active].name);
+    for (int side = WHITE; side <= BLACK; side++)
+        if (s->human_active[side] && s->players[side].kind == PLAYER_HUMAN && !s->players[side].name[0])
+            s->players[side] = player_profile(s->profiles.p[s->profiles.active].name);
     return 1;
 }
 

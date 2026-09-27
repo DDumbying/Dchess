@@ -315,6 +315,7 @@ void tui_init(TUIState *state, const CliArgs *args)
     }
     for (int s = WHITE; s <= BLACK; s++) {
         int active = args ? args->human_active[s] : s == WHITE;
+        state->human_active[s] = active;
         if (active && state->players[s].kind == PLAYER_HUMAN && state->profiles.count)
             state->players[s] = player_profile(state->profiles.p[state->profiles.active].name);
     }
