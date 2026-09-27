@@ -208,9 +208,10 @@ int replay_read(const char *path, long offset, ReplayGame *out, char *err, size_
     size_t cap = 0, len = 0, room = 0;
     long pos;
     char *text = NULL;
-    int tags = 1;
+    int tags = 1, ntags = 0;
     while ((line = next_line(f, &buf, &cap, &pos))) {
         int tag = records_parse_tag(line, k, sizeof(k), v, sizeof(v));
+        if (tags && tag && ntags++ && !strcmp(k, "Event")) break;   /* a game of tags only */
         if (tags && tag) {
             set_info(&out->info, k, v);
             if (!strcmp(k, "FEN")) snprintf(out->fen, sizeof(out->fen), "%.*s", FEN_BUFSIZE - 1, v);

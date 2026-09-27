@@ -158,6 +158,14 @@ static void test_limits(void)
     strcat(text, "*\n");
     read_first(text);
     check("a very long game stops at the limit", rg.count == MAX_MOVE_HISTORY);
+    read_first("[Event \"x\"]\n[FEN \"4k3/8/8/8/8/8/8/4K3 w - - 0 520\"]\n\n520. Kd2 Kd7 *\n");
+    check("a FEN from move 520 still reads its moves", rg.count == 2 && !rg.err[0]);
+    file("tagsonly.pgn", "[Event \"a\"]\n[White \"d\"]\n[Event \"b\"]\n[White \"e\"]\n\n1. e4 *\n");
+    ReplayList l2;
+    int listed = replay_list(path, &l2, err, sizeof(err)) == 1 && l2.count == 2;
+    check("a tags-only game opens as itself", listed && replay_read(path, l2.e[0].offset, &rg, err, sizeof(err)) &&
+                                              !strcmp(rg.info.white, "d") && rg.count == 0);
+    if (listed) replay_list_free(&l2);
 }
 
 int main(void)
