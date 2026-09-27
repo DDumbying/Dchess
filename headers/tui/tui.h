@@ -64,7 +64,7 @@ typedef struct {
 
 
     int show_onboarding;
-    int first_run;           /* no profiles.conf yet: the welcome creates it */
+    int first_run;           /* no profiles.conf yet: the welcome creates it; 2 = unsaved */
 
     /* Index into the theme table; applied via init_colors(). */
     int theme;

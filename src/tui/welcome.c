@@ -82,8 +82,11 @@ static int finish(TUIState *s, const char *name, char *msg, size_t n)
     char games[512];
     records_path(games, sizeof(games));
     if (!profiles_first_run(&s->profiles, name, &old, games, theme_name(s->theme))) {
-        snprintf(msg, n, "Could not save profiles.conf");
-        return 0;
+        if (!s->profiles.count) {
+            snprintf(msg, n, "Could not save profiles.conf");
+            return 0;
+        }
+        s->first_run = 2;   /* made in memory only; the launcher says so */
     }
     s->file_active = s->profiles.active;
     if (s->players[WHITE].kind == PLAYER_HUMAN && !s->players[WHITE].name[0])

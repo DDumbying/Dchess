@@ -38,7 +38,7 @@ typedef struct {
     char       fen[128];
     int        theme;
     char       book[256], custom_book[256];   /* builtin, off or a path */
-    int        book_touched;
+    char       book_start[256];               /* changed from this = remembered */
     int        row, focus, pcursor;   /* pcursor == count: "+ new profile" */
     char       msg[96];
     int        msg_err;
@@ -107,10 +107,11 @@ static void apply_profile(TUIState *s, Launch *L)
     L->sel[BLACK] = word_player(s, p->black, player_builtin(DIFF_MEDIUM));
     if (!s->cli_book[0]) {
         snprintf(L->book, sizeof(L->book), "%s", p->book[0] ? p->book : "builtin");
-        L->book_touched = 0;
+        snprintf(L->book_start, sizeof(L->book_start), "%s", L->book);
+        L->custom_book[0] = '\0';
+        if (strcmp(L->book, "builtin") && strcmp(L->book, "off"))
+            snprintf(L->custom_book, sizeof(L->custom_book), "%s", L->book);
     }
-    if (strcmp(L->book, "builtin") && strcmp(L->book, "off"))
-        snprintf(L->custom_book, sizeof(L->custom_book), "%s", L->book);
     int t = p->theme[0] ? theme_from_name(p->theme) : -1;
     if (t >= 0 && t != L->theme) {
         L->theme = t;
@@ -456,7 +457,6 @@ static void change_row(TUIState *s, Launch *L, int dir)
         int n = L->custom_book[0] ? 3 : 2, i = 0;
         while (i < n && strcmp(L->book, opts[i])) i++;
         snprintf(L->book, sizeof(L->book), "%s", opts[(i + n + dir) % n]);
-        L->book_touched = 1;
     } else if (L->row == ROW_THEME) {
         L->theme = (L->theme + theme_count() + dir) % theme_count();
         init_colors(L->theme);
@@ -477,7 +477,7 @@ static int start(TUIState *s, Launch *L)
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", L->fen);
     records_free(&L->rec);
     tui_init(s, &chosen);
-    if (L->book_touched) {   /* chosen here, so remembered like the book command */
+    if (strcmp(L->book, L->book_start)) {   /* chosen here, so remembered like the book command */
         snprintf(s->book_choice, sizeof(s->book_choice), "%s", L->book);
         s->cli_book[0] = '\0';
     }
@@ -496,12 +496,14 @@ int tui_launcher(TUIState *state)
     L.sel[BLACK] = state->players[BLACK];
     L.pcursor = state->profiles.active;
     snprintf(L.book, sizeof(L.book), "%s", state->book_choice);
+    snprintf(L.book_start, sizeof(L.book_start), "%s", L.book);
     if (strcmp(L.book, "builtin") && strcmp(L.book, "off"))
         snprintf(L.custom_book, sizeof(L.custom_book), "%s", L.book);
     records_path(L.games, sizeof(L.games));
     records_load(L.games, &L.rec);
     if (state->profiles.count && !state->cli_setup) apply_profile(state, &L);
     fix_selection(state, &L);
+    if (state->first_run == 2) say(&L, 1, "Could not save profiles.conf; this profile lasts for this run");
     keypad(stdscr, TRUE);
 
     for (;;) {
