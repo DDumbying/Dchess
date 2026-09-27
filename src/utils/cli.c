@@ -76,6 +76,10 @@ void cli_help(void)
         "    --profiles\n"
         "          List the profiles with their records and exit.\n"
         "\n"
+        "    --uci\n"
+        "          Run as a UCI engine on stdin/stdout, for chess GUIs and\n"
+        "          engine matches.\n"
+        "\n"
         "    --clock <M+S>\n"
         "          Time control for this run: minutes + seconds of increment,\n"
         "          e.g. 5+3, 0.5+0, or 5+0/1+0 for White/Black odds.\n"
@@ -327,6 +331,10 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
+        if (strcmp(a, "--uci") == 0) {
+            args->uci = 1;
+            continue;
+        }
         if (strcmp(a, "--clock") == 0) {
             TimeControl tc;
             if (i + 1 >= argc || !tc_parse(argv[i + 1], &tc)) {

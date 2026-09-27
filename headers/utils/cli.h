@@ -15,6 +15,7 @@ typedef struct {
     int show_stats;     /* --stats flag    */
     int list_engines;   /* --engines flag */
     int list_profiles;  /* --profiles flag */
+    int uci;            /* --uci: speak UCI on stdin/stdout, no TUI */
     char profile[PLAYER_NAME_MAX + 1];   /* --profile, or empty */
     int theme_set;      /* --theme was given */
     char book[256];     /* --book: builtin, off or a .bin path; empty = the profile's */

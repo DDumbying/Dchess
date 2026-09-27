@@ -1,4 +1,5 @@
 #include "tui/tui.h"
+#include "game/uci_engine.h"
 #include "tui/stats_tui.h"
 #include "utils/bitboard.h"
 #include "utils/cli.h"
@@ -22,6 +23,10 @@ int main(int argc, char **argv)
 
     if (args.show_help)    cli_help();     /* exits */
     if (args.show_version) cli_version();  /* exits */
+    if (args.uci) {
+        init_attacks();
+        return uci_engine_run(stdin, stdout);
+    }
     if (args.list_engines) cli_list_engines();   /* exits */
     if (args.list_profiles) cli_list_profiles(); /* exits */
 
