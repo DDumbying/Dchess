@@ -54,6 +54,7 @@ int main(void)
     check("at least 50 ms", tc_budget_ms(1000, 0) == 50);
     check("half of a nearly empty clock", tc_budget_ms(40, 0) == 20);
     check("never more than a third", tc_budget_ms(3000, 5000) == 1000);
+    check("never zero, which would mean no limit", tc_budget_ms(1, 0) >= 1 && tc_budget_ms(0, 0) >= 1);
 
     if (failures) {
         printf("\n%d time-control test(s) FAILED.\n", failures);

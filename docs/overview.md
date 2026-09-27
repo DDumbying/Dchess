@@ -563,7 +563,7 @@ the step before (80 games at 50 ms a move):
 | null-move pruning | 51.2% | +9 |
 | late-move reductions | 55.6% | +39 |
 | check extensions | 51.9% | +13 |
-| depth-preferred table | 48.8% | −9 — left off |
+| depth-preferred table | 48.8% | −9 — not measurable here, left off |
 
 All of it together against the plain search, 200 games at 50 ms: **59.8%,
 +69 Elo (+38 .. +100)** — and that is at a speed where both reach only a
@@ -577,9 +577,14 @@ Two findings worth keeping:
   the king fixed both.
 - **The table and the principal line.** A table that keeps deeper entries
   gives more cutoffs, and every cutoff on the principal line cut the line
-  short (analysis showed one move). No table cutoffs at PV nodes fixed it;
-  the table itself did not measure as a gain at these speeds, so it is off
-  until it can be tested with longer searches.
+  short (analysis showed one move). No table cutoffs at PV nodes fixed it.
+  The table itself cannot be judged by this harness — it clears the table
+  every move, and a 50 ms search never fills it — so it stays off until it
+  can be tested with longer searches.
+- **An uncapped Hard wasted time.** With no depth cap, a forced move or an
+  already-found mate kept deepening for the whole 5 seconds; the search now
+  stops on a single legal move, and on a mate once the depth is twice its
+  length.
 
 The payoff: at depth 8 the benchmark needs 6.8 M nodes and 1 s instead of
 89 M and 12 s, and in its 5 seconds Hard now reaches about depth 12–13

@@ -49,7 +49,8 @@ SearchOptions search_default_options(void);
 - **Null move.** Used when:
   - `depth >= 3`;
   - the side to move is not in check;
-  - it has a piece other than pawns and the king;
+  - it has two pieces besides pawns and the king (with one, single-piece
+    zugzwangs such as Morphy's mate went wrong);
   - the static evaluation is at least `beta`;
   - and the previous move was not a null move.
 
@@ -76,6 +77,13 @@ SearchOptions search_default_options(void);
   on probe; the "never cache mates" rule goes.
 - **Aborted searches** store nothing, as now.
 
+**Stopping early:** deepening stops when the root has one legal move (from
+depth 2), or when a mate is found and the depth is at least twice its
+distance plus two.
+
+**Default:** the depth-preferred table (`tt_depth`) is built but off; this
+harness cannot measure it (it clears the table every move).
+
 **Levels:** Hard's depth becomes `MAX_DEPTH` (`cli.c` difficulty table).
 Easy and Medium are unchanged. The Hard time budget (5 s) stays.
 
@@ -91,7 +99,7 @@ journal.
   right distance (`MATE_SCORE - plies`).
 - **Zugzwang:** with every option on, the king-and-pawn ending
   `8/8/p1p5/1p5p/1P5p/8/PPP2K1p/4R1rk w - - 0 1` finds `e1f1`.
-- **Tactics:** 20 Win At Chess positions at 1 s each (the list is in the
+- **Tactics:** 20 Win At Chess positions at 500 ms each (the list is in the
   test) solve at least as many as the baseline, whose count is recorded in
   the test.
 - **Options:** `search_set_options` with everything off gives the same best

@@ -76,7 +76,7 @@ const char *tc_category(const TimeControl *tc)
 
 int tc_budget_ms(long left_ms, int inc_ms)
 {
-    if (left_ms < 50) return left_ms > 0 ? (int)(left_ms / 2) : 0;
+    if (left_ms < 50) return left_ms > 2 ? (int)(left_ms / 2) : 1;   /* 0 would mean no limit */
     long b = left_ms / 30 + inc_ms * 4L / 5;
     if (b < 50) b = 50;
     if (b > left_ms / 3) b = left_ms / 3;

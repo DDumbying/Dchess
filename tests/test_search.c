@@ -5,6 +5,7 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "engine/board.h"
 #include "engine/fen.h"
 #include "engine/move.h"
@@ -70,6 +71,26 @@ static void test_warm_table(void)
     make_move(&p, a.best_move);
     SearchResult c = search(&p, 8, 0);          /* the defender, one move in, same table */
     check("and so does the position one move later", c.best_score == -(MATE_SCORE - 4));
+}
+
+static double ms_since(struct timespec t0)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (t.tv_sec - t0.tv_sec) * 1000.0 + (t.tv_nsec - t0.tv_nsec) / 1e6;
+}
+
+static void test_no_wasted_time(void)
+{
+    printf("== no wasted time ==\n");
+    struct timespec t0;
+    char best[8];
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    run("k7/8/8/8/8/8/1q6/K7 w - - 0 1", MAX_DEPTH, 3000, best);
+    check("a single legal move is played at once", ms_since(t0) < 500 && !strcmp(best, "a1b2"));
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    SearchResult r = run("6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1", MAX_DEPTH, 3000, best);
+    check("a found mate ends the search", ms_since(t0) < 500 && r.best_score == MATE_SCORE - 1);
 }
 
 static void test_zugzwang(void)
@@ -146,6 +167,7 @@ int main(void)
     init_attacks();
     test_mates();
     test_zugzwang();
+    test_no_wasted_time();
     test_warm_table();
     test_plain_search();
     test_tactics();

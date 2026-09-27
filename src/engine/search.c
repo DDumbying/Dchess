@@ -534,6 +534,11 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
             tt_store(root_key, depth, rr.score, TT_EXACT, rr.best, 0);
 
         if (legal == 0) break; /* checkmate/stalemate: nothing deeper to find */
+        if (legal == 1 && depth >= 2) break;   /* a forced move: nothing to choose */
+        /* A mate is settled once the depth is well past it: pruning can hide
+         * a shorter one at low depth, not at twice its length. */
+        int to_mate = MATE_SCORE - abs(best.best_score);
+        if (abs(best.best_score) > MATE_BOUND && depth >= 2 * to_mate + 2) break;
         if (time_limit_ms > 0 && deadline_passed()) break;
     }
 
