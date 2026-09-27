@@ -15,6 +15,9 @@ void init_colors(int theme);
 
 void mvw_clip(WINDOW *win, int row, int col, const char *fmt, ...);
 
+/* `s` in exactly `width` columns: clipped by display width, padded with spaces. */
+void mvw_fit(WINDOW *win, int row, int col, int width, const char *s);
+
 void render_all(WINDOW *board, WINDOW *side, WINDOW *cmd, const TUIState *state);
 
 #endif

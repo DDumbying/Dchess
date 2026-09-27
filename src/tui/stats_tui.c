@@ -23,24 +23,9 @@ typedef struct {
 
 static const char *BARS[] = { "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█" };
 
-/* Prints UTF-8 text in at most `width` terminal columns (CJK counts two). */
 static void put_clip(WINDOW *w, int row, int col, int width, const char *s)
 {
-    mbstate_t st;
-    memset(&st, 0, sizeof(st));
-    const char *end = s;
-    int used = 0;
-    while (*end) {
-        wchar_t wc;
-        size_t n = mbrtowc(&wc, end, strlen(end), &st);
-        if (n == (size_t)-1 || n == (size_t)-2 || n == 0) break;
-        int cw = wcwidth(wc);
-        if (cw < 0) cw = 1;
-        if (used + cw > width) break;
-        used += cw;
-        end += n;
-    }
-    mvwprintw(w, row, col, "%.*s", (int)(end - s), s);
+    mvw_fit(w, row, col, width, s);
 }
 
 static int pct(int part, int whole) { return whole ? 100 * part / whole : 0; }
@@ -251,7 +236,7 @@ static void draw(Page *pg)
         draw_recent(pg, body - 4 - oh, cols, 4 + oh, 0);
     }
     attron(COLOR_PAIR(CP_HINT));
-    mvprintw(rows - 1, 1, "%.*s", cols - 2, "←→ profile  tab panel  ↑↓ scroll  esc back");
+    mvw_fit(stdscr, rows - 1, 1, cols - 2, "←→ profile  tab panel  ↑↓ scroll  esc back");
     attroff(COLOR_PAIR(CP_HINT));
     refresh();
 }

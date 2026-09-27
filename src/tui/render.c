@@ -9,6 +9,7 @@
  */
 
 #include "tui/render.h"
+#include "utils/text.h"
 #include "tui/colors.h"
 #include "tui/piece_art.h"
 #include "tui/panels.h"
@@ -240,7 +241,16 @@ void mvw_clip(WINDOW *win, int row, int col, const char *fmt, ...)
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    mvwprintw(win, row, col, "%.*s", ww - col - 1, buf);
+    mvwprintw(win, row, col, "%.*s", (int)text_fit(buf, ww - col - 1), buf);
+}
+
+void mvw_fit(WINDOW *win, int row, int col, int width, const char *s)
+{
+    if (width <= 0) return;
+    int n = (int)text_fit(s, width);
+    char part[512];
+    snprintf(part, sizeof(part), "%.*s", n, s);
+    mvwprintw(win, row, col, "%s%*s", part, width - text_width(part), "");
 }
 
 static void hfill(WINDOW *w, int r, int c, int len, chtype ch)

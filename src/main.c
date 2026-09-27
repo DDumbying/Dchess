@@ -18,12 +18,13 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    setlocale(LC_ALL, "");   /* unicode output, and text widths */
+
     if (args.show_help)    cli_help();     /* exits */
     if (args.show_version) cli_version();  /* exits */
     if (args.list_engines) cli_list_engines();   /* exits */
     if (args.list_profiles) cli_list_profiles(); /* exits */
 
-    setlocale(LC_ALL, "");   /* required for ncurses unicode output */
 
     if (args.show_stats) {
         stats_standalone(args.profile);
