@@ -339,6 +339,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "resume") == 0) {
         state->paused = 0;
+        state->selected = 0;   /* the engine may move the piece that was picked up */
+        memset(state->highlight, 0, sizeof(state->highlight));
         snprintf(state->status, sizeof(state->status), "Resumed");
         return 1;
     }
@@ -417,6 +419,8 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (pc > 0) {
         state->engine_error[0] = '\0';
+        state->selected = 0;
+        memset(state->highlight, 0, sizeof(state->highlight));
         for (int side = WHITE; side <= BLACK; side++)
             if (!same_player(&before[side], &state->players[side]))
                 attach(state, side);
