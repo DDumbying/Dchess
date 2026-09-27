@@ -37,6 +37,13 @@ test: build/fake_uci $(TEST_BIN)
 	@echo "All suites passed."
 
 # Not part of `make test`: it measures, it does not pass or fail.
+build/match: tools/match.c $(CORE_SRC) | build
+	$(CC) $(CFLAGS) $< $(CORE_SRC) -o $@ $(LDFLAGS)
+
+# Search options against each other, e.g. make match ARGS="--base none --cand pvs"
+match: build/match
+	./build/match $(ARGS)
+
 bench: build/bench
 	./build/bench $(DEPTH)
 
@@ -44,4 +51,4 @@ clean:
 	rm -f $(TARGET)
 	rm -rf build
 
-.PHONY: all test bench clean
+.PHONY: all test bench match clean

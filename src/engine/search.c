@@ -128,6 +128,11 @@ typedef struct {
 
 static TTEntry *tt = NULL;
 
+static SearchOptions opt = { 1, 1, 1, 1, 1, 1 };
+
+SearchOptions search_default_options(void) { SearchOptions o = { 1, 1, 1, 1, 1, 1 }; return o; }
+void search_set_options(const SearchOptions *o) { opt = *o; }
+
 static void tt_ensure(void) {
     if (!tt) tt = calloc(TT_SIZE, sizeof(TTEntry));
 }

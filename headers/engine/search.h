@@ -24,6 +24,12 @@ typedef struct {
  * -- use has_legal_moves() for that. */
 SearchResult search(Position *pos, int max_depth, int time_limit_ms);
 
+/* The search's techniques, each switchable so their worth can be measured
+ * (tools/match.c). Set before a search starts; the defaults are all on. */
+typedef struct { int pvs, aspiration, null_move, lmr, check_ext, tt_depth; } SearchOptions;
+SearchOptions search_default_options(void);
+void search_set_options(const SearchOptions *o);
+
 /* Thread-safe; the one function here meant to be called from a different
  * thread than search() itself. Safe to call when nothing is running. */
 void search_cancel(void);
