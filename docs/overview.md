@@ -592,6 +592,49 @@ instead of 7–9. Hard's depth cap is gone; Easy and Medium keep theirs.
 `tests/test_search.c` pins mates, the zugzwang, a tactics count and that the
 search with every option off is exactly the old one.
 
+### Round 10 — the evaluation, and dchess as a UCI engine
+
+**The evaluation** got the same treatment as the search: every term behind
+a switch (`EvalOptions`), measured with `make match`, kept only if it did
+not lose (80 games at 50 ms):
+
+| Term | Against the step before | On its own (vs PeSTO) | Kept |
+|------|------|------|------|
+| PeSTO tapered tables | 60.6%, +75 | — | yes |
+| pawn structure | 43.8%, −44 | 49.4%, −4 | no |
+| mobility | 49.4%, −4 | 43.8%, −44 | no |
+| king safety | 48.1%, −13 | 53.8%, +26 | yes |
+| bishop pair, rooks on open files | 50.0%, 0 | 48.1%, −13 | no |
+
+PeSTO's published tables (tapered for every piece) were the clear win.
+King safety helped on its own. Pawn structure, mobility and the extras,
+with weights set by hand, did not — mobility clearly cost more in search
+speed than it gave. They stay in the code, switched off; tuning their
+weights automatically (e.g. Texel tuning) is the obvious next step.
+
+**UCI engine mode.** `dchess --uci` — or dchess started through pipes with
+no arguments, which is how GUIs launch engines — speaks UCI
+(`game/uci_engine.c`): the search runs in a thread so `stop` and `isready`
+answer at once, and a per-depth callback (`search_set_info`) reports
+`info` lines. dchess can register itself on its own engines screen and
+play itself.
+
+**A rating.** `make match --vs` plays dchess against any UCI engine
+through the client dchess already had. Against Stockfish 18 with
+`UCI_Elo` (60 games at 100 ms a move), before the evaluation work:
+
+| dchess | against Stockfish @1600 | @1900 | @2300 | @2600 |
+|--------|------|------|------|------|
+| before (new search, old evaluation) | 89.2%, +366 | 80.0%, +241 | 63.3%, +95 | — |
+| after (PeSTO + king safety) | — | — | 66.7%, +120 | 41.7%, −58 |
+
+The anchors nearest 50% put dchess at about 2400 before and 2450–2550
+after. Sixty games give an error of roughly ±80 Elo, so the before/after
+gap is clearer in the self-play numbers above (+75 and +26) than here.
+
+Stockfish calibrates `UCI_Elo` at much longer time controls, so these are
+estimates on its short-time-control scale, not an official rating.
+
 ## 4. Current architecture
 
 ```
@@ -599,7 +642,8 @@ Dchess/
 ├── src/
 │   ├── engine/          — the chess engine; no ncurses
 │   │   ├── board.c, move.c, movegen.c, make.c   — bitboards, moves, legality
-│   │   ├── eval.c       — material + piece-square tables, tapered king
+│   │   ├── eval.c       — PeSTO tapered tables + king safety; switchable
+│   │   │                  EvalOptions (pawns, mobility, extras off)
 │   │   ├── search.c     — iterative-deepening PVS with aspiration, null
 │   │   │                  move, LMR, check extensions, quiescence, TT,
 │   │   │                  killers/history, principal line; switchable
@@ -611,6 +655,7 @@ Dchess/
 │   │   ├── players.c    — who plays each side
 │   │   ├── opponent.c   — the driver interface + dchess's search thread
 │   │   ├── uci.c        — UCI engines as drivers
+│   │   ├── uci_engine.c — dchess itself as a UCI engine
 │   │   ├── analysis.c   — analysers and move grading
 │   │   ├── book.c, openings.c — Polyglot and built-in books, opening names
 │   │   ├── profiles.c, records.c, statsview.c — people, history, stats
@@ -648,10 +693,9 @@ Worth knowing if you pick the project up:
 
 ## 5. What's still genuinely open
 
-1. **The evaluation is the weak half now.** The search reaches depth 12–13,
-   but it evaluates with material and piece-square tables only (king
-   tapering aside): no pawn structure, mobility, king safety or passed
-   pawns. That is where the next strength is.
+1. **Evaluation weights are hand-set.** Pawn structure, mobility and the
+   extras exist but did not measure as gains with the weights they have;
+   tuning them from games (Texel tuning) is where the next strength is.
 2. **A single built-in search.** See §4 — re-entrancy would let dchess
    analyse while it plays.
 3. **Full-position copies per node** instead of incremental make/unmake.
@@ -701,16 +745,13 @@ the `ncurses` layer, which makes this more tractable than it might sound.
 
 ## 7. Roadmap
 
-**Next:** a better evaluation — pawn structure, passed pawns, mobility
-and king safety, tapered for every piece — measured with `make match` the
-same way the search was.
+**Next:** tune the evaluation's weights automatically, then switch the
+remaining terms back on if they measure as gains.
 
 **Then, roughly by payoff:**
 - A small pass over the deferred items in §5.
 - Puzzles: mate-in-N positions with a streak on the profile, built on the
   replay and analysis machinery.
-- A UCI engine mode (`dchess --uci`), so dchess can play in any GUI and be
-  measured against other engines properly.
 - The depth-preferred table, re-measured with longer searches.
 - Incremental make/unmake and a re-entrant search.
 
