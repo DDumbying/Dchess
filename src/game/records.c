@@ -1,5 +1,6 @@
 #include "game/records.h"
 #include "game/pgn.h"
+#include "game/book.h"
 #include "utils/cli.h"
 #include "utils/constants.h"
 #include <stdio.h>
@@ -98,6 +99,11 @@ int records_append(const char *path, const GameState *g, const Player p[2],
     add_tag(&h, "EndReason", records_end_reason(g->result));
     add_tag(&h, "PlyCount", plies);
     add_tag(&h, "Seconds", secs);
+    const char *eco = NULL, *opening = book_opening(g, &eco);
+    if (opening) {
+        add_tag(&h, "ECO", eco);
+        add_tag(&h, "Opening", opening);
+    }
     return pgn_append(g, &h, path) == 0;
 }
 
@@ -165,6 +171,8 @@ static void set_field(Record *r, const char *k, const char *v, int *have)
     else if (!strcmp(k, "WhiteStrength")) COPY(r->white_strength, v);
     else if (!strcmp(k, "BlackStrength")) COPY(r->black_strength, v);
     else if (!strcmp(k, "EndReason"))     { COPY(r->end_reason, v); r->legacy = !strcmp(v, "legacy"); }
+    else if (!strcmp(k, "ECO"))           COPY(r->eco, v);
+    else if (!strcmp(k, "Opening"))       COPY(r->opening, v);
     else if (!strcmp(k, "PlyCount"))      r->plies = atoi(v);
     else if (!strcmp(k, "Seconds"))       r->seconds = atoi(v);
 }

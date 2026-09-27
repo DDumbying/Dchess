@@ -1,4 +1,5 @@
 #include "tui/panels.h"
+#include "game/book.h"
 #include "tui/render.h"
 #include "tui/colors.h"
 #include "utils/dash.h"
@@ -184,8 +185,14 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
         return;
     }
 
-    int rows  = h - 2;
+    const char *eco = NULL, *opening = book_opening(g, &eco);
+    int rows  = h - 2 - (opening && h > 5);
     int first = total - from > rows ? total - rows : from;
+    if (opening && h > 5) {
+        wattron(p, COLOR_PAIR(CP_ACC_MOVES));
+        mvw_clip(p, h - 2, 2, "%s %s", eco, opening);
+        wattroff(p, COLOR_PAIR(CP_ACC_MOVES));
+    }
     for (int m = first; m < total; m++) {
         int r = 1 + (m - first);
         int wi = 2 * m, bi = 2 * m + 1;
@@ -250,6 +257,12 @@ static void draw_engine_panel(WINDOW *p, const TUIState *state)
         return;
     }
 
+    if (state->last_was_book) {
+        wattron(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
+        mvw_clip(p, 1, 2, "book");
+        wattroff(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
+        return;
+    }
     const SearchResult *r = &state->last_search;
     if (r->nodes == 0) {
         int any = players_automated(state->players, WHITE) ||

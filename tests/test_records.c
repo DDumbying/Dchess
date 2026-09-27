@@ -272,6 +272,24 @@ static void test_unicode_record(void)
     records_free(&l);
 }
 
+
+static void test_opening_tags(void)
+{
+    printf("== opening tags ==\n");
+    fresh("opening.pgn");
+    GameState g;
+    game_reset(&g);
+    const char *moves[] = { "e2e4", "c7c5", "g1f3", "d7d6", "d2d4", "c5d4", "f3d4", "g8f6", "b1c3", "a7a6" };
+    for (int i = 0; i < 10; i++) play(&g, moves[i]);
+    Player p[2] = { prof("saeed"), player_builtin(DIFF_EASY) };
+    records_append(path, &g, p, NULL);
+    RecordList l;
+    records_load(path, &l);
+    check("ECO and Opening are recorded",
+          l.count == 1 && strcmp(l.r[0].eco, "B90") == 0 && strstr(l.r[0].opening, "Najdorf") != NULL);
+    records_free(&l);
+}
+
 int main(void)
 {
     init_attacks();
@@ -285,6 +303,7 @@ int main(void)
     test_damaged();
     test_damaged_event();
     test_unicode_record();
+    test_opening_tags();
     test_speed();
 
     char cmd[600];

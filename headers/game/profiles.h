@@ -8,6 +8,7 @@
 typedef struct {
     char name[PLAYER_NAME_MAX + 1];          /* at most PROFILE_NAME_MAX characters */
     char theme[24], white[PLAYER_NAME_MAX + 1], black[PLAYER_NAME_MAX + 1];
+    char book[256];                          /* builtin, off or a .bin path */
     int  legacy_games, legacy_wins, legacy_losses, legacy_draws;
 } Profile;
 typedef struct { Profile p[PROFILES_MAX]; int count, active; } ProfileList;

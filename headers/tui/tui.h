@@ -43,6 +43,8 @@ typedef struct {
     EngineList engines;       /* engines.conf, as of the last load */
     ProfileList profiles;
     Book     *book;          /* opening book for the built-in engine, or NULL */
+    char      book_choice[256];   /* builtin, off or a .bin path */
+    int       last_was_book;      /* last_search came from the book */
     int       file_active;    /* active profile as saved; --profile does not change it */
     int       theme_set;      /* theme chosen by flag or launcher, so it is remembered */
     int       cli_setup;      /* players came from flags; the launcher keeps them */

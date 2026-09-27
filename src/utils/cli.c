@@ -79,6 +79,10 @@ void cli_help(void)
         "    --profiles\n"
         "          List the profiles with their records and exit.\n"
         "\n"
+        "    --book <builtin|off|path.bin>\n"
+        "          Opening book for dchess's engine: the built-in one, none,\n"
+        "          or a Polyglot .bin. Remembered per profile.\n"
+        "\n"
         "    --engines\n"
         "          List the registered UCI engines and exit.\n"
         "\n"
@@ -139,6 +143,8 @@ void cli_help(void)
         "                Change who plays a side, mid-game\n"
         "    swap        Exchange the two players\n"
         "    resign      Resign for the human side and end the game\n"
+        "    book <builtin|off|path>\n"
+        "                Change the opening book\n"
         "    engines     List the registered UCI engines\n"
         "    depth N     Change search depth (1–8) mid-game\n"
         "    eval        Show the current position evaluation\n"
@@ -279,6 +285,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     args->no_menu       = 0;
     args->theme         = 0;
     args->theme_set     = 0;
+    args->book[0]       = '\0';
     args->any_gameplay_flag = 0;
     args->error        = 0;
     args->error_msg[0] = '\0';
@@ -305,6 +312,16 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         }
 
         /* --engines ─────────────────────────────────────────────────── */
+        if (strcmp(a, "--book") == 0) {
+            if (i + 1 >= argc) {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Option '--book' requires builtin, off or a .bin path");
+                args->error = 1;
+                return -1;
+            }
+            snprintf(args->book, sizeof(args->book), "%s", argv[++i]);
+            continue;
+        }
         if (strcmp(a, "--profiles") == 0) {
             args->list_profiles = 1;
             return 0;

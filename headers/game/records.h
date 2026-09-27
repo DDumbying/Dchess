@@ -14,6 +14,7 @@ typedef struct {
     char     white_strength[32], black_strength[32];
     int      result;          /* 1 white won, 0 draw, -1 black won */
     char     end_reason[16];
+    char     eco[4], opening[64];
     int      plies, seconds, legacy;
 } Record;
 

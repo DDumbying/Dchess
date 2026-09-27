@@ -51,6 +51,7 @@ static void test_round_trip(void)
     l.active = 1;
     snprintf(l.p[0].theme, sizeof(l.p[0].theme), "catppuccin");
     snprintf(l.p[0].black, sizeof(l.p[0].black), "dchess hard");
+    snprintf(l.p[0].book, sizeof(l.p[0].book), "/books/gm2001.bin");
     l.p[0].legacy_games = 5;
     l.p[0].legacy_wins = 3;
     check("saved", profiles_save(&l) == 1);
@@ -59,6 +60,7 @@ static void test_round_trip(void)
     check("fields survive",
           strcmp(back.p[1].name, "Sa Eed") == 0 && strcmp(back.p[0].theme, "catppuccin") == 0 &&
           strcmp(back.p[0].black, "dchess hard") == 0 && back.p[0].legacy_games == 5 &&
+          strcmp(back.p[0].book, "/books/gm2001.bin") == 0 &&
           back.p[0].legacy_wins == 3);
     check("find by name", profiles_find(&back, "Sa Eed") == 1 && profiles_find(&back, "x") == -1);
 

@@ -87,6 +87,7 @@ OPTIONS
                                   Choose who plays a side; overrides -c, -d and -2
   --profile <name>                Play as this profile for this run
   --profiles                      List the profiles with their records and exit
+  --book <builtin|off|path.bin>   Opening book for dchess's engine (default: built-in)
   --engines                       List the registered UCI engines and exit
   --fen <string>                  Start from a custom FEN position instead of the standard setup
   -m, --menu                      Show the launcher to pick options visually,
@@ -168,6 +169,8 @@ white|black engine [easy|medium|hard|name]
             change who plays a side, mid-game
 swap        exchange the two players
 engines     list the registered UCI engines
+book <builtin|off|path>
+            change the opening book
 depth N     change search depth (1–8) mid-game
 eval        show current position evaluation
 fen         show the current position as a FEN string

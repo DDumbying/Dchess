@@ -8,6 +8,7 @@
 #include "game/pgn.h"
 #include "game/uci.h"
 #include "game/records.h"
+#include "game/book.h"
 #include "tui/render.h"
 #include "tui/stats_tui.h"
 #include "utils/theme.h"
@@ -40,6 +41,7 @@ void tui_remember_setup(TUIState *state)
         snprintf(p->theme, sizeof(p->theme), "%s", theme_name(state->theme));
     player_word(&state->players[WHITE], p->white, sizeof(p->white));
     player_word(&state->players[BLACK], p->black, sizeof(p->black));
+    snprintf(p->book, sizeof(p->book), "%s", state->book_choice);
     /* Saved with the file's own active profile: --profile is for one run. */
     int run = state->profiles.active;
     state->profiles.active = state->file_active;
@@ -70,8 +72,24 @@ static void attach(TUIState *state, int side)
     }
 }
 
+/* A bad path falls back to the built-in book, with a message. */
+static void load_book(TUIState *state)
+{
+    char err[200];
+    book_free(state->book);
+    state->book = NULL;
+    if (strcmp(state->book_choice, "off") == 0) return;
+    if (strcmp(state->book_choice, "builtin") != 0) {
+        state->book = book_open(state->book_choice, err, sizeof(err));
+        if (state->book) return;
+        snprintf(state->status, sizeof(state->status), "%s, using the built-in book", err);
+    }
+    state->book = book_builtin();
+}
+
 void tui_attach_players(TUIState *state)
 {
+    if (!state->book) load_book(state);
     attach(state, WHITE);
     attach(state, BLACK);
     if (!state->go_driver) {
@@ -89,6 +107,8 @@ void tui_release_players(TUIState *state)
     }
     opponent_free(state->go_driver);
     state->go_driver = NULL;
+    book_free(state->book);
+    state->book = NULL;
 }
 
 int tui_can_move_by_hand(const TUIState *state)
@@ -143,6 +163,7 @@ void tui_new_game(TUIState *state)
 
     game_reset(&state->game);
     memset(&state->last_search, 0, sizeof(state->last_search));
+    state->last_was_book = 0;
     state->last_search_by[0] = '\0';
     state->paused = 0;
     state->engine_error[0] = '\0';
@@ -199,14 +220,19 @@ static void apply_engine_result(TUIState *state, SearchResult res, const char *b
     snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", eval_f);
     game_record_eval(&state->game, score_white);
     state->last_search = res;
+    state->last_was_book = res.depth_reached == 0 && res.nodes == 0;
     snprintf(state->last_search_by, sizeof(state->last_search_by), "%s", by);
 
     game_play(&state->game, res.best_move);
     state->last_move_ms = now_ms();
 
-    snprintf(state->status, sizeof(state->status), "%s: %s (eval %+.2f, depth %d)",
-             by, state->game.move_history[state->game.move_count - 1],
-             eval_f, res.depth_reached);
+    if (state->last_was_book)
+        snprintf(state->status, sizeof(state->status), "%s: %s (book)",
+                 by, state->game.move_history[state->game.move_count - 1]);
+    else
+        snprintf(state->status, sizeof(state->status), "%s: %s (eval %+.2f, depth %d)",
+                 by, state->game.move_history[state->game.move_count - 1],
+                 eval_f, res.depth_reached);
 }
 
 static void start_thinking(TUIState *state, Opponent *o, const char *by)
@@ -273,6 +299,24 @@ int handle_command(TUIState *state, const char *cmd) {
         }
         opponent_stop(state->thinking);
         drive_turn(state);
+        return 1;
+    }
+    if (strcmp(cmd, "book") == 0 || strncmp(cmd, "book ", 5) == 0) {
+        if (cmd[4] != ' ' || !cmd[5]) {
+            snprintf(state->status, sizeof(state->status), "Book: %s", state->book_choice);
+            return 1;
+        }
+        snprintf(state->book_choice, sizeof(state->book_choice), "%s", cmd + 5);
+        snprintf(state->status, sizeof(state->status), "Book: %s", state->book_choice);
+        cancel_engine_search(state);
+        for (int side = WHITE; side <= BLACK; side++) {
+            opponent_free(state->drivers[side]);
+            state->drivers[side] = NULL;
+        }
+        opponent_free(state->go_driver);
+        state->go_driver = NULL;
+        load_book(state);
+        tui_attach_players(state);
         return 1;
     }
     if (strcmp(cmd, "pause") == 0) {
@@ -429,6 +473,12 @@ int handle_command(TUIState *state, const char *cmd) {
             .white = white,
             .black = black,
         };
+        const char *eco = NULL, *opening = book_opening(&state->game, &eco);
+        if (opening) {
+            h.extra[0][0] = "ECO";     h.extra[0][1] = eco;
+            h.extra[1][0] = "Opening"; h.extra[1][1] = opening;
+            h.extra_count = 2;
+        }
 
         if (pgn_write(&state->game, &h, path) == 0)
             snprintf(state->status, sizeof(state->status), "Saved PGN: %.200s", path);
@@ -453,6 +503,7 @@ int handle_command(TUIState *state, const char *cmd) {
         state->selected = 0;
         memset(state->highlight, 0, sizeof(state->highlight));
         memset(&state->last_search, 0, sizeof(state->last_search));
+    state->last_was_book = 0;
         state->last_search_by[0] = '\0';
         snprintf(state->last_eval, sizeof(state->last_eval), "+0.00");
         snprintf(state->status, sizeof(state->status), "Position loaded from FEN");
@@ -501,7 +552,7 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strcmp(cmd, "help") == 0) {
         snprintf(state->status, sizeof(state->status),
                  "e2e4 go stop pause resume undo new resign swap flip depth N eval fen pgn "
-                 "loadfen stats engines quit | white|black human|engine [level|name]");
+                 "loadfen stats engines book quit | white|black human|engine [level|name]");
         return 1;
     }
     if (strcmp(cmd, "quit") == 0 || strcmp(cmd, "q") == 0) return -1;
