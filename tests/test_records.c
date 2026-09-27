@@ -319,6 +319,29 @@ static void test_old_backslash(void)
     records_free(&l);
 }
 
+static void test_offsets(void)
+{
+    printf("== where each game starts ==\n");
+    fresh("offsets.pgn");
+    GameState g;
+    Player p[2] = { prof("saeed"), prof("alice") };
+    finished(&g, "Checkmate — White wins!");
+    records_append(path, &g, p, NULL);
+    records_append(path, &g, p, NULL);
+    RecordList l;
+    records_load(path, &l);
+    int ok = l.count == 2 && l.r[1].offset > 0;
+    FILE *f = fopen(path, "r");
+    for (int i = 0; ok && i < 2; i++) {
+        char line[64] = "";
+        fseek(f, l.r[i].offset, SEEK_SET);
+        ok = fgets(line, sizeof(line), f) && !strncmp(line, "[Event ", 7);
+    }
+    fclose(f);
+    check("offset points at each game's Event line", ok);
+    records_free(&l);
+}
+
 static void test_escaped_names(void)
 {
     printf("== names with quotes ==\n");
@@ -361,6 +384,7 @@ int main(void)
     test_unicode_record();
     test_opening_tags();
     test_escaped_names();
+    test_offsets();
     test_old_backslash();
     test_speed();
 

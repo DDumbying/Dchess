@@ -143,7 +143,7 @@ int records_append_legacy(const char *path, const char *profile, long timestamp,
 }
 
 /* [Key "Value"] only; anything else is not a tag. */
-static int parse_tag(const char *line, char *key, size_t kn, char *val, size_t vn)
+int records_parse_tag(const char *line, char *key, size_t kn, char *val, size_t vn)
 {
     if (line[0] != '[') return 0;
     const char *sp = strchr(line, ' ');
@@ -217,9 +217,10 @@ int records_load(const char *path, RecordList *out)
     char line[1024], k[32], v[256];
     Record cur;
     int have = 0, open = 0, in_tags = 0;
-    while (fgets(line, sizeof(line), f)) {
+    long pos;
+    while ((pos = ftell(f)) >= 0 && fgets(line, sizeof(line), f)) {
         line[strcspn(line, "\r\n")] = '\0';
-        if (!parse_tag(line, k, sizeof(k), v, sizeof(v))) {
+        if (!records_parse_tag(line, k, sizeof(k), v, sizeof(v))) {
             in_tags = 0;
             continue;
         }
@@ -233,6 +234,7 @@ int records_load(const char *path, RecordList *out)
             cur.white_kind = cur.black_kind = KIND_GUEST;
             have = 0;
             open = 1;
+            cur.offset = pos;
         }
         set_field(&cur, k, v, &have);
     }
@@ -255,12 +257,12 @@ static void flush_tags(FILE *out, char tags[][1024], int n, const char *old, con
 {
     char k[32], v[256], wk[16] = "", bk[16] = "";
     for (int i = 0; i < n; i++)
-        if (parse_tag(tags[i], k, sizeof(k), v, sizeof(v))) {
+        if (records_parse_tag(tags[i], k, sizeof(k), v, sizeof(v))) {
             if (!strcmp(k, "WhiteKind")) COPY(wk, v);
             if (!strcmp(k, "BlackKind")) COPY(bk, v);
         }
     for (int i = 0; i < n; i++) {
-        int is_tag = parse_tag(tags[i], k, sizeof(k), v, sizeof(v));
+        int is_tag = records_parse_tag(tags[i], k, sizeof(k), v, sizeof(v));
         if (is_tag && !strcmp(v, old) &&
             ((!strcmp(k, "White") && !strcmp(wk, "profile")) ||
              (!strcmp(k, "Black") && !strcmp(bk, "profile"))))
@@ -298,7 +300,7 @@ int records_rename(const char *path, const char *old, const char *new_name)
          * movetext lines come through unsplit. */
         if (!cont && whole) {
             line[strcspn(line, "\r\n")] = '\0';
-            if (parse_tag(line, k, sizeof(k), v, sizeof(v)) && n < MAX_TAGS) {
+            if (records_parse_tag(line, k, sizeof(k), v, sizeof(v)) && n < MAX_TAGS) {
                 memcpy(tags[n++], line, sizeof(line));
                 continue;
             }
