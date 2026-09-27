@@ -43,6 +43,9 @@ One of these nerdy things built out of passion — to actually understand how `C
   every finished game a profile plays is saved to `~/.local/share/dchess/games.pgn`
 - Replay — step through any saved game or PGN file, and play on from any
   position in it
+- Analysis — an eval bar, the best move and the expected line from dchess
+  or any UCI engine, while playing or replaying; a game review marks
+  inaccuracies, mistakes and blunders
 - FEN import/export — start from, view, or load any position, not just the
   standard setup
 - The engine thinks in a background thread — the clock, redraws, and
@@ -139,6 +142,14 @@ reach it) or in the stats page's recent list, or run `dchess --replay FILE`.
 ←→ step through the moves, Home/End jump to either end, space plays them
 one a second, `p` plays on from the position shown with your usual setup,
 and Esc goes back.
+
+Press `a` in a game or a replay to show analysis: an eval bar, the score
+and depth, the best move (its squares tinted on the board) and the line the
+engine expects. The launcher's Hints row, or the `analyse
+<builtin|off|name>` command, picks the engine and remembers it. The
+built-in engine analyses only while it is not also thinking about its own
+move. In a replay, `r` reviews every move: `?!`, `?` and `??` mark the
+moves that lost 0.5, 1 and 3 pawns, and `n`/`N` jump between them.
 
 Pressing `e` opens the Engines screen, where you add a UCI engine by its path
 (dchess starts it and reads its name), set its strength (time per move or

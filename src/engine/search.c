@@ -147,7 +147,21 @@ static TTEntry *tt_probe(U64 key) {
  * verbatim and reusing at a different ply would report the wrong mate
  * distance. Simplest safe fix: just don't cache them. */
 static int is_mate_score(int s) {
-    return s > MATE_SCORE - MAX_DEPTH || s < -(MATE_SCORE - MAX_DEPTH);
+    return s > MATE_BOUND || s < -MATE_BOUND;
+}
+
+/* The line each node found best: pv_table[ply][ply..pv_len[ply]). */
+#define PV_PLIES (MAX_DEPTH + 1)
+static Move pv_table[PV_PLIES][PV_PLIES];
+static int  pv_len[PV_PLIES];
+
+static void pv_extend(int ply, Move m)
+{
+    if (ply + 1 >= PV_PLIES) return;
+    pv_table[ply][ply] = m;
+    int n = pv_len[ply + 1];
+    for (int i = ply + 1; i < n; i++) pv_table[ply][i] = pv_table[ply + 1][i];
+    pv_len[ply] = n > ply + 1 ? n : ply + 1;
 }
 
 static void tt_store(U64 key, int depth, int score, TTFlag flag, Move best) {
@@ -196,7 +210,7 @@ static Move pick_move(MoveList *ml, int *score, int i)
  * every legal move) until the position is quiet, then return a static
  * eval. This avoids the horizon effect: without it, alpha_beta() would
  * stop mid-capture-sequence at depth 0 and misjudge simple trades. */
-static int quiescence(Position *pos, int alpha, int beta, int qply) {
+static int quiescence(Position *pos, int alpha, int beta, int qply, int ply) {
     node_count++;
 
     if (search_aborted) return alpha; /* unwind quickly; result gets discarded */
@@ -244,7 +258,7 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
         }
         legal++;
 
-        int score = -quiescence(pos, -beta, -alpha, qply + 1);
+        int score = -quiescence(pos, -beta, -alpha, qply + 1, ply + 1);
         memcpy(pos, &saved, sizeof(Position));
 
         if (score >= beta) return beta;
@@ -252,13 +266,14 @@ static int quiescence(Position *pos, int alpha, int beta, int qply) {
     }
 
     if (in_check && legal == 0)
-        return -(MATE_SCORE - qply); /* checkmate found inside quiescence */
+        return -(MATE_SCORE - ply); /* checkmate found inside quiescence */
 
     return alpha;
 }
 
 static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     node_count++;
+    if (ply < PV_PLIES) pv_len[ply] = ply;
 
     if (search_aborted) return alpha; /* unwind quickly; result gets discarded */
     if (time_limited && time_check_due() && deadline_passed())
@@ -266,7 +281,7 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     if (cancel_check_due() && atomic_load(&cancel_requested))
         search_aborted = 1;
 
-    if (depth == 0) return quiescence(pos, alpha, beta, 0);
+    if (depth == 0) return quiescence(pos, alpha, beta, 0, ply);
 
     U64 key = hash_position(pos);
     Move tt_move = 0;
@@ -304,6 +319,7 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         int score = -alpha_beta(pos, depth-1, ply+1, -beta, -alpha);
         memcpy(pos, &saved, sizeof(Position));
 
+        if (search_aborted) return alpha;   /* nothing from here is trustworthy */
         if (score >= beta) {
             record_cutoff(ml.moves[i], depth, ply);
             tt_store(key, depth, beta, TT_BETA, ml.moves[i]);
@@ -312,13 +328,14 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         if (score > alpha) {
             alpha = score;
             best_move = ml.moves[i];
+            if (ply < PV_PLIES) pv_extend(ply, ml.moves[i]);
         }
     }
 
     if (legal == 0) {
         /* Checkmate or stalemate */
         int score = is_in_check(pos, pos->side)
-            ? -(MATE_SCORE - (MAX_DEPTH - depth))
+            ? -(MATE_SCORE - ply)
             : 0;
         return score;
     }
@@ -364,6 +381,8 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
         int alpha = -INF, beta = INF;
         Move iter_best_move  = 0;
         int  iter_best_score = -INF;
+        Move iter_pv[8];
+        int  iter_pv_len = 0;
         int  legal = 0;
 
         for (int i = 0; i < ml.count; i++) {
@@ -387,12 +406,18 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
                 alpha = score;
                 iter_best_move  = ml.moves[i];
                 iter_best_score = score;
+                iter_pv[0] = ml.moves[i];
+                iter_pv_len = 1;
+                for (int k = 1; k < pv_len[1] && iter_pv_len < 8; k++)
+                    iter_pv[iter_pv_len++] = pv_table[1][k];
             }
         }
 
         if (search_aborted) break; /* keep the previous (complete) iteration's `best` */
 
         best.best_move     = iter_best_move;
+        memcpy(best.pv, iter_pv, sizeof(iter_pv));
+        best.pv_len        = iter_pv_len;
         best.best_score     = iter_best_score;
         best.depth_reached  = depth;
         if (iter_best_move)
@@ -410,3 +435,4 @@ SearchResult search(Position *pos, int max_depth, int time_limit_ms) {
                     + (finished.tv_nsec - started.tv_nsec) / 1000000L;
     return best;
 }
+

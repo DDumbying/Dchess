@@ -52,6 +52,7 @@ static void test_round_trip(void)
     snprintf(l.p[0].theme, sizeof(l.p[0].theme), "catppuccin");
     snprintf(l.p[0].black, sizeof(l.p[0].black), "dchess hard");
     snprintf(l.p[0].book, sizeof(l.p[0].book), "/books/gm2001.bin");
+    snprintf(l.p[0].analysis, sizeof(l.p[0].analysis), "Stockfish 17");
     l.p[0].legacy_games = 5;
     l.p[0].legacy_wins = 3;
     check("saved", profiles_save(&l) == 1);
@@ -62,6 +63,8 @@ static void test_round_trip(void)
           strcmp(back.p[0].black, "dchess hard") == 0 && back.p[0].legacy_games == 5 &&
           strcmp(back.p[0].book, "/books/gm2001.bin") == 0 &&
           back.p[0].legacy_wins == 3);
+    check("the analysis engine survives, and none is off",
+          !strcmp(back.p[0].analysis, "Stockfish 17") && back.p[1].analysis[0] == '\0');
     check("find by name", profiles_find(&back, "Sa Eed") == 1 && profiles_find(&back, "x") == -1);
 
     const char *names[4];

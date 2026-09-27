@@ -421,9 +421,12 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
             int is_sel    = (state->selected &&
                              state->sel_row == drow &&
                              state->sel_col == file);
+            int is_hint   = (state->analysis_on && state->analysis_ready && !state->game.game_over &&
+                             state->analysis.best && !is_cursor && !is_sel &&
+                             (sq == FROM(state->analysis.best) || sq == TO(state->analysis.best)));
             int is_movehi = (state->selected &&
                              !is_cursor && !is_sel &&
-                             state->highlight[drow][file]);
+                             state->highlight[drow][file]) || is_hint;
             int is_lmv    = (!is_check && !is_cursor && !is_sel && !is_movehi &&
                              (sq == lm_from || sq == lm_to));
 
@@ -451,7 +454,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
                 }
             }
 
-            int dot = (is_movehi && piece < 0);
+            int dot = (is_movehi && !is_hint && piece < 0);
             int col = start_col + file * sq_w;
             draw_square(win, base, col, sq_h, sq_w, piece, sq_attr, pc_attr, dot);
         }

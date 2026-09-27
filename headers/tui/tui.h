@@ -11,9 +11,19 @@
 #include "game/players.h"
 #include "game/opponent.h"
 #include "game/replay.h"
+#include "game/analysis.h"
 
 /* View and controller. The game itself lives in `game`, and the rules
  * logic belongs there, not here. */
+/* A replay's game review: one analysis per position, filled in turn. */
+typedef struct {
+    Analysis      at[MAX_MOVE_HISTORY + 1];
+    unsigned char have[MAX_MOVE_HISTORY + 1];
+    int           next, running, waiting, first_side;
+    U64           key;
+    Analyser     *an;
+} ReplayReview;
+
 typedef struct {
     /* Advance only via game_play(). */
     GameState game;
@@ -67,8 +77,17 @@ typedef struct {
     int show_onboarding;
     /* Replay mode: the game is shown at replay_ply of *replay. */
     ReplayGame *replay;
+    ReplayReview *review;
     int         replay_ply, replay_auto;
     ReplayList *replay_list;             /* --replay: the file's games */
+    /* Analysis: an engine's view of the position shown. */
+    Analyser   *analyser;
+    int         analysis_on, analysis_ready, analysis_blocked;
+    Analysis    analysis;
+    U64         analysis_key;
+    char        analysis_engine[ENGINE_NAME_MAX + 1];   /* "", off, builtin or a name */
+    char        analysis_err[128];
+
     int         stats_only;              /* --stats: the stats page, not the launcher */
     int         human_active[2];         /* this side is the active profile */
     char        replay_path[512];

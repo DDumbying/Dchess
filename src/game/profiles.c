@@ -169,6 +169,8 @@ int profiles_load(ProfileList *l)
             COPY(cur->black, val);
         } else if (strcmp(key, "book") == 0) {
             COPY(cur->book, val);
+        } else if (strcmp(key, "analysis") == 0) {
+            COPY(cur->analysis, val);
         } else if (strcmp(key, "legacy") == 0) {
             int g, w, lo, d;
             if (sscanf(val, "%d %d %d %d", &g, &w, &lo, &d) == 4 && g >= 0) {
@@ -214,6 +216,7 @@ int profiles_save(const ProfileList *l)
         if (p->white[0]) fprintf(f, "white  = %s\n", p->white);
         if (p->black[0]) fprintf(f, "black  = %s\n", p->black);
         if (p->book[0])  fprintf(f, "book   = %s\n", p->book);
+        if (p->analysis[0]) fprintf(f, "analysis = %s\n", p->analysis);
         if (p->legacy_games)
             fprintf(f, "legacy = %d %d %d %d\n", p->legacy_games, p->legacy_wins,
                     p->legacy_losses, p->legacy_draws);

@@ -18,6 +18,8 @@ typedef struct {
     int  mate_in;     /* moves; negative when the side to move is mated */
     long nodes;
     long nps;
+    char pv[8][6];    /* the first moves of the line, as sent */
+    int  pv_len;
 } UciInfo;
 
 int  uci_parse_info(const char *line, UciInfo *out);

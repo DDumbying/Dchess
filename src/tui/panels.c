@@ -1,4 +1,5 @@
 #include "tui/panels.h"
+#include "tui/replay_tui.h"
 #include "utils/text.h"
 #include "game/book.h"
 #include "tui/render.h"
@@ -7,6 +8,8 @@
 #include "utils/theme.h"
 #include "utils/constants.h"
 #include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include <stdio.h>
 #include <time.h>
 #include <wchar.h>
@@ -104,8 +107,67 @@ static void draw_eval_graph(WINDOW *p, int top, int left, int rows, int cols,
     }
 }
 
+static void draw_analysis_panel(WINDOW *p, const TUIState *s)
+{
+    const char *name = !s->analysis_engine[0] || !strcmp(s->analysis_engine, "off") ||
+                       !strcmp(s->analysis_engine, "builtin") ? "dchess" : s->analysis_engine;
+    char title[80];
+    snprintf(title, sizeof(title), "analysis · %s", name);
+    panel_frame(p, title, CP_ACC_EVAL);
+    int h, w;
+    getmaxyx(p, h, w);
+    const Analysis *a = &s->analysis;
+    const char *note = s->analysis_err[0] ? s->analysis_err
+                     : s->game.game_over ? (s->game.result[0] ? s->game.result : "game over")
+                     : s->review && s->review->running && analyser_is_builtin(s->review->an) ? "reviewing…"
+                     : s->analysis_blocked ? "engine thinking"
+                     : !s->analysis_ready ? "analysing…" : NULL;
+    if (note) {
+        wattron(p, COLOR_PAIR(s->analysis_err[0] ? CP_STATUS_ERR : CP_HINT));
+        mvw_fit(p, 1, 2, w - 4, note);
+        wattroff(p, COLOR_PAIR(s->analysis_err[0] ? CP_STATUS_ERR : CP_HINT));
+        return;
+    }
+    int bar = w - 4;
+    double share = a->mate ? (a->mate > 0 ? 1.0 : 0.0) : 1.0 / (1.0 + pow(10.0, -a->score_cp / 400.0));
+    int fill = (int)(share * bar + 0.5);
+    for (int i = 0; i < bar; i++) {
+        wattron(p, COLOR_PAIR(i < fill ? CP_ACC_EVAL : CP_HINT));
+        mvwaddstr(p, 1, 2 + i, i < fill ? "█" : "░");
+        wattroff(p, COLOR_PAIR(i < fill ? CP_ACC_EVAL : CP_HINT));
+    }
+    char score[24], best[32];
+    if (a->mate) snprintf(score, sizeof(score), "%sM%d d%d", a->mate > 0 ? "" : "-", abs(a->mate), a->depth);
+    else         snprintf(score, sizeof(score), "%+.2f d%d", a->score_cp / 100.0, a->depth);
+    snprintf(best, sizeof(best), "best %s", a->line_len ? a->line[0] : "—");
+    wattron(p, COLOR_PAIR(CP_ACC_EVAL) | A_BOLD);
+    mvw_fit(p, 2, 2, w - 4, score);
+    wattroff(p, COLOR_PAIR(CP_ACC_EVAL) | A_BOLD);
+    int bw = text_width(best);
+    if (bw < w - 4 - text_width(score) - 1) {
+        wattron(p, COLOR_PAIR(CP_INFO_VAL));
+        mvw_fit(p, 2, w - 2 - bw, bw, best);
+        wattroff(p, COLOR_PAIR(CP_INFO_VAL));
+    }
+    /* The expected line, wrapped over the rows left. */
+    int row = 3, col = 2;
+    wattron(p, COLOR_PAIR(CP_HINT));
+    for (int i = 0; i < a->line_len && row < h - 1; i++) {
+        int len = (int)strlen(a->line[i]);
+        if (col > 2 && col + len > w - 2) { row++; col = 2; }
+        if (row >= h - 1) break;
+        mvw_fit(p, row, col, len < w - 4 ? len : w - 4, a->line[i]);
+        col += len + 1;
+    }
+    wattroff(p, COLOR_PAIR(CP_HINT));
+}
+
 static void draw_eval_panel(WINDOW *p, const TUIState *state)
 {
+    if (state->analysis_on) {
+        draw_analysis_panel(p, state);
+        return;
+    }
     panel_frame(p, "eval", CP_ACC_EVAL);
     int h, w;
     getmaxyx(p, h, w);
@@ -233,8 +295,11 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
                      : i > cur  ? COLOR_PAIR(CP_HINT) : COLOR_PAIR(CP_INFO_VAL);
             const char *san = i < g->log_start ? "..."
                             : rp ? rp->san[i - g->log_start] : g->move_history[i];
+            char marked[16];
+            Grade gr = rp && i >= g->log_start ? replay_grade(state, i - g->log_start, NULL) : GRADE_NONE;
+            snprintf(marked, sizeof(marked), "%s%s", san, grade_mark(gr));
             wattron(p, a);
-            mvw_clip(p, r, k ? 14 : 6, "%s", san);
+            mvw_clip(p, r, k ? 14 : 6, "%s", marked);
             wattroff(p, a);
         }
     }
@@ -354,14 +419,21 @@ void draw_command_bar(WINDOW *cmd, const TUIState *state)
     if (state->replay) {
         const ReplayGame *rp = state->replay;
         char head[320];
-        snprintf(head, sizeof(head), "REPLAY · %d/%d · %s – %s · %s", state->replay_ply, rp->count,
+        char extra[64] = "";
+        int loss = 0, j = state->replay_ply - 1;
+        Grade gr = replay_grade(state, j, &loss);
+        if (state->review && state->review->running)
+            snprintf(extra, sizeof(extra), " · reviewing %d/%d", state->review->next, rp->count + 1);
+        else if (gr != GRADE_NONE)
+            snprintf(extra, sizeof(extra), " · %s%s %+.2f", rp->san[j], grade_mark(gr), -loss / 100.0);
+        snprintf(head, sizeof(head), "REPLAY · %d/%d · %s – %s · %s%s", state->replay_ply, rp->count,
                  rp->info.white[0] ? rp->info.white : "?", rp->info.black[0] ? rp->info.black : "?",
-                 rp->info.result[0] ? rp->info.result : "*");
+                 rp->info.result[0] ? rp->info.result : "*", extra);
         wattron(cmd, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
         mvw_fit(cmd, 1, 2, w - 4, head);
         wattroff(cmd, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
         const char *keys = state->replay_auto ? "space pause  esc back"
-                         : "←→ step  home/end  space auto  p play  esc back";
+                         : "←→ step  space auto  a analyse  r review  n/N marks  p play  esc back";
         int kw = text_width(keys), sw = w - 4 - kw - 2;
         if (state->status[0] && text_width(state->status) > sw) {   /* no room for both: the message wins */
             wattron(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);

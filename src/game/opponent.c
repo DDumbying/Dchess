@@ -134,6 +134,8 @@ static const OpponentOps builtin_ops = {
     builtin_cancel, builtin_destroy, builtin_error,
 };
 
+int opponent_is_builtin(const Opponent *o) { return o && o->ops == &builtin_ops; }
+
 Opponent *opponent_builtin(int depth, int time_ms, const Book *book, int level)
 {
     Builtin *b = calloc(1, sizeof(*b));

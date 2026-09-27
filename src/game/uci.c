@@ -40,7 +40,12 @@ int uci_parse_info(const char *line, UciInfo *out)
     for (int i = 1; i < n; i++) {
         const char *k = tok[i];
         /* Everything after these is moves or free text. */
-        if (strcmp(k, "pv") == 0 || strcmp(k, "string") == 0) break;
+        if (strcmp(k, "pv") == 0) {
+            for (int j = i + 1; j < n && out->pv_len < 8 && strlen(tok[j]) < sizeof(out->pv[0]); j++)
+                snprintf(out->pv[out->pv_len++], sizeof(out->pv[0]), "%s", tok[j]);
+            break;
+        }
+        if (strcmp(k, "string") == 0) break;
         if (i + 1 >= n) break;
         if      (strcmp(k, "depth") == 0) out->depth = atoi(tok[++i]);
         else if (strcmp(k, "nodes") == 0) out->nodes = atol(tok[++i]);
@@ -342,6 +347,12 @@ static void finish(Uci *u, const char *move)
     u->result.depth_reached = u->info.depth;
     u->result.nodes         = u->info.nodes;
     u->result.elapsed_ms    = now_ms() - u->started_ms;
+    Position p = u->pos;
+    for (int i = 0; i < u->info.pv_len; i++) {
+        Move pm;
+        if (!legal_move(&p, u->info.pv[i], &pm) || !make_move(&p, pm)) break;
+        u->result.pv[u->result.pv_len++] = pm;
+    }
     u->done = 1;
 }
 
@@ -350,6 +361,10 @@ static void merge(UciInfo *into, const UciInfo *from)
     if (from->depth) into->depth = from->depth;
     if (from->nodes) into->nodes = from->nodes;
     if (from->nps)   into->nps   = from->nps;
+    if (from->pv_len) {
+        memcpy(into->pv, from->pv, sizeof(into->pv));
+        into->pv_len = from->pv_len;
+    }
     if (from->has_score) {
         into->has_score = 1;
         into->score_cp  = from->score_cp;

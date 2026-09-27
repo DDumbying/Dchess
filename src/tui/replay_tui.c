@@ -1,4 +1,5 @@
 #include "tui/replay_tui.h"
+#include "tui/commands.h"
 #include "tui/colors.h"
 #include "tui/render.h"
 #include "engine/fen.h"
@@ -6,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static void goto_ply(TUIState *s, int k)
 {
@@ -30,6 +32,128 @@ static void step(TUIState *s, int dir)
     }
 }
 
+#define REVIEW_MS 300
+
+static long now_ms(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000L + t.tv_nsec / 1000000L;
+}
+
+static Analyser *review_analyser(const TUIState *s)
+{
+    const char *n = s->analysis_engine;
+    const EngineEntry *e = n[0] && strcmp(n, "off") && strcmp(n, "builtin") ? engines_find(&s->engines, n) : NULL;
+    return e ? analyser_uci(e, REVIEW_MS) : analyser_builtin(REVIEW_MS);
+}
+
+static void review_stop(TUIState *s)
+{
+    if (!s->review) return;
+    analyser_free(s->review->an);
+    s->review->an = NULL;
+    s->review->running = s->review->waiting = 0;
+}
+
+static void review_free(TUIState *s)
+{
+    review_stop(s);
+    free(s->review);
+    s->review = NULL;
+}
+
+static void review_start(TUIState *s)
+{
+    if (!s->review) {
+        s->review = calloc(1, sizeof(*s->review));
+        if (!s->review) return;
+        const char *fen = s->replay->fen, *sp = strchr(fen, ' ');
+        s->review->first_side = fen[0] && sp && sp[1] == 'b' ? BLACK : WHITE;
+    }
+    ReplayReview *rv = s->review;
+    if (rv->next > s->replay->count) return;          /* already complete */
+    rv->an = review_analyser(s);
+    rv->running = rv->an != NULL;
+    /* One built-in search at a time: live analysis waits for the review. */
+    if (analyser_is_builtin(rv->an)) tui_analysis_free(s);
+}
+
+/* A finished position needs no engine: mate or a draw. */
+static Analysis final_analysis(const GameState *g)
+{
+    Analysis a;
+    memset(&a, 0, sizeof(a));
+    if (strstr(g->result, "Checkmate")) {
+        a.mate = g->pos.side == WHITE ? -1 : 1;
+        a.score_cp = a.mate > 0 ? 29999 : -29999;
+    }
+    return a;
+}
+
+static void review_tick(TUIState *s)
+{
+    ReplayReview *rv = s->review;
+    if (!rv || !rv->running) return;
+    const ReplayGame *g = s->replay;
+    if (rv->waiting) {
+        Analysis r;
+        U64 key;
+        if (!analyser_poll(rv->an, &r, &key)) return;
+        rv->waiting = 0;
+        const char *err = analyser_error(rv->an);
+        if (err && err[0]) {
+            snprintf(s->status, sizeof(s->status), "Review stopped: %s", err);
+            review_stop(s);
+            return;
+        }
+        if (key == rv->key) { rv->at[rv->next] = r; rv->have[rv->next] = 1; }
+        rv->next++;
+    }
+    static GameState scratch;
+    while (rv->next <= g->count) {
+        game_reset(&scratch);
+        if (g->fen[0]) game_load_fen(&scratch, g->fen);
+        for (int i = 0; i < rv->next; i++) {
+            game_play(&scratch, g->moves[i]);
+            game_update_status(&scratch);
+        }
+        if (!scratch.game_over && analyser_start(rv->an, &scratch)) {
+            rv->key = game_hash(&scratch);
+            rv->waiting = 1;
+            return;
+        }
+        rv->at[rv->next] = final_analysis(&scratch);
+        rv->have[rv->next++] = 1;
+    }
+    review_stop(s);
+    int n = 0;
+    for (int j = 0; j < g->count; j++) n += replay_grade(s, j, NULL) != GRADE_NONE;
+    snprintf(s->status, sizeof(s->status), n ? "Review done: %d marked move%s — n/N to jump"
+                                             : "Review done: no mistakes found", n, n == 1 ? "" : "s");
+}
+
+Grade replay_grade(const TUIState *s, int j, int *loss)
+{
+    const ReplayReview *rv = s->review;
+    if (!rv || j < 0 || !rv->have[j] || !rv->have[j + 1]) return GRADE_NONE;
+    int mover = (rv->first_side + j) % 2 ? BLACK : WHITE;
+    if (loss) *loss = review_loss(&rv->at[j], &rv->at[j + 1], mover);
+    return review_grade(&rv->at[j], &rv->at[j + 1], mover);
+}
+
+/* The next (dir > 0) or previous graded move from the current one. */
+static void jump_graded(TUIState *s, int dir)
+{
+    int count = s->replay->count;
+    for (int j = s->replay_ply - 1 + dir; j >= 0 && j < count; j += dir)
+        if (replay_grade(s, j, NULL) != GRADE_NONE) {
+            goto_ply(s, j + 1);
+            return;
+        }
+    snprintf(s->status, sizeof(s->status), s->review ? "No more marked moves" : "No review yet — r to review");
+}
+
 /* The current position becomes a new game with the active profile's
  * remembered setup; 0 when the game is already over there. */
 static int play_from_here(TUIState *s)
@@ -38,6 +162,8 @@ static int play_from_here(TUIState *s)
         snprintf(s->status, sizeof(s->status), "The game is over at this move");
         return 0;
     }
+    review_free(s);
+    tui_analysis_free(s);           /* tui_init below forgets both */
     CliArgs a;
     memset(&a, 0, sizeof(a));
     a.no_menu = 1;
@@ -81,14 +207,22 @@ int replay_open(TUIState *s, const char *path, long offset)
     Screen *sc = tui_screen_open(s);
     if (!sc) { free(g); s->replay = NULL; return 0; }
     int result = 0;
+    long last_step = now_ms();
     for (;;) {
+        review_tick(s);
+        if (!(s->review && s->review->running && analyser_is_builtin(s->review->an)))
+            tui_analysis_tick(s);
         WINDOW *in = tui_screen_input(sc);   /* a resize replaces the window */
         tui_screen_paint(sc);
-        wtimeout(in, s->replay_auto ? 1000 : -1);
+        int busy = s->analysis_on || (s->review && s->review->running);
+        wtimeout(in, busy ? 100 : s->replay_auto ? 1000 : -1);
         int ch = wgetch(in);
         if (ch == ERR) {
-            step(s, 1);
-            if (s->replay_ply >= g->count) s->replay_auto = 0;
+            if (s->replay_auto && now_ms() - last_step >= 1000) {
+                step(s, 1);
+                last_step = now_ms();
+                if (s->replay_ply >= g->count) s->replay_auto = 0;
+            }
             continue;
         }
         if (ch != KEY_RESIZE) s->status[0] = '\0';
@@ -101,7 +235,21 @@ int replay_open(TUIState *s, const char *path, long offset)
         case KEY_END:   case 'G':   goto_ply(s, g->count); break;
         case ' ':
             s->replay_auto = !s->replay_auto && s->replay_ply < g->count;
+            last_step = now_ms();
             break;
+        case 'a':
+            tui_analysis_toggle(s);
+            break;
+        case 'r':
+            if (s->review && s->review->running) {
+                review_stop(s);
+                snprintf(s->status, sizeof(s->status), "Review stopped");
+            } else {
+                review_start(s);
+            }
+            break;
+        case 'n': jump_graded(s, 1); break;
+        case 'N': jump_graded(s, -1); break;
         case 'p':
             result = play_from_here(s);
             break;
@@ -111,6 +259,10 @@ int replay_open(TUIState *s, const char *path, long offset)
     }
     wtimeout(tui_screen_input(sc), 100);
     tui_screen_close(sc);
+    if (!result) {
+        review_free(s);
+        tui_analysis_free(s);
+    }
     free(g);
     if (!result) s->replay = NULL;   /* play-from-here's tui_init cleared it */
     return result;

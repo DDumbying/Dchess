@@ -80,6 +80,8 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
                 return '\t';
             case ' ':   /* pause / resume */
                 return ' ';
+            case 'a':   /* analysis on/off */
+                return 'a';
             case 'i':
                 *insert_mode = 1;
                 curs_set(1);
