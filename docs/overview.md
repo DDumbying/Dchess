@@ -506,125 +506,115 @@ from every other theme's, and `classic`'s is confirmed unchanged.
 
 ---
 
+### Round 8 — from an engine with a board to a chess program
+
+A long run of feature work, each piece designed, specced, planned and then
+reviewed by a fresh pair of eyes before it merged (the specs and plans live
+in `docs/superpowers/`). In order:
+
+- **Opponents.** Each side became a *player*: a human, a guest, dchess at a
+  level, or — new — any UCI engine. A small driver interface
+  (`game/opponent.c`) hides whether a move comes from dchess's own search
+  thread or from an external process speaking UCI (`game/uci.c`: a
+  non-blocking handshake, timeouts, crash and illegal-move handling). An
+  engines screen registers engines in `engines.conf`.
+- **Profiles.** People got names: `profiles.conf` remembers each person's
+  setup, and every finished game is appended to `games.pgn` as standard PGN
+  with extra tags (`game/records.c`). The old binary `stats.dat` is
+  imported once into the first profile.
+- **The stats page**, rebuilt as a dashboard over those records
+  (`game/statsview.c` computes, `tui/stats_tui.c` draws).
+- **An opening book**: Polyglot keys and `.bin` files, a built-in set of
+  about 140 main lines (`game/book.c`, `game/openings.c`), and opening
+  names in the moves panel and the records.
+- **A polish pass** (Unicode widths, PGN escaping, UCI restarts, …) and a
+  **redesigned first run and launcher**: a welcome screen, a centred
+  dashboard with a live mini-board and a profile card.
+- **Replay**: a PGN reader that copes with other programs' output
+  (`game/replay.c`), a replay mode on the game screen, a picker for
+  multi-game files, and "play from here".
+- **Analysis**: an analyser on top of the same drivers (`game/analysis.c`),
+  an eval bar, best move and principal line, and a game review that grades
+  every move. It forced two engine fixes: mate scores now count plies from
+  the root, and the search collects its own principal line instead of
+  reading it back from the transposition table.
+- **Time controls**: millisecond clocks with increments, odds, pause and
+  flagging in the game core (`game/timectl.c`, `game/game.c`), engines that
+  budget their clock, and the standard `TimeControl` tag.
+
+The rule that held throughout: `src/engine`, `src/game` and `src/utils`
+never include ncurses, so everything testable is tested — around twenty test
+programs, plus scripted tmux sessions for the screens. The README's clips
+are recorded the same way (`tools/demo/`).
+
 ## 4. Current architecture
 
 ```
 Dchess/
 ├── src/
-│   ├── engine/          — the actual chess engine, no ncurses dependency
-│   │   ├── board.c      — Position struct, clear/init helpers
-│   │   ├── move.c       — move encoding/decoding, move_to_str()
-│   │   ├── movegen.c    — pseudo-legal move generation + legality via
-│   │   │                  is_in_check()/is_attacked()
-│   │   ├── make.c       — make_move() (with legality check baked in)
-│   │   ├── eval.c       — material + piece-square-table evaluation,
-│   │   │                  tapered king PST by game phase
-│   │   ├── search.c     — negamax + alpha-beta + quiescence + TT
-│   │   ├── hash.c       — hash_position(), shared by search + TUI
-│   │   └── fen.c        — parse_fen() / position_to_fen()
-│   ├── tui/             — everything ncurses-dependent
-│   │   ├── tui.c        — main loop, window layout, game-over popup,
-│   │   │                  polls poll_engine_search() once per iteration
-│   │   ├── onboard.c    — the interactive "new game" menu
-│   │   ├── commands.c   — in-game command bar (moves, go, new, fen, ...);
-│   │   │                  also the background engine-search thread
-│   │   ├── input.c      — vim-style modal keyboard input
-│   │   ├── render.c     — board/info/eval-bar rendering, color setup
-│   │   └── stats_tui.c  — full-screen and popup stats views
-│   ├── utils/
-│   │   ├── bitboard.c   — attack tables, classical (non-magic) sliders
-│   │   ├── cli.c        — CLI flag parsing, --help text
-│   │   ├── stats.c      — versioned binary stats file read/write
-│   │   └── theme.c      — color theme table (no ncurses dependency)
-│   └── main.c           — entry point: parse flags, init, hand off to tui_run()
-├── headers/             — mirrors src/, one header per .c file (mostly)
-├── tests/
-│   ├── perft.c          — node-count correctness vs. known-good positions
-│   ├── test_movegen.c   — targeted unit tests (checkmate, en passant, ...)
-│   ├── test_fen.c       — FEN round-trip + malformed-input tests
-│   ├── test_eval.c      — PST orientation + king-tapering regression guard
-│   └── test_common.h    — shared mailbox-to-Position test helper
-├── docs/
-│   ├── overview.md      — this file
-│   └── sources.md       — personal reference/reading list
-├── assets/              — screenshots/gifs for the README
-└── Makefile
+│   ├── engine/          — the chess engine; no ncurses
+│   │   ├── board.c, move.c, movegen.c, make.c   — bitboards, moves, legality
+│   │   ├── eval.c       — material + piece-square tables, tapered king
+│   │   ├── search.c     — iterative deepening, alpha-beta, quiescence, TT,
+│   │   │                  killers/history, principal line
+│   │   ├── hash.c, fen.c
+│   ├── game/            — everything about a game; no ncurses
+│   │   ├── game.c       — the played game: log, undo, draws, clocks, flags
+│   │   ├── san.c, pgn.c — notation and PGN export
+│   │   ├── players.c    — who plays each side
+│   │   ├── opponent.c   — the driver interface + dchess's search thread
+│   │   ├── uci.c        — UCI engines as drivers
+│   │   ├── analysis.c   — analysers and move grading
+│   │   ├── book.c, openings.c — Polyglot and built-in books, opening names
+│   │   ├── profiles.c, records.c, statsview.c — people, history, stats
+│   │   ├── replay.c     — reading PGN files back
+│   │   └── timectl.c    — time-control text and engine time budgets
+│   ├── tui/             — ncurses screens
+│   │   ├── tui.c        — the game loop and window layout
+│   │   ├── commands.c   — commands, engine turns, analysis ticks
+│   │   ├── panels.c, render.c, input.c, art.c
+│   │   ├── welcome.c, launcher.c, engines_tui.c, stats_tui.c, replay_tui.c
+│   └── utils/           — cli.c, engines.c, stats.c (legacy), theme.c,
+│                          text.c (display widths), dash.c, bitboard.c
+├── headers/             — mirrors src/
+├── tests/               — one test program per core module, perft, a
+│                          scripted fake UCI engine
+├── tools/demo/          — scripted asciinema recordings for the README
+├── docs/                — guide.md, this journal, specs and plans
+└── assets/              — logo and the README's clips
 ```
 
-A few things worth knowing about this layout if you're picking the project
-back up:
+Worth knowing if you pick the project up:
 
-- **`engine/` has zero `ncurses` dependency.** Everything under `src/engine`
-  and `src/utils` compiles and links standalone (that's exactly how the
-  test suite builds them). Only `src/tui/*.c` and `src/main.c` need
-  `ncurses`.
-- **There's no shared header for the TUI's color-pair IDs.** `render.c`
-  defines the canonical list; `tui.c` and `onboard.c` each redefine the
-  handful of `#define CP_*` constants they personally use, matching values.
-  It works because the values are stable, but it's fragile -- a genuine
-  candidate for a small `tui/colors.h` extraction (see roadmap).
-- **`include/engine.h` is a leftover empty file** (0 bytes) not referenced
-  from anywhere. `build/` is an empty directory. Both are harmless but
-  worth deleting in a future pass, and a compiled `dchess` binary is
-  currently checked into the repo root -- probably wants a `.gitignore`
-  entry rather than being tracked.
-- **The transposition table and quiescence search are engine-only changes**
-  -- nothing in `tui/` needed to change for either.
-
----
+- **Only `src/tui` and `src/main.c` touch ncurses.** The test programs link
+  `engine`, `game` and `utils` directly, which is why nearly every feature
+  has unit tests.
+- **dchess's search is single-instance.** `search.c` keeps its table and
+  heuristics in globals, so only one built-in search may run at a time.
+  The opponent drivers, analysis, `go` and `eval` all respect that; making
+  the search re-entrant would lift it.
+- **Clocks go through `game_now_ms()`**, which tests replace to control
+  time precisely.
+- **`games.pgn` is the database.** Stats, the launcher card and replays all
+  read it; nothing else stores history.
 
 ## 5. What's still genuinely open
 
-Being direct about the current gaps, in the order they'd probably matter
-most if you sat down to keep improving this:
-
-1. **Search is still O(depth) full-position copies, not incremental
-   make/unmake.** Every node does a full `Position` struct copy before
-   trying a move and restores it after. Works, is simple, is not free.
-2. **Cancellation (Round 5) covers `stop`/`new`/`loadfen`/`flip`, but
-   moves, `"go"`, and `"eval"` still just reject with "please wait"
-   while the engine thinks**, rather than doing anything smarter. That's
-   a deliberate choice (none of them mean "start over," so
-   force-cancelling on their behalf didn't seem right) rather than a gap,
-   but it's worth listing since it means the engine still can't be
-   casually interrupted mid-think just to eval a different line, say.
-3. **Only the king is phase-tapered (Round 6); every other piece still
-   uses one table regardless of game phase.** Knights, bishops, rooks,
-   and pawns don't get worse for this (their PSTs are far less
-   phase-sensitive than the king's to begin with), but a fuller
-   PeSTO-style tapered eval would extend the same idea to all of them,
-   not just the king.
-4. **The onboarding screen, theming, and stats-overlay integration are
-   verified by a syntax-checking `ncurses` stub and (for the threading
-   logic specifically) a direct functional test, but never against a
-   real running terminal.** The stub and the functional test (Round 4)
-   are both genuinely more rigorous than code review alone -- the stub
-   catches typos/type errors across the whole `ncurses` layer, and the
-   functional test proved the actual threading behavior end to end -- but
-   neither one presses a key against a real screen. This is still the
-   most important thing to verify locally before trusting any of it, and
-   Round 3 exists precisely because the first real execution test (a
-   screenshot) immediately found two bugs that review alone had missed.
-5. **`--menu` + `--fen` together don't fully compose** (see §3).
-6. **No opening book, no PGN import/export, no UCI protocol support** -- so
-   Dchess can't currently interoperate with other chess GUIs, engines, or
-   game databases; it's a closed, self-contained TUI experience.
-7. **Depth 7-8 essentially never completes from the opening position within
-   hard difficulty's 5-second budget** (see Round 3) -- measured at ~26s
-   and ~170s respectively from the starting position, against ~0.7s for
-   depth 6. Not a bug -- the time budget is deliberately sized around this
-   measurement rather than pretending the extra depth is affordable -- but
-   worth knowing that "hard" mostly plays at an effective depth 6-ish
-   rather than 8 in practice, especially early in the game.
-8. **No null-move pruning, late-move reductions, or other techniques that
-   tame branching factor at higher depths.** This is the real reason #7
-   exists -- the jump from depth 6 to depth 7 costs roughly 38x the time
-   for (on quiet positions) no change in the recommended move. Adding
-   even basic null-move pruning would likely let "hard" reach a genuinely
-   deeper, more meaningfully stronger search within the same time budget,
-   rather than just hitting the same wall a little later.
-
----
+1. **Playing strength.** No null-move pruning, late-move reductions or
+   aspiration windows, and the transposition table always replaces. Hard
+   reaches about depth 6 in its time; these would let it search deeper and
+   make analysis better at the same time. This is next.
+2. **A single built-in search.** See §4 — re-entrancy would let dchess
+   analyse while it plays.
+3. **Full-position copies per node** instead of incremental make/unmake.
+4. **Only the king's tables are tapered**; a fuller PeSTO-style evaluation
+   would extend it to every piece.
+5. **dchess is a UCI client, not a UCI engine.** It drives other engines but
+   cannot yet be driven by a GUI or a tournament manager.
+6. **Small deferred items** from the reviews, kept in the PR descriptions:
+   a move just after a flag is accepted, fractional-second increments round
+   down in records, a UCI engine's first clock values can be slightly stale,
+   and a handful of display details.
 
 ## 6. What Dchess should be
 
@@ -663,76 +653,27 @@ the `ncurses` layer, which makes this more tractable than it might sound.
 
 ## 7. Roadmap
 
-Roughly in priority order, based on effort vs. payoff:
+**Next:** a stronger engine — null-move pruning, late-move reductions,
+aspiration windows, check extensions and a better replacement scheme,
+each measured with a match against the previous version.
 
-**Right now, before anything else:** a real local test pass. Round 3
-exists because a single screenshot immediately found two bugs (the
-overflow, the ESC behavior) that careful code review alone had missed
-across two prior rounds. Onboarding navigation, the theme live-preview,
-`s` for stats from inside onboarding, ESC-quits, and a game at "hard"
-difficulty (to see the time-budget behavior) are the highest-value things
-left to actually click through.
-
-**Next up (small, contained, high payoff):**
-- Null-move pruning and/or late-move reductions in `alpha_beta()`. This is
-  now backed by a real measurement (see Round 3): depth 6→7 costs roughly
-  38x the time for no change in the recommended move on a quiet position.
-  Taming that jump is likely the single highest-leverage change left for
-  actual playing strength -- more valuable than raising the depth cap or
-  the time budget, since right now both just hit the same wall a little
-  later rather than searching meaningfully deeper.
-- Extend tapering (Round 6 added it for the king specifically) to the
-  rest of the pieces for a fuller PeSTO-style evaluation -- knights
-  wanting outposts more in the endgame, rooks valuing open files more
-  as pawns come off, etc. Smaller than it sounds, since `game_phase()`
-  already exists and the pattern is established; mostly more tables.
-- Delete `include/engine.h` and the empty `build/` directory; add a
-  `.gitignore` for the compiled `dchess` binary.
-- Extract the duplicated `CP_*` color-pair `#define`s into one shared
-  `headers/tui/colors.h`.
-- Thread the original `--fen` string through onboarding so `--menu --fen
-  "..."` fully composes instead of dropping the FEN.
-- Let moves/`"go"`/`"eval"` do something smarter than reject while the
-  engine thinks -- e.g. auto-issuing `stop` first when a human tries to
-  move mid-think, rather than requiring them to type `stop` themselves.
-  Small, since `search_cancel()` already exists (Round 5); mostly a UX
-  question of what should happen automatically versus what a person
-  should have to ask for explicitly.
-
-**Medium-sized, real payoff, needs local `ncurses` testing:**
-- Incremental make/unmake to replace the full-`Position`-copy-per-node
-  approach in the search -- a genuine speed win, but touches castling
-  rights, captured-piece bookkeeping, and en passant state together
-  carefully enough to deserve its own dedicated pass rather than a quick
-  bolt-on.
-
-**Larger, optional, "grow the project" scale:**
-- UCI protocol support, so Dchess's engine can be driven by any standard
-  chess GUI instead of only its own TUI.
-- PGN import/export and a basic opening book.
-- A puzzle/analysis mode built on the FEN infrastructure that already
-  exists (load a puzzle position, restrict input to finding the right
-  move, reuse `eval`/`fen` commands for feedback).
-- Expand `perft.c` with more known-hard test positions (there are a few
-  more standard ones beyond Kiwipete and the promotion-heavy position used
-  here) and push depths higher where runtime allows.
-
----
+**Then, roughly by payoff:**
+- A small pass over the deferred items in §5.
+- Puzzles: mate-in-N positions with a streak on the profile, built on the
+  replay and analysis machinery.
+- A UCI engine mode (`dchess --uci`), so dchess can play in any GUI and be
+  measured against other engines properly.
+- Incremental make/unmake and a re-entrant search.
 
 ## 8. Quick reference: verifying any of this yourself
 
 ```bash
-# Build the real game (needs ncursesw)
-make && ./dchess
-
-# Run the engine-only test suites (no ncurses needed)
-gcc -Iheaders -Itests -O2 -Wall tests/perft.c src/engine/*.c src/utils/bitboard.c -o /tmp/perft && /tmp/perft
-gcc -Iheaders -Itests -O2 -Wall tests/test_movegen.c src/engine/*.c src/utils/bitboard.c -o /tmp/tm && /tmp/tm
-gcc -Iheaders -Itests -O2 -Wall tests/test_fen.c src/engine/*.c src/utils/bitboard.c -o /tmp/fen && /tmp/fen
-gcc -Iheaders -O2 -Wall tests/test_eval.c src/engine/*.c src/utils/bitboard.c -o /tmp/eval && /tmp/eval
+make && ./dchess            # the game (needs ncursesw)
+make test                   # every test program, perft included (no ncurses needed)
+make bench                  # search speed on fixed positions
+tools/demo/make-demos.sh    # re-record the README's clips (tmux, asciinema 3, agg)
 ```
 
-All three should print "All ... passed." with no `FAIL` lines. If you add a
-new engine feature, adding a matching perft/unit-test case first is the
-cheapest insurance available in this codebase -- it's exactly what caught
-the en-passant bug described in §3.
+`make test` ends with "All suites passed." If you change the engine, add a
+perft or unit-test case first — it is the cheapest insurance in this
+codebase, and exactly what caught the en-passant bug described in §3.

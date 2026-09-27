@@ -1,0 +1,9 @@
+w 2
+k Right; w 0.8; k Right; w 0.8; k Right; w 0.8; k Right; w 1
+k Enter; w 2
+k Up; w 0.4; k Up; w 0.4; k Right; w 0.9
+k Up; w 0.3; k Up; w 0.5
+for i in 1 2 3 4 5; do k Right; w 0.45; done
+w 0.8
+k Down; w 0.2; k Down; w 0.2; k Down; w 0.2; k Down; w 0.5
+k Enter; w 3.5

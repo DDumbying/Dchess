@@ -1,0 +1,7 @@
+w 2.5
+k Enter; w 1.2
+k k; w 0.4; k k; w 0.6; k Enter; w 3
+cmd g1f3; w 3.2
+cmd f1c4; w 3.2
+cmd d2d3; w 3.2
+cmd e1g1; w 3.5
