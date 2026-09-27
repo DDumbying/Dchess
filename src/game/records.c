@@ -156,7 +156,7 @@ static int parse_tag(const char *line, char *key, size_t kn, char *val, size_t v
     key[klen] = '\0';
     size_t o = 0;
     for (const char *c = q1 + 1; c < q2 && o + 1 < vn; c++) {
-        if (*c == '\\' && c + 1 < q2) c++;   /* \" and \\ */
+        if (*c == '\\' && c + 1 < q2 && (c[1] == '"' || c[1] == '\\')) c++;
         val[o++] = *c;
     }
     val[o] = '\0';
