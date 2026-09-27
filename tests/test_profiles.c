@@ -154,7 +154,7 @@ static void test_first_run(void)
 
     remove_conf();
     remove(games);
-    check("it runs when there is no file", profiles_first_run(&l, "saeed", &old, games) == 1);
+    check("it runs when there is no file", profiles_first_run(&l, "saeed", &old, games, NULL) == 1);
     check("one active profile named after the user",
           l.count == 1 && l.active == 0 && strcmp(l.p[0].name, "saeed") == 0);
     check("the old totals become legacy",
@@ -165,18 +165,22 @@ static void test_first_run(void)
     check("each dated result becomes a legacy record", r.count == 3 && r.r[0].legacy);
     records_free(&r);
     check("it is saved", profiles_load(&l) == 1 && l.count == 1);
-    check("a second run does nothing", profiles_first_run(&l, "bob", &old, games) == 0 &&
+    check("a second run does nothing", profiles_first_run(&l, "bob", &old, games, NULL) == 0 &&
           l.count == 1 && strcmp(l.p[0].name, "saeed") == 0);
 
     remove_conf();
     check("an invalid user name becomes 'player'",
-          profiles_first_run(&l, "root;x", NULL, games) == 1 && strcmp(l.p[0].name, "player") == 0);
+          profiles_first_run(&l, "root;x", NULL, games, NULL) == 1 && strcmp(l.p[0].name, "player") == 0);
     remove_conf();
     check("so does an empty one",
-          profiles_first_run(&l, "", NULL, games) == 1 && strcmp(l.p[0].name, "player") == 0);
+          profiles_first_run(&l, "", NULL, games, NULL) == 1 && strcmp(l.p[0].name, "player") == 0);
     remove_conf();
     check("and a missing one",
-          profiles_first_run(&l, NULL, NULL, games) == 1 && strcmp(l.p[0].name, "player") == 0);
+          profiles_first_run(&l, NULL, NULL, games, NULL) == 1 && strcmp(l.p[0].name, "player") == 0);
+    remove_conf();
+    check("a chosen theme is saved",
+          profiles_first_run(&l, "saeed", NULL, games, "nord") == 1 &&
+          profiles_load(&l) == 1 && strcmp(l.p[0].theme, "nord") == 0);
 }
 
 
@@ -205,23 +209,23 @@ static void test_first_run_safety(void)
     snprintf(blocker, sizeof(blocker), "%s/blocker", dir);
     fclose(fopen(blocker, "w"));
     setenv("XDG_CONFIG_HOME", blocker, 1);          /* profiles.conf cannot be saved */
-    profiles_first_run(&l, "saeed", &old, games);
-    profiles_first_run(&l, "saeed", &old, games);
+    profiles_first_run(&l, "saeed", &old, games, NULL);
+    profiles_first_run(&l, "saeed", &old, games, NULL);
     check("an unsaved first run imports nothing", legacy_count() == 0);
     setenv("XDG_CONFIG_HOME", dir, 1);
     remove(blocker);
 
     remove_conf();
-    profiles_first_run(&l, "saeed", &old, games);
+    profiles_first_run(&l, "saeed", &old, games, NULL);
     remove_conf();
-    profiles_first_run(&l, "saeed", &old, games);
+    profiles_first_run(&l, "saeed", &old, games, NULL);
     check("a reset profiles.conf does not import twice", legacy_count() == 2);
 
     char path[512];
     profiles_path(path, sizeof(path));
     chmod(path, 0);
     check("an unreadable profiles.conf is not a first run",
-          profiles_first_run(&l, "bob", &old, games) == 0);
+          profiles_first_run(&l, "bob", &old, games, NULL) == 0);
     chmod(path, 0644);
     check("and is left alone", profiles_load(&l) == 1 && strcmp(l.p[0].name, "saeed") == 0);
 }

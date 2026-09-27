@@ -35,8 +35,10 @@ One of these nerdy things built out of passion — to actually understand how `C
 - Board scales to fill available terminal size
 - Four built-in color themes (classic/midnight/forest/contrast), switchable
   from the launcher (live preview), the CLI, or an in-game command
-- Launcher dashboard — profiles with their records, recent games, a win-rate
-  sparkline, and the new-game setup; CLI flags remain a scriptable alternative
+- First-run welcome to name your profile and pick a theme
+- Launcher dashboard — profiles, the new-game setup with a live mini-board,
+  and a card with your record, streak and recent games; CLI flags remain a
+  scriptable alternative
 - Profiles — each person keeps their own history and remembered settings;
   every finished game a profile plays is saved to `~/.local/share/dchess/games.pgn`
 - FEN import/export — start from, view, or load any position, not just the
@@ -100,7 +102,7 @@ OPTIONS
   -h, --help                      Show help and exit
 
 EXAMPLES
-  dchess                          Launcher (profiles, recent games, new game)
+  dchess                          Launcher (profiles, new game, your record)
   dchess --no-menu                Start immediately with defaults (white, medium)
   dchess --color black            Play as black, no menu
   dchess --difficulty hard        Hard mode, no menu
@@ -116,9 +118,12 @@ EXAMPLES
   dchess --stats                  View your stats
 ```
 
-Running `dchess` with no arguments shows the launcher: your profiles
-(Tab to focus; `n` new, `r` rename, `d` delete, ↑↓ switch), recent games,
-and the new game setup, so you don't need to remember flags. Pressing `s`
+The first time, `dchess` greets you: type your name, pick a theme with ←→,
+and press Enter. After that, running `dchess` with no arguments shows the
+launcher: your profiles (Tab to focus; `n` new, `r` rename, `d` delete, ↑↓
+switch), the new game setup (players, position, opening book, theme) beside
+a mini-board of the starting position, and your profile's record and recent
+games, so you don't need to remember flags. Pressing `s`
 shows the active profile's stats; `ESC`
 quits dchess entirely rather than starting a game. Passing any gameplay
 flag (`--color`, `--difficulty`, `--two-player`, `--fen`, `--theme`) skips
