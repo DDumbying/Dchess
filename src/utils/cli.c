@@ -10,6 +10,8 @@
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
 #include <string.h>
 
 /* Depth table ─────────────────────────────────────────────────────────── */
@@ -211,10 +213,13 @@ static int known_engine(const char *name, char *err, size_t n)
 static int known_profile(const char *name, char *err, size_t n)
 {
     ProfileList l;
-    if (!profiles_load(&l)) {
-        /* No profiles yet: the first run will create one for $USER. */
+    char path[512];
+    if (!profiles_load(&l) && profiles_path(path, sizeof(path)) &&
+        access(path, F_OK) != 0 && errno == ENOENT) {
+        /* No profiles yet: the first run will create one for a valid $USER. */
         const char *user = getenv("USER");
-        if (user && !strcmp(user, name)) return 1;
+        ProfileList probe = { .count = 0 };
+        if (user && !strcmp(user, name) && profiles_add(&probe, NULL, user, NULL, 0)) return 1;
     }
     if (profiles_find(&l, name) >= 0) return 1;
     char names[160] = "";
