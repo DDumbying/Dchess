@@ -124,6 +124,13 @@ void tui_release_players(TUIState *state)
     tui_analysis_free(state);
 }
 
+void tui_check_flag(TUIState *state)
+{
+    if (!game_check_flag(&state->game)) return;
+    cancel_engine_search(state);
+    snprintf(state->status, sizeof(state->status), "%s", state->game.result);
+}
+
 int tui_can_move_by_hand(const TUIState *state)
 {
     return state->paused || !players_automated(state->players, state->game.pos.side);
@@ -420,7 +427,8 @@ int handle_command(TUIState *state, const char *cmd) {
         tui_remember_setup(state);
         return 1;
     }
-    if ((strcmp(cmd, "pause") == 0 || strcmp(cmd, "resume") == 0) &&
+    int timed = tc_timed(&state->game.tc);
+    if ((strcmp(cmd, "pause") == 0 || strcmp(cmd, "resume") == 0) && !timed &&
         !players_automated(state->players, WHITE) && !players_automated(state->players, BLACK)) {
         snprintf(state->status, sizeof(state->status), "No engine to pause");
         return 1;
@@ -428,12 +436,18 @@ int handle_command(TUIState *state, const char *cmd) {
     if (strcmp(cmd, "pause") == 0) {
         cancel_engine_search(state);
         state->paused = 1;
-        snprintf(state->status, sizeof(state->status),
-                 "Paused — Space or 'resume' to continue, 'go' for one move");
+        if (timed) {
+            game_clock_pause(&state->game);
+            snprintf(state->status, sizeof(state->status), "Clocks paused — Space or 'resume' to continue");
+        } else {
+            snprintf(state->status, sizeof(state->status),
+                     "Paused — Space or 'resume' to continue, 'go' for one move");
+        }
         return 1;
     }
     if (strcmp(cmd, "resume") == 0) {
         state->paused = 0;
+        game_clock_resume(&state->game);
         state->selected = 0;   /* the engine may move the piece that was picked up */
         memset(state->highlight, 0, sizeof(state->highlight));
         snprintf(state->status, sizeof(state->status), "Resumed");
@@ -447,6 +461,10 @@ int handle_command(TUIState *state, const char *cmd) {
         is_move ||
         strcmp(cmd, "go") == 0 ||
         strcmp(cmd, "eval") == 0;
+    if (timed && state->paused && (is_move || strcmp(cmd, "go") == 0)) {
+        snprintf(state->status, sizeof(state->status), "Resume first — the clocks are paused");
+        return 1;
+    }
 
     if (reject_while_thinking && state->thinking) {
         snprintf(state->status, sizeof(state->status),

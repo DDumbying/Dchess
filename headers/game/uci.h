@@ -47,6 +47,10 @@ typedef struct {
     int  elo_supported, elo_min, elo_max;
 } UciProbe;
 
+/* The go command for `g`: the clocks in a timed game, else the entry's
+ * depth or time per move. */
+void uci_go_command(const EngineEntry *e, const GameState *g, char *buf, size_t n);
+
 /* The engine starts on the first opponent_start(). The entry is copied. */
 Opponent *opponent_uci(const EngineEntry *e);
 

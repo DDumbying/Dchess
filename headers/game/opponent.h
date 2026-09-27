@@ -32,5 +32,7 @@ void opponent_free  (Opponent *o);
 const char *opponent_error(const Opponent *o);
 /* The built-in engine: only one of these may search at a time. */
 int  opponent_is_builtin(const Opponent *o);
+/* Think for the driver's own time even in a timed game (analysis). */
+void opponent_set_fixed_time(Opponent *o, int on);
 
 #endif

@@ -277,6 +277,9 @@ void tui_init(TUIState *state, const CliArgs *args)
     int fen_ok = 0;
     if (args && args->fen[0])
         fen_ok = game_load_fen(&state->game, args->fen);
+    TimeControl tc;
+    if (args && args->clock[0] && tc_parse(args->clock, &tc))
+        game_set_time_control(&state->game, &tc);
 
     /* The board always opens from White's perspective */
     state->view_side  = WHITE;
@@ -524,7 +527,9 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
             /* Mirrors handle_command(): without this the cursor could
              * move the engine's own pieces (it is their turn, so they
              * read as friendly) out from under the search. */
-            if (state->thinking) {
+            if (state->paused && tc_timed(&state->game.tc)) {
+                snprintf(state->status, sizeof(state->status), "Resume first — the clocks are paused");
+            } else if (state->thinking) {
                 snprintf(state->status, sizeof(state->status),
                          "Engine is thinking — please wait, or use 'stop'");
             } else if (!tui_can_move_by_hand(state)) {
@@ -623,6 +628,7 @@ void tui_run(TUIState *state)
 
     for (;;) {
 
+        tui_check_flag(state);
         if (drive_turn(state))
             game_update_status(&state->game);
         tui_analysis_tick(state);

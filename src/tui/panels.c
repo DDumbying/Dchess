@@ -197,8 +197,49 @@ static void draw_bar(WINDOW *p, int row, int col, int width, int fill)
     }
 }
 
+/* Time left: h:mm:ss, m:ss, or s.t under ten seconds. */
+static void fmt_left(long ms, char *out, size_t n)
+{
+    if (ms < 0) ms = 0;
+    long s = ms / 1000;
+    if (ms < 10000)     snprintf(out, n, "%ld.%ld", s, (ms % 1000) / 100);
+    else if (s >= 3600) snprintf(out, n, "%ld:%02ld:%02ld", s / 3600, s / 60 % 60, s % 60);
+    else                snprintf(out, n, "%ld:%02ld", s / 60, s % 60);
+}
+
+static void draw_timed_clocks(WINDOW *p, const TUIState *state)
+{
+    const GameState *g = &state->game;
+    char title[48], tc[32];
+    tc_format(&g->tc, tc, sizeof(tc));
+    snprintf(title, sizeof(title), "clocks · %s", tc);
+    panel_frame(p, title, CP_ACC_CLOCK);
+    int h, w;
+    getmaxyx(p, h, w);
+    (void)h;
+    for (int side = WHITE; side <= BLACK; side++) {
+        long left = game_time_left(g, side);
+        char t[24];
+        fmt_left(left, t, sizeof(t));
+        int row = side == WHITE ? 1 : 3;
+        int active = !g->game_over && g->clock_side == side;
+        attr_t a = left < 10000 ? (COLOR_PAIR(CP_STATUS_ERR) | A_BOLD)
+                 : active ? (COLOR_PAIR(CP_ACC_CLOCK) | A_BOLD) : COLOR_PAIR(CP_INFO_VAL);
+        wattron(p, a);
+        mvw_clip(p, row, 2, "%s", side == WHITE ? "W" : "B");
+        mvw_clip(p, row, w - 2 - (int)strlen(t), "%s", t);
+        wattroff(p, a);
+        int bar_w = w - 4;
+        draw_bar(p, row + 1, 2, bar_w, dash_bar_fill(left > 0 ? left : 0, g->tc.base_ms[side], bar_w));
+    }
+}
+
 static void draw_clock_panel(WINDOW *p, const TUIState *state)
 {
+    if (tc_timed(&state->game.tc) && !state->replay) {
+        draw_timed_clocks(p, state);
+        return;
+    }
     panel_frame(p, "clocks", CP_ACC_CLOCK);
     int h, w;
     getmaxyx(p, h, w);

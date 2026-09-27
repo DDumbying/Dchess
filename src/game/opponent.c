@@ -17,6 +17,7 @@ const char *opponent_error(const Opponent *o)                  { return o->ops->
 typedef struct {
     Opponent        base;
     int             depth, time_ms;
+    int             run_ms;          /* this search: time_ms, or the clock's budget */
     int             busy;
     int             threaded;
     pthread_t       thread;
@@ -33,7 +34,7 @@ typedef struct {
 static void *worker(void *arg)
 {
     Builtin *b = arg;
-    SearchResult r = search(&b->snapshot, b->depth, b->time_ms);
+    SearchResult r = search(&b->snapshot, b->depth, b->run_ms);
 
     pthread_mutex_lock(&b->mutex);
     b->result = r;
@@ -56,6 +57,9 @@ static int builtin_start(Opponent *o, const GameState *g)
     if (b->busy) return 0;
     b->snapshot = g->pos;
     b->key      = game_hash(g);
+    b->run_ms   = tc_timed(&g->tc) && !b->base.fixed_time
+                ? tc_budget_ms(game_time_left(g, g->pos.side), g->tc.inc_ms[g->pos.side])
+                : b->time_ms;
     b->ready    = 0;
     b->busy     = 1;
 
@@ -134,7 +138,8 @@ static const OpponentOps builtin_ops = {
     builtin_cancel, builtin_destroy, builtin_error,
 };
 
-int opponent_is_builtin(const Opponent *o) { return o && o->ops == &builtin_ops; }
+int  opponent_is_builtin(const Opponent *o) { return o && o->ops == &builtin_ops; }
+void opponent_set_fixed_time(Opponent *o, int on) { if (o) o->fixed_time = on; }
 
 Opponent *opponent_builtin(int depth, int time_ms, const Book *book, int level)
 {

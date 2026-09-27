@@ -14,6 +14,9 @@ typedef struct {
     const char *(*error)(const Opponent *o);
 } OpponentOps;
 
-struct Opponent { const OpponentOps *ops; };
+struct Opponent {
+    const OpponentOps *ops;
+    int fixed_time;      /* ignore the game clock: think for the set time */
+};
 
 #endif

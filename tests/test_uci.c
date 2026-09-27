@@ -455,10 +455,33 @@ static void test_driver_exits(void)
     check("no child process is left", no_children());
 }
 
+static void test_go_command(void)
+{
+    printf("== go command ==\n");
+    static GameState g;
+    EngineEntry e;
+    memset(&e, 0, sizeof(e));
+    char buf[128];
+    game_reset(&g);
+    e.limit_depth = 8;
+    uci_go_command(&e, &g, buf, sizeof(buf));
+    check("untimed with a depth", !strcmp(buf, "go depth 8"));
+    e.limit_depth = 0;
+    e.limit_ms = 1000;
+    uci_go_command(&e, &g, buf, sizeof(buf));
+    check("untimed with a time", !strcmp(buf, "go movetime 1000"));
+    TimeControl tc;
+    tc_parse("5+3/1+2", &tc);
+    game_set_time_control(&g, &tc);
+    uci_go_command(&e, &g, buf, sizeof(buf));
+    check("timed games send both clocks", !strcmp(buf, "go wtime 300000 btime 60000 winc 3000 binc 2000"));
+}
+
 int main(void)
 {
     init_attacks();
 
+    test_go_command();
     test_info();
     test_bestmove();
     test_option();
