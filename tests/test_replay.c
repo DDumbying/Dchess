@@ -84,6 +84,8 @@ static void test_skipping(void)
     read_first("[Event \"x\"]\n\n1. e4 {best by test} 1... e5 (1... d5 (1... c5 2. Nf3)) 2. Nf3 $1 ; line comment\n"
                "Nc6\n1-0\n");
     check("comments, variations and NAGs are skipped", !strcmp(sans(&rg), "e4 e5 Nf3 Nc6") && !rg.err[0]);
+    read_first("[Event \"x\"]\n\n1. e4 ! e5 +/- 2. Nf3 = Nc6 !? *\n");
+    check("standalone annotation glyphs are skipped", !strcmp(sans(&rg), "e4 e5 Nf3 Nc6") && !rg.err[0]);
     read_first("[Event \"x\"]\n\n1.e4 e5 2.Nf3 Nc6 *\n");
     check("move numbers without a space", !strcmp(sans(&rg), "e4 e5 Nf3 Nc6") && !rg.err[0]);
 }
@@ -130,6 +132,12 @@ static void test_list(void)
                                                  rg.count == 0 && !rg.err[0]);
     check("the last game, with no final newline", replay_read(path, l.e[2].offset, &rg, err, sizeof(err)) &&
                                                    !strcmp(sans(&rg), "f3 e5 g4 Qh4#") && !rg.err[0]);
+    replay_list_free(&l);
+
+    file("bare.pgn", "\n1. e4 e5 2. Nf3 *\n");
+    check("bare movetext lists as one game", replay_list(path, &l, err, sizeof(err)) == 1 && l.count == 1);
+    check("and reads", l.count == 1 && replay_read(path, l.e[0].offset, &rg, err, sizeof(err)) &&
+                       !strcmp(sans(&rg), "e4 e5 Nf3") && !rg.err[0]);
     replay_list_free(&l);
 }
 

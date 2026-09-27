@@ -31,9 +31,13 @@ static void step(TUIState *s, int dir)
 }
 
 /* The current position becomes a new game with the active profile's
- * remembered setup. */
-static void play_from_here(TUIState *s)
+ * remembered setup; 0 when the game is already over there. */
+static int play_from_here(TUIState *s)
 {
+    if (s->game.game_over) {
+        snprintf(s->status, sizeof(s->status), "The game is over at this move");
+        return 0;
+    }
     CliArgs a;
     memset(&a, 0, sizeof(a));
     a.no_menu = 1;
@@ -41,7 +45,6 @@ static void play_from_here(TUIState *s)
                     a.fen, sizeof(a.fen));
     a.players[WHITE] = player_human();
     a.players[BLACK] = player_builtin(DIFF_MEDIUM);
-    a.human_active[WHITE] = 1;
     if (s->profiles.count) {
         const Profile *p = &s->profiles.p[s->profiles.active];
         a.players[WHITE] = tui_word_player(s, p->white, player_profile(p->name));
@@ -55,6 +58,7 @@ static void play_from_here(TUIState *s)
     tui_init(s, &a);
     game_update_status(&s->game);   /* a finished position shows as finished */
     snprintf(s->status, sizeof(s->status), "Playing on from move %d", move);
+    return 1;
 }
 
 int replay_open(TUIState *s, const char *path, long offset)
@@ -99,8 +103,7 @@ int replay_open(TUIState *s, const char *path, long offset)
             s->replay_auto = !s->replay_auto && s->replay_ply < g->count;
             break;
         case 'p':
-            play_from_here(s);
-            result = 1;
+            result = play_from_here(s);
             break;
         default: break;
         }

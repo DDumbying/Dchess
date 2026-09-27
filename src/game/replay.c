@@ -66,14 +66,18 @@ int replay_list(const char *path, ReplayList *out, char *err, size_t n)
     char *buf = NULL, *line, k[32], v[256];
     size_t cap = 0;
     long pos;
-    int in_tags = 0;
+    int in_tags = 0, seen = 0;
     ReplayEntry *cur = NULL;
     while ((line = next_line(f, &buf, &cap, &pos))) {
-        if (!records_parse_tag(line, k, sizeof(k), v, sizeof(v))) {
+        int tag = records_parse_tag(line, k, sizeof(k), v, sizeof(v));
+        /* Moves pasted with no tags are one game from the top. */
+        int bare = !seen && !tag && line[strspn(line, " \t")];
+        if (tag || bare) seen = 1;
+        if (!tag && !bare) {
             in_tags = 0;
             continue;
         }
-        if (!in_tags || !strcmp(k, "Event")) {
+        if (bare || !in_tags || !strcmp(k, "Event")) {
             if (out->count == REPLAY_MAX_GAMES) break;
             if (out->count == out->cap) {
                 int c = out->cap ? out->cap * 2 : 32;
@@ -86,6 +90,7 @@ int replay_list(const char *path, ReplayList *out, char *err, size_t n)
             memset(cur, 0, sizeof(*cur));
             cur->offset = pos;
         }
+        if (bare) continue;
         in_tags = 1;
         set_info(cur, k, v);
     }
@@ -139,6 +144,13 @@ static int is_result(const char *t)
     return !strcmp(t, "1-0") || !strcmp(t, "0-1") || !strcmp(t, "1/2-1/2") || !strcmp(t, "*");
 }
 
+static int has_alnum(const char *t)
+{
+    for (; *t; t++)
+        if (isalnum((unsigned char)*t)) return 1;
+    return 0;
+}
+
 static void play_movetext(const char *t, GameState *g, ReplayGame *out)
 {
     int depth = 0;
@@ -163,6 +175,7 @@ static void play_movetext(const char *t, GameState *g, ReplayGame *out)
         }
         if (!*m || !strcmp(m, "e.p.")) continue;
         if (is_result(m)) return;
+        if (!has_alnum(m)) continue;          /* a glyph such as +/- or !? */
         if (g->move_count >= MAX_MOVE_HISTORY) {
             snprintf(out->err, sizeof(out->err), "stopped at the %d-move limit", MAX_MOVE_HISTORY);
             return;
