@@ -245,6 +245,10 @@ static void fail(Uci *u, const char *what)
 static void gone(Uci *u)
 {
     char what[320];
+    if (u->done && u->state == U_IDLE) {
+        shut(u, 0);   /* exited after answering: keep the move, relaunch next time */
+        return;
+    }
     if (u->state == U_WAIT_UCIOK || u->state == U_WAIT_READY)
         snprintf(what, sizeof(what), "could not start %s", u->entry.path);
     else
@@ -436,6 +440,24 @@ static void check_deadline(Uci *u)
         fail(u, "no reply from engine");
 }
 
+static void launch(Uci *u)
+{
+    u->searched = 0;
+    u->fresh = 1;
+    u->elo_supported = 0;
+    u->len = 0;
+    u->skipping = 0;
+    if (!spawn(u->entry.path, &u->pid, &u->to_fd, &u->from_fd)) {
+        char what[320];
+        snprintf(what, sizeof(what), "could not start %s", u->entry.path);
+        fail(u, what);
+        return;
+    }
+    u->state = U_WAIT_UCIOK;
+    u->deadline_ms = now_ms() + UCI_HANDSHAKE_TIMEOUT_MS;
+    say(u, "uci");
+}
+
 static int uci_start(Opponent *o, const GameState *g)
 {
     Uci *u = (Uci *)o;
@@ -454,22 +476,21 @@ static int uci_start(Opponent *o, const GameState *g)
     u->last_count = g->move_count;
     snprintf(u->last_fen, sizeof(u->last_fen), "%s", g->start_fen);
 
-    if (!u->pid) {
-        u->searched = 0;
-        u->fresh = 1;
-        u->elo_supported = 0;
-        if (!spawn(u->entry.path, &u->pid, &u->to_fd, &u->from_fd)) {
-            char what[320];
-            snprintf(what, sizeof(what), "could not start %s", u->entry.path);
-            fail(u, what);
-            return 1;
-        }
-        u->state = U_WAIT_UCIOK;
-        u->deadline_ms = now_ms() + UCI_HANDSHAKE_TIMEOUT_MS;
-        say(u, "uci");
-        return 1;
+    /* An engine that quit between moves is started again. */
+    if (u->pid && waitpid(u->pid, NULL, WNOHANG) == u->pid) {
+        close(u->to_fd);
+        close(u->from_fd);
+        u->pid = 0;
+        u->state = U_OFF;
     }
-    if (u->state == U_IDLE) send_search(u);
+    if (u->pid && u->state == U_IDLE) {
+        send_search(u);
+        if (!u->done || u->pid) return 1;
+        u->done = 0;             /* it died as we wrote: one more try */
+        u->pending = 1;
+        u->error[0] = '\0';
+    }
+    if (!u->pid) launch(u);
     return 1;
 }
 
