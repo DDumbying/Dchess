@@ -297,6 +297,7 @@ void tui_analysis_tick(TUIState *s)
         if (err && err[0]) snprintf(s->analysis_err, sizeof(s->analysis_err), "%s", err);
         else if (key == now) { s->analysis = r; s->analysis_ready = 1; }
     }
+    if (now != s->analysis_key) s->analysis_ready = 0;   /* an old position's view */
     if (analysis_waits(s)) {
         s->analysis_blocked = 1;
         return;
@@ -314,6 +315,7 @@ static void start_thinking(TUIState *state, Opponent *o, const char *by)
     if (o && opponent_is_builtin(o) && analyser_is_builtin(state->analyser)) {
         analyser_stop(state->analyser);
         state->analysis_key = 0;       /* restarts once the engine is done */
+        state->analysis_ready = 0;
     }
     if (!o) {
         /* Pausing stops the next tick from trying again at once. */
@@ -647,6 +649,10 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "eval") == 0) {
+        if (analyser_is_builtin(state->analyser)) {   /* one built-in search at a time */
+            analyser_stop(state->analyser);
+            state->analysis_key = 0;
+        }
         SearchResult res = search(&state->game.pos, 1, 0);
         int score_white = eval_white_view(res.best_score, state->game.pos.side);
         snprintf(state->last_eval, sizeof(state->last_eval), "%+.2f", score_white / 100.0f);
