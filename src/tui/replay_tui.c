@@ -101,6 +101,12 @@ static void review_tick(TUIState *s)
         U64 key;
         if (!analyser_poll(rv->an, &r, &key)) return;
         rv->waiting = 0;
+        const char *err = analyser_error(rv->an);
+        if (err && err[0]) {
+            snprintf(s->status, sizeof(s->status), "Review stopped: %s", err);
+            review_stop(s);
+            return;
+        }
         if (key == rv->key) { rv->at[rv->next] = r; rv->have[rv->next] = 1; }
         rv->next++;
     }
