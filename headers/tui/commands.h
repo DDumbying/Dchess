@@ -34,6 +34,12 @@ void tui_undo(TUIState *state);
 /* Saves the theme and White/Black setup into the active profile. */
 void tui_remember_setup(TUIState *state);
 
+/* Analysis: starts, polls and restarts the analyser for the position
+ * shown. Call once per loop pass. */
+void tui_analysis_tick(TUIState *state);
+void tui_analysis_toggle(TUIState *state);
+void tui_analysis_free(TUIState *state);
+
 /* "White: You · Black: dchess Medium" */
 void describe_setup(const TUIState *state, char *buf, size_t n);
 

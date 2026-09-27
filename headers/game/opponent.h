@@ -30,5 +30,7 @@ void opponent_free  (Opponent *o);
 
 /* NULL, or why the engine stopped working. */
 const char *opponent_error(const Opponent *o);
+/* The built-in engine: only one of these may search at a time. */
+int  opponent_is_builtin(const Opponent *o);
 
 #endif

@@ -309,6 +309,11 @@ void tui_init(TUIState *state, const CliArgs *args)
         snprintf(state->cli_book, sizeof(state->cli_book), "%s", args->book);
     snprintf(state->book_choice, sizeof(state->book_choice), "%s",
              state->cli_book[0] ? state->cli_book : pb[0] ? pb : "builtin");
+    if (state->profiles.count) {
+        const char *an = state->profiles.p[state->profiles.active].analysis;
+        snprintf(state->analysis_engine, sizeof(state->analysis_engine), "%s", an);
+        state->analysis_on = an[0] && strcmp(an, "off") != 0;
+    }
     if (!state->theme_set && state->profiles.count) {
         int t = theme_from_name(state->profiles.p[state->profiles.active].theme);
         if (t >= 0) state->theme = t;
@@ -534,6 +539,10 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
             tui_undo(state);
             break;
 
+        case 'a':
+            tui_analysis_toggle(state);
+            break;
+
         case ' ':
             handle_command(state, state->paused ? "resume" : "pause");
             break;
@@ -616,6 +625,7 @@ void tui_run(TUIState *state)
 
         if (drive_turn(state))
             game_update_status(&state->game);
+        tui_analysis_tick(state);
 
         if (state->game.game_over && state->game.result[0]) {
             screen_paint(&sc);   /* show the final position behind the popup */

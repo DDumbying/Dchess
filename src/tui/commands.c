@@ -21,6 +21,14 @@
 #include <stdlib.h>
 #include <time.h>
 
+#define ANALYSIS_MS 1500   /* per position while analysing */
+
+static int analysis_wanted(const char *engine)
+{
+    return engine[0] && strcmp(engine, "off") != 0;
+}
+
+
 static long now_ms(void)
 {
     struct timespec t;
@@ -43,6 +51,8 @@ void tui_remember_setup(TUIState *state)
     player_word(&state->players[BLACK], p->black, sizeof(p->black));
     if (!state->cli_book[0])   /* --book is for one run */
         snprintf(p->book, sizeof(p->book), "%s", state->book_choice);
+    snprintf(p->analysis, sizeof(p->analysis), "%s",
+             analysis_wanted(state->analysis_engine) ? state->analysis_engine : "");
     /* Saved with the file's own active profile: --profile is for one run. */
     int run = state->profiles.active;
     state->profiles.active = state->file_active;
@@ -111,6 +121,7 @@ void tui_release_players(TUIState *state)
     state->go_driver = NULL;
     book_free(state->book);
     state->book = NULL;
+    tui_analysis_free(state);
 }
 
 int tui_can_move_by_hand(const TUIState *state)
@@ -239,8 +250,71 @@ static void apply_engine_result(TUIState *state, SearchResult res, const char *b
                  eval_f, res.depth_reached);
 }
 
+/* Built-in analysis cannot run beside a built-in search. */
+static int analysis_waits(const TUIState *s)
+{
+    return analyser_is_builtin(s->analyser) && s->thinking && opponent_is_builtin(s->thinking);
+}
+
+void tui_analysis_free(TUIState *s)
+{
+    analyser_free(s->analyser);
+    s->analyser = NULL;
+    s->analysis_key = 0;
+    s->analysis_ready = 0;
+}
+
+void tui_analysis_toggle(TUIState *s)
+{
+    s->analysis_on = !s->analysis_on;
+    if (!s->analysis_on) tui_analysis_free(s);
+    s->analysis_err[0] = '\0';
+    snprintf(s->status, sizeof(s->status), "Analysis %s", s->analysis_on ? "on" : "off");
+}
+
+void tui_analysis_tick(TUIState *s)
+{
+    if (!s->analysis_on) return;
+    if (!s->analyser) {
+        const char *name = s->analysis_engine;
+        if (!analysis_wanted(name) || !strcmp(name, "builtin")) {
+            s->analyser = analyser_builtin(ANALYSIS_MS);
+        } else {
+            const EngineEntry *e = engines_find(&s->engines, name);
+            if (!e) {
+                snprintf(s->analysis_err, sizeof(s->analysis_err), "no engine named %s", name);
+                return;
+            }
+            s->analyser = analyser_uci(e, ANALYSIS_MS);
+        }
+        s->analysis_key = 0;
+        if (!s->analyser) return;
+    }
+    Analysis r;
+    U64 key, now = game_hash(&s->game);
+    if (analyser_poll(s->analyser, &r, &key)) {
+        const char *err = analyser_error(s->analyser);
+        if (err && err[0]) snprintf(s->analysis_err, sizeof(s->analysis_err), "%s", err);
+        else if (key == now) { s->analysis = r; s->analysis_ready = 1; }
+    }
+    if (analysis_waits(s)) {
+        s->analysis_blocked = 1;
+        return;
+    }
+    s->analysis_blocked = 0;
+    if (now == s->analysis_key) return;
+    s->analysis_key = now;
+    s->analysis_ready = 0;
+    s->analysis_err[0] = '\0';
+    analyser_start(s->analyser, &s->game);
+}
+
 static void start_thinking(TUIState *state, Opponent *o, const char *by)
 {
+    if (o && opponent_is_builtin(o) && analyser_is_builtin(state->analyser)) {
+        analyser_stop(state->analyser);
+        state->analysis_key = 0;       /* restarts once the engine is done */
+    }
     if (!o) {
         /* Pausing stops the next tick from trying again at once. */
         state->paused = 1;
@@ -303,6 +377,25 @@ int handle_command(TUIState *state, const char *cmd) {
         }
         opponent_stop(state->thinking);
         drive_turn(state);
+        return 1;
+    }
+    if (strcmp(cmd, "analyse") == 0 || strncmp(cmd, "analyse ", 8) == 0) {
+        const char *name = cmd[7] == ' ' ? cmd + 8 : "";
+        if (!name[0]) {
+            snprintf(state->status, sizeof(state->status), "Analysis: %s",
+                     analysis_wanted(state->analysis_engine) ? state->analysis_engine : "off");
+            return 1;
+        }
+        if (strcmp(name, "off") && strcmp(name, "builtin") && !engines_find(&state->engines, name)) {
+            snprintf(state->status, sizeof(state->status), "No engine named %s", name);
+            return 1;
+        }
+        snprintf(state->analysis_engine, sizeof(state->analysis_engine), "%s", name);
+        tui_analysis_free(state);
+        state->analysis_on = analysis_wanted(name);
+        state->analysis_err[0] = '\0';
+        snprintf(state->status, sizeof(state->status), "Analysis: %s", name);
+        tui_remember_setup(state);
         return 1;
     }
     if (strcmp(cmd, "book") == 0 || strncmp(cmd, "book ", 5) == 0) {

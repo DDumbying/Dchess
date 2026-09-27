@@ -23,7 +23,7 @@
 #include <limits.h>
 #include <wchar.h>
 
-enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_BOOK, ROW_THEME, ROW_START, ROW_COUNT };
+enum { ROW_WHITE, ROW_BLACK, ROW_POSITION, ROW_BOOK, ROW_ANALYSIS, ROW_THEME, ROW_START, ROW_COUNT };
 enum { FOCUS_PROFILES, FOCUS_GAME, FOCUS_CARD };
 
 #define LEFT_W  24
@@ -40,6 +40,7 @@ typedef struct {
     int        theme;
     char       book[256], custom_book[256];   /* builtin, off or a path */
     char       book_start[256];               /* changed from this = remembered */
+    char       analysis[ENGINE_NAME_MAX + 1]; /* off, builtin or an engine */
     int        row, focus, pcursor;   /* pcursor == count: "+ new profile" */
     int        csel, card_rows;       /* the card's selected game; how many it shows */
     char       msg[96];
@@ -97,6 +98,7 @@ static void apply_profile(TUIState *s, Launch *L)
     const Profile *p = &s->profiles.p[s->profiles.active];
     L->sel[WHITE] = tui_word_player(s, p->white, player_profile(p->name));
     L->sel[BLACK] = tui_word_player(s, p->black, player_builtin(DIFF_MEDIUM));
+    snprintf(L->analysis, sizeof(L->analysis), "%s", p->analysis[0] ? p->analysis : "off");
     if (!s->cli_book[0]) {
         snprintf(L->book, sizeof(L->book), "%s", p->book[0] ? p->book : "builtin");
         snprintf(L->book_start, sizeof(L->book_start), "%s", L->book);
@@ -195,7 +197,7 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
     WINDOW *p = panel(h, w, y, x, title, L->focus == FOCUS_GAME);
     if (!p) return;
 
-    static const char *names[] = { "White", "Black", "Pos  ", "Book ", "Theme" };
+    static const char *names[] = { "White", "Black", "Pos  ", "Book ", "Hints", "Theme" };
     int board = !small && w >= 16 + 19 + 12 && h >= 12;
     int top = board ? 1 + (h - 2 - 11) / 2 : 1, fy = board ? top + 2 : h >= GAME_ROWS ? 2 : 1;
     int val_w = w - 16 - (board ? 19 : 0);
@@ -215,6 +217,9 @@ static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int sm
             const char *slash = strrchr(L->book, '/');
             snprintf(label, sizeof(label), "%s", !strcmp(L->book, "builtin") ? "built-in"
                      : slash ? slash + 1 : L->book);
+        } else if (r == ROW_ANALYSIS) {
+            snprintf(label, sizeof(label), "%s", !strcmp(L->analysis, "off") ? "off"
+                     : !strcmp(L->analysis, "builtin") ? "analysis · dchess" : L->analysis);
         } else if (r == ROW_POSITION) {
             snprintf(label, sizeof(label), "%s", L->use_custom_fen
                      ? (L->fen[0] ? L->fen : "<enter to type a FEN>") : "Standard");
@@ -463,6 +468,15 @@ static void change_row(TUIState *s, Launch *L, int dir)
         L->sel[L->row] = cycle_player(s, (i + c + dir) % c);
     } else if (L->row == ROW_POSITION) {
         L->use_custom_fen = !L->use_custom_fen;
+    } else if (L->row == ROW_ANALYSIS) {
+        /* off, builtin, then each registered engine */
+        int n = 2 + s->engines.count, i = 0;
+        if (!strcmp(L->analysis, "builtin")) i = 1;
+        for (int k = 0; k < s->engines.count; k++)
+            if (!strcmp(L->analysis, s->engines.e[k].name)) i = 2 + k;
+        i = (i + n + dir) % n;
+        snprintf(L->analysis, sizeof(L->analysis), "%s",
+                 i == 0 ? "off" : i == 1 ? "builtin" : s->engines.e[i - 2].name);
     } else if (L->row == ROW_BOOK) {
         const char *opts[3] = { "builtin", "off", L->custom_book };
         int n = L->custom_book[0] ? 3 : 2, i = 0;
@@ -488,6 +502,8 @@ static int start(TUIState *s, Launch *L)
         snprintf(chosen.fen, sizeof(chosen.fen), "%s", L->fen);
     records_free(&L->rec);
     tui_init(s, &chosen);
+    snprintf(s->analysis_engine, sizeof(s->analysis_engine), "%s", L->analysis);
+    s->analysis_on = strcmp(L->analysis, "off") != 0;
     if (strcmp(L->book, L->book_start)) {   /* chosen here, so remembered like the book command */
         snprintf(s->book_choice, sizeof(s->book_choice), "%s", L->book);
         s->cli_book[0] = '\0';
@@ -508,6 +524,7 @@ int tui_launcher(TUIState *state)
     L.pcursor = state->profiles.active;
     snprintf(L.book, sizeof(L.book), "%s", state->book_choice);
     snprintf(L.book_start, sizeof(L.book_start), "%s", L.book);
+    snprintf(L.analysis, sizeof(L.analysis), "%s", state->analysis_engine[0] ? state->analysis_engine : "off");
     if (strcmp(L.book, "builtin") && strcmp(L.book, "off"))
         snprintf(L.custom_book, sizeof(L.custom_book), "%s", L.book);
     records_path(L.games, sizeof(L.games));

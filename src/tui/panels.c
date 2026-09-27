@@ -7,6 +7,8 @@
 #include "utils/theme.h"
 #include "utils/constants.h"
 #include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include <stdio.h>
 #include <time.h>
 #include <wchar.h>
@@ -104,8 +106,66 @@ static void draw_eval_graph(WINDOW *p, int top, int left, int rows, int cols,
     }
 }
 
+static void draw_analysis_panel(WINDOW *p, const TUIState *s)
+{
+    const char *name = !s->analysis_engine[0] || !strcmp(s->analysis_engine, "off") ||
+                       !strcmp(s->analysis_engine, "builtin") ? "dchess" : s->analysis_engine;
+    char title[80];
+    snprintf(title, sizeof(title), "analysis · %s", name);
+    panel_frame(p, title, CP_ACC_EVAL);
+    int h, w;
+    getmaxyx(p, h, w);
+    const Analysis *a = &s->analysis;
+    const char *note = s->analysis_err[0] ? s->analysis_err
+                     : s->game.game_over ? (s->game.result[0] ? s->game.result : "game over")
+                     : s->analysis_blocked ? "engine thinking"
+                     : !s->analysis_ready ? "analysing…" : NULL;
+    if (note) {
+        wattron(p, COLOR_PAIR(s->analysis_err[0] ? CP_STATUS_ERR : CP_HINT));
+        mvw_fit(p, 1, 2, w - 4, note);
+        wattroff(p, COLOR_PAIR(s->analysis_err[0] ? CP_STATUS_ERR : CP_HINT));
+        return;
+    }
+    int bar = w - 4;
+    double share = a->mate ? (a->mate > 0 ? 1.0 : 0.0) : 1.0 / (1.0 + pow(10.0, -a->score_cp / 400.0));
+    int fill = (int)(share * bar + 0.5);
+    for (int i = 0; i < bar; i++) {
+        wattron(p, COLOR_PAIR(i < fill ? CP_ACC_EVAL : CP_HINT));
+        mvwaddstr(p, 1, 2 + i, i < fill ? "█" : "░");
+        wattroff(p, COLOR_PAIR(i < fill ? CP_ACC_EVAL : CP_HINT));
+    }
+    char score[24], best[32];
+    if (a->mate) snprintf(score, sizeof(score), "%sM%d d%d", a->mate > 0 ? "" : "-", abs(a->mate), a->depth);
+    else         snprintf(score, sizeof(score), "%+.2f d%d", a->score_cp / 100.0, a->depth);
+    snprintf(best, sizeof(best), "best %s", a->line_len ? a->line[0] : "—");
+    wattron(p, COLOR_PAIR(CP_ACC_EVAL) | A_BOLD);
+    mvw_fit(p, 2, 2, w - 4, score);
+    wattroff(p, COLOR_PAIR(CP_ACC_EVAL) | A_BOLD);
+    int bw = text_width(best);
+    if (bw < w - 4 - text_width(score) - 1) {
+        wattron(p, COLOR_PAIR(CP_INFO_VAL));
+        mvw_fit(p, 2, w - 2 - bw, bw, best);
+        wattroff(p, COLOR_PAIR(CP_INFO_VAL));
+    }
+    /* The expected line, wrapped over the rows left. */
+    int row = 3, col = 2;
+    wattron(p, COLOR_PAIR(CP_HINT));
+    for (int i = 0; i < a->line_len && row < h - 1; i++) {
+        int len = (int)strlen(a->line[i]);
+        if (col > 2 && col + len > w - 2) { row++; col = 2; }
+        if (row >= h - 1) break;
+        mvw_fit(p, row, col, len < w - 4 ? len : w - 4, a->line[i]);
+        col += len + 1;
+    }
+    wattroff(p, COLOR_PAIR(CP_HINT));
+}
+
 static void draw_eval_panel(WINDOW *p, const TUIState *state)
 {
+    if (state->analysis_on) {
+        draw_analysis_panel(p, state);
+        return;
+    }
     panel_frame(p, "eval", CP_ACC_EVAL);
     int h, w;
     getmaxyx(p, h, w);
