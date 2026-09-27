@@ -62,15 +62,12 @@ static void test_pv(void)
     parse_fen("r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5Q2/PPPP1PPP/RNB1K1NR w KQkq - 2 3", &pos, NULL, NULL);
     Position s = pos;
     SearchResult r = search(&s, 4, 0);
-    Move line[8];
-    int n = search_pv(&pos, r.best_move, line, 8);
-    check("a mate's line starts with the mating move", n >= 1 && line[0] == r.best_move);
+    check("a mate's line starts with the mating move", r.pv_len >= 1 && r.pv[0] == r.best_move);
     parse_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &pos, NULL, NULL);
     s = pos;
     r = search(&s, 5, 0);
-    n = search_pv(&pos, r.best_move, line, 8);
-    check("a quiet line runs several moves", n >= 2 && line[0] == r.best_move);
-    check("and every move is legal in turn", legal_line(&pos, line, n));
+    check("a quiet line runs several moves", r.pv_len >= 3 && r.pv[0] == r.best_move);
+    check("and every move is legal in turn", legal_line(&pos, r.pv, r.pv_len));
 }
 
 static int wait_result(Analyser *a, Analysis *out, int ms)
@@ -95,6 +92,12 @@ static void test_builtin(void)
     Move m;
     check("with a legal best move", r.best && game_find_move(&g, FROM(r.best), TO(r.best), 0, &m));
     check("and a line that starts with it", r.line_len >= 1 && r.depth >= 1);
+    game_reset(&g);
+    check("the start position's line runs several moves", analyser_start(a, &g) && wait_result(a, &r, 3000) &&
+                                                          r.line_len >= 3);
+    game_load_fen(&g, "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1");
+    check("mate in one reads as mate 1", analyser_start(a, &g) && wait_result(a, &r, 3000) &&
+                                         r.mate == 1 && r.line_len >= 1 && !strcmp(r.line[0], "Ra8#"));
     game_load_fen(&g, "7k/6Q1/6K1/8/8/8/8/8 b - - 0 1");
     game_update_status(&g);
     check("a finished game is not analysed", analyser_start(a, &g) == 0);

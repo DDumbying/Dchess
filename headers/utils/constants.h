@@ -6,6 +6,7 @@
 #define MAX_DEPTH  64
 #define INF        1000000
 #define MATE_SCORE 999000
+#define MATE_BOUND (MATE_SCORE - 1000)   /* beyond this, a score is a mate */
 
 enum { WHITE, BLACK, BOTH };
 

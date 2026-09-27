@@ -64,7 +64,7 @@ int analyser_poll(Analyser *a, Analysis *out, U64 *key)
     if (!a || !opponent_poll(a->o, &r, key)) return 0;
     memset(out, 0, sizeof(*out));
     int sign = a->pos.side == WHITE ? 1 : -1, s = r.best_score;
-    if (abs(s) > MATE_SCORE - MAX_DEPTH) {
+    if (abs(s) > MATE_BOUND) {
         int n = MATE_SCORE - abs(s);        /* plies for dchess, moves for UCI */
         if (a->builtin) n = (n + 1) / 2;
         if (n < 1) n = 1;
