@@ -9,6 +9,7 @@
 #include "tui/stats_tui.h"
 #include "tui/launcher.h"
 #include "tui/welcome.h"
+#include "tui/replay_tui.h"
 #include "game/records.h"
 #include "engine/board.h"
 #include "engine/movegen.h"
@@ -32,7 +33,6 @@
 
 /* The panels below are defined before Screen but must rebuild it on
  * resize. */
-typedef struct Screen Screen;
 static void screen_handle_resize(Screen *sc);
 static WINDOW *screen_board(const Screen *sc);
 
@@ -461,6 +461,36 @@ static void screen_handle_resize(Screen *sc)
     screen_paint(sc);
 }
 
+Player tui_word_player(const TUIState *s, const char *w, Player fallback)
+{
+    if (!w[0]) return fallback;
+    if (strcasecmp(w, "guest") == 0) return player_human();
+    int lv = players_level_from_name(w);
+    if (lv >= 0) return player_builtin(lv);
+    if (profiles_find(&s->profiles, w) >= 0) return player_profile(w);
+    if (engines_find(&s->engines, w)) return player_uci(w);
+    return fallback;
+}
+
+Screen *tui_screen_open(TUIState *state)
+{
+    Screen *sc = malloc(sizeof(*sc));
+    if (!sc) return NULL;
+    *sc = screen_create(state);
+    return sc;
+}
+
+void    tui_screen_paint(Screen *sc)  { screen_paint(sc); }
+void    tui_screen_resize(Screen *sc) { screen_handle_resize(sc); }
+WINDOW *tui_screen_input(Screen *sc)  { return sc->cmd; }
+
+void tui_screen_close(Screen *sc)
+{
+    if (!sc) return;
+    screen_destroy(sc);
+    free(sc);
+}
+
 /* Returns 0 when the player asked to quit, 1 to keep going. */
 static int handle_key(Screen *sc, int ch, const char *cmd_buf)
 {
@@ -532,7 +562,25 @@ void tui_run(TUIState *state)
 
     init_colors(state->theme);
 
-    if (state->first_run && !tui_welcome(state)) {
+    if (state->stats_only) {
+        if (!state->profiles.count) {
+            endwin();
+            printf("No profiles yet. Play a game first.\n");
+            return;
+        }
+        if (!stats_screen(state, 1)) {
+            endwin();
+            return;
+        }
+    } else if (state->replay_list) {
+        ReplayList *list = state->replay_list;
+        char file[512];
+        snprintf(file, sizeof(file), "%s", state->replay_path);
+        if (!replay_browse(state, list, file)) {
+            endwin();
+            return;
+        }
+    } else if (state->first_run && !tui_welcome(state)) {
         endwin();
         return;
     }

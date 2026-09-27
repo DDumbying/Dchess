@@ -559,7 +559,7 @@ int handle_command(TUIState *state, const char *cmd) {
         return 1;
     }
     if (strcmp(cmd, "stats") == 0) {
-        stats_screen(state);
+        stats_screen(state, 0);
         state->status[0] = '\0';
         if (state->request_redraw) state->request_redraw(state->redraw_ctx);
         return 1;

@@ -18,6 +18,7 @@ typedef struct {
     char profile[PLAYER_NAME_MAX + 1];   /* --profile, or empty */
     int theme_set;      /* --theme was given */
     char book[256];     /* --book: builtin, off or a .bin path; empty = the profile's */
+    char replay[512];   /* --replay: a PGN file to step through */
     int human_active[2];   /* this side is the active profile, resolved at startup */
     int show_help;      /* --help flag     */
     char fen[128];       /* --fen <string>: custom starting position, empty = standard start */

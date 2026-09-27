@@ -26,17 +26,33 @@ int main(int argc, char **argv)
     if (args.list_profiles) cli_list_profiles(); /* exits */
 
 
-    if (args.show_stats) {
-        stats_standalone(args.profile);
-        return 0;
-    }
+    if (args.show_stats) args.no_menu = 1;   /* the stats page instead */
 
     /* Normal game startup ───────────────────────────────────────────── */
+    static ReplayList games;
+    if (args.replay[0]) {
+        char err[256];
+        if (!replay_list(args.replay, &games, err, sizeof(err))) {
+            fprintf(stderr, "dchess: %s\n", err);
+            return 1;
+        }
+        if (!games.count) {
+            fprintf(stderr, "dchess: no games in %s\n", args.replay);
+            return 1;
+        }
+    }
+
     init_attacks();
 
     TUIState state;
     tui_init(&state, &args);
+    state.stats_only = args.show_stats;
+    if (args.replay[0]) {
+        state.replay_list = &games;
+        snprintf(state.replay_path, sizeof(state.replay_path), "%s", args.replay);
+    }
     tui_run(&state);
+    replay_list_free(&games);
 
     return 0;
 }

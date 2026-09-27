@@ -1,4 +1,5 @@
 #include "tui/panels.h"
+#include "utils/text.h"
 #include "game/book.h"
 #include "tui/render.h"
 #include "tui/colors.h"
@@ -144,6 +145,15 @@ static void draw_clock_panel(WINDOW *p, const TUIState *state)
     int h, w;
     getmaxyx(p, h, w);
     (void)h;
+    if (state->replay) {
+        wattron(p, COLOR_PAIR(CP_HINT));
+        mvw_clip(p, 1, 2, "W");
+        mvw_clip(p, 1, w - 3, "—");
+        mvw_clip(p, 3, 2, "B");
+        mvw_clip(p, 3, w - 3, "—");
+        wattroff(p, COLOR_PAIR(CP_HINT));
+        return;
+    }
 
     long w_cs, b_cs;
     clock_cs(state, &w_cs, &b_cs);
@@ -176,9 +186,13 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
     (void)w;
 
     const GameState *g = &state->game;
-    int total = (g->move_count + 1) / 2;
+    const ReplayGame *rp = state->replay;
+    /* A replay lists the whole game; the moves after the current one dim. */
+    int count = rp ? g->log_start + rp->count : g->move_count;
+    int cur   = g->move_count - 1;
+    int total = (count + 1) / 2;
     int from  = g->log_start / 2;           /* a FEN may start mid-game */
-    if (g->move_count <= g->log_start) {
+    if (count <= g->log_start) {
         wattron(p, COLOR_PAIR(CP_HINT));
         mvw_clip(p, 1, 2, "no moves yet");
         wattroff(p, COLOR_PAIR(CP_HINT));
@@ -188,6 +202,11 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
     const char *eco = NULL, *opening = book_opening(g, &eco);
     int rows  = h - 2 - (opening && h > 5);
     int first = total - from > rows ? total - rows : from;
+    if (rp && total - from > rows) {
+        first = cur / 2 - rows / 2;
+        if (first > total - rows) first = total - rows;
+        if (first < from) first = from;
+    }
     if (opening && h > 5) {
         wattron(p, COLOR_PAIR(CP_ACC_MOVES));
         mvw_clip(p, h - 2, 2, "%s %s", eco, opening);
@@ -201,18 +220,16 @@ static void draw_moves_panel(WINDOW *p, const TUIState *state)
         mvw_clip(p, r, 1, "%3d.", m + 1);
         wattroff(p, COLOR_PAIR(CP_HINT));
 
-        attr_t wa = (wi == g->move_count - 1) ? (COLOR_PAIR(CP_ACC_MOVES) | A_BOLD)
-                                              : COLOR_PAIR(CP_INFO_VAL);
-        wattron(p, wa);
-        mvw_clip(p, r, 6, "%s", wi < g->log_start ? "..." : g->move_history[wi]);
-        wattroff(p, wa);
-
-        if (bi < g->move_count) {
-            attr_t ba = (bi == g->move_count - 1) ? (COLOR_PAIR(CP_ACC_MOVES) | A_BOLD)
-                                                  : COLOR_PAIR(CP_INFO_VAL);
-            wattron(p, ba);
-            mvw_clip(p, r, 14, "%s", g->move_history[bi]);
-            wattroff(p, ba);
+        for (int k = 0; k < 2; k++) {
+            int i = k ? bi : wi;
+            if (i >= count) break;
+            attr_t a = i == cur ? (COLOR_PAIR(CP_ACC_MOVES) | A_BOLD)
+                     : i > cur  ? COLOR_PAIR(CP_HINT) : COLOR_PAIR(CP_INFO_VAL);
+            const char *san = i < g->log_start ? "..."
+                            : rp ? rp->san[i - g->log_start] : g->move_history[i];
+            wattron(p, a);
+            mvw_clip(p, r, k ? 14 : 6, "%s", san);
+            wattroff(p, a);
         }
     }
 }
@@ -237,6 +254,12 @@ static void draw_engine_panel(WINDOW *p, const TUIState *state)
     if (by[0]) snprintf(title, sizeof(title), "engine · %s", by);
     else       snprintf(title, sizeof(title), "engine");
     panel_frame(p, title, CP_ACC_ENGINE);
+    if (state->replay) {
+        wattron(p, COLOR_PAIR(CP_HINT));
+        mvw_clip(p, 1, 2, "replay");
+        wattroff(p, COLOR_PAIR(CP_HINT));
+        return;
+    }
 
     if (state->thinking) {
         wattron(p, COLOR_PAIR(CP_ACC_ENGINE) | A_BOLD);
@@ -322,6 +345,29 @@ void draw_command_bar(WINDOW *cmd, const TUIState *state)
     getmaxyx(cmd, h, w);
     (void)h;
 
+    if (state->replay) {
+        const ReplayGame *rp = state->replay;
+        char head[320];
+        snprintf(head, sizeof(head), "REPLAY · %d/%d · %s – %s · %s", state->replay_ply, rp->count,
+                 rp->info.white[0] ? rp->info.white : "?", rp->info.black[0] ? rp->info.black : "?",
+                 rp->info.result[0] ? rp->info.result : "*");
+        wattron(cmd, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
+        mvw_fit(cmd, 1, 2, w - 4, head);
+        wattroff(cmd, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
+        const char *keys = state->replay_auto ? "space pause  esc back"
+                         : "←→ step  home/end  space auto  p play  esc back";
+        int kw = text_width(keys), sw = w - 4 - kw - 2;
+        if (state->status[0] && sw > 8) {
+            wattron(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
+            mvw_fit(cmd, 2, 2, sw, state->status);
+            wattroff(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
+        }
+        wattron(cmd, COLOR_PAIR(CP_HINT));
+        mvw_fit(cmd, 2, kw < w - 4 ? w - 2 - kw : 2, kw < w - 4 ? kw : w - 4, keys);
+        wattroff(cmd, COLOR_PAIR(CP_HINT));
+        wnoutrefresh(cmd);
+        return;
+    }
     int is_err = strncmp(state->status, "Illegal", 7) == 0 ||
                  strncmp(state->status, "Bad",     3) == 0 ||
                  strncmp(state->status, "Unknown", 7) == 0;

@@ -41,6 +41,8 @@ One of these nerdy things built out of passion — to actually understand how `C
   scriptable alternative
 - Profiles — each person keeps their own history and remembered settings;
   every finished game a profile plays is saved to `~/.local/share/dchess/games.pgn`
+- Replay — step through any saved game or PGN file, and play on from any
+  position in it
 - FEN import/export — start from, view, or load any position, not just the
   standard setup
 - The engine thinks in a background thread — the clock, redraws, and
@@ -98,6 +100,7 @@ OPTIONS
   --theme <name>                  Color theme: classic | midnight | forest | contrast
                                    (default: classic)
   -s, --stats                     Show statistics in a full TUI screen and exit
+  --replay <file.pgn>             Step through the games in a PGN file
   -V, --version                   Print version and exit
   -h, --help                      Show help and exit
 
@@ -110,6 +113,7 @@ EXAMPLES
   dchess --fen "<FEN string>"     Start from a custom position
   dchess --menu -d hard           Launcher, pre-filled to hard difficulty
   dchess --theme midnight         Start with the midnight color theme
+  dchess --replay games.pgn       Pick a game from a PGN file and step through it
   dchess --two-player             Local two-player, board flips each turn
   dchess --white hard --black easy
                                   Watch the engine play itself
@@ -129,6 +133,12 @@ quits dchess entirely rather than starting a game. Passing any gameplay
 flag (`--color`, `--difficulty`, `--two-player`, `--fen`, `--theme`) skips
 it and starts immediately, so scripts and muscle-memory invocations keep
 working exactly as before.
+
+To replay a game, press ⏎ on it in the launcher's profile card (Tab to
+reach it) or in the stats page's recent list, or run `dchess --replay FILE`.
+←→ step through the moves, Home/End jump to either end, space plays them
+one a second, `p` plays on from the position shown with your usual setup,
+and Esc goes back.
 
 Pressing `e` opens the Engines screen, where you add a UCI engine by its path
 (dchess starts it and reads its name), set its strength (time per move or

@@ -16,12 +16,15 @@ typedef struct {
     char     end_reason[16];
     char     eco[4], opening[64];
     int      plies, seconds, legacy;
+    long     offset;          /* of the game's first tag line in the file */
 } Record;
 
 typedef struct { Record *r; int count, cap; } RecordList;
 typedef struct { int games, wins, draws, losses; } RecordTally;
 
 int  records_path(char *buf, size_t n);
+/* [Key "Value"] with \" and \\ unescaped; 0 if the line is not a tag. */
+int  records_parse_tag(const char *line, char *key, size_t kn, char *val, size_t vn);
 /* "checkmate", "stalemate", "material", "fifty-move", "repetition", "resigned" */
 const char *records_end_reason(const char *result_text);
 int  records_append(const char *path, const GameState *g, const Player p[2],
