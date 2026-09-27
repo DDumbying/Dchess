@@ -80,9 +80,9 @@ int replay_open(TUIState *s, const char *path, long offset)
 
     Screen *sc = tui_screen_open(s);
     if (!sc) { free(g); s->replay = NULL; return 0; }
-    WINDOW *in = tui_screen_input(sc);
     int result = 0;
     for (;;) {
+        WINDOW *in = tui_screen_input(sc);   /* a resize replaces the window */
         tui_screen_paint(sc);
         wtimeout(in, s->replay_auto ? 1000 : -1);
         int ch = wgetch(in);
@@ -109,7 +109,7 @@ int replay_open(TUIState *s, const char *path, long offset)
         }
         if (result) break;
     }
-    wtimeout(in, 100);
+    wtimeout(tui_screen_input(sc), 100);
     tui_screen_close(sc);
     free(g);
     if (!result) s->replay = NULL;   /* play-from-here's tui_init cleared it */
