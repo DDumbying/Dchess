@@ -71,8 +71,10 @@ and the recent games — any of which opens as a replay.
 **Engine**
 - Bitboard board representation, full legal move generation (castling,
   en passant, promotion), perft-verified
-- Iterative-deepening alpha-beta with a transposition table, move ordering
-  (TT move, captures, killers, history) and quiescence search
+- Iterative-deepening principal-variation search with aspiration windows,
+  null-move pruning, late-move reductions and check extensions, a
+  transposition table, move ordering (TT move, captures, killers, history)
+  and quiescence search — Hard reaches about depth 12–13 in its 5 seconds
 - A tapered evaluation (material and piece-square tables, king safety that
   shifts toward the endgame)
 - A principal line and correct mate distances for analysis
@@ -113,7 +115,7 @@ OPTIONS
   -d, --difficulty <easy|medium|hard>
         easy   – depth 2, up to 1.5s  (quick, forgiving)
         medium – depth 5, up to 3s   (balanced)  [default]
-        hard   – depth 8, up to 5s   (challenging, slower)
+        hard   – as deep as it gets in 5s (challenging)
   -2, --two-player                Local two-player mode — no engine, board flips after each move
   --white <human|guest|profile|easy|medium|hard|engine>
   --black <human|guest|profile|easy|medium|hard|engine>

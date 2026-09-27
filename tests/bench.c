@@ -4,10 +4,12 @@
  * answer, so the number that matters is total nodes -- lower is better,
  * and the scores should stay put.
  *
- * Build & run:  make bench
+ * Build & run:  make bench   (make bench DEPTH=8, or ./build/bench 8 none for
+ * the search with every option off)
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include "engine/board.h"
 #include "engine/fen.h"
@@ -35,6 +37,11 @@ int main(int argc, char **argv)
 {
     int depth = argc > 1 ? atoi(argv[1]) : 6;
     init_attacks();
+    if (argc > 2 && !strcmp(argv[2], "none")) {   /* the plain search, for comparison */
+        SearchOptions none;
+        memset(&none, 0, sizeof(none));
+        search_set_options(&none);
+    }
 
     long total_nodes = 0;
     double total_ms = 0;
