@@ -7,6 +7,7 @@
 #include "tui/stats_tui.h"
 #include "engine/fen.h"
 #include "game/records.h"
+#include "game/statsview.h"
 #include "utils/cli.h"
 #include "utils/constants.h"
 #include "utils/dash.h"
@@ -193,7 +194,8 @@ static void draw_recent(TUIState *s, Launch *L, int h, int y)
     for (int i = 0; i < n; i++) {
         int mine_white = r[i]->white_kind == KIND_PROFILE && strcmp(r[i]->white, active_name(s)) == 0;
         int o = mine_white ? r[i]->result : -r[i]->result;
-        const char *opp = mine_white ? r[i]->black : r[i]->white;
+        char opp[PLAYER_NAME_MAX + 1];
+        stats_opponent_name(r[i], mine_white ? WHITE : BLACK, opp, sizeof(opp));
         char when[16];
         age(records_time(r[i]), when, sizeof(when));
         int pair = o > 0 ? CP_STATUS_OK : o < 0 ? CP_STATUS_ERR : CP_ACC_CLOCK;
