@@ -80,7 +80,10 @@ void cli_help(void)
         "    --profiles\n"
         "          List the profiles with their records and exit.\n"
         "\n"
-        "    --book <builtin|off|path.bin>\n"
+        "    --replay <file.pgn>\n"
+        "          Step through the games in a PGN file; pick one when there\n"
+        "          are several.\n"
+        "\n"        "    --book <builtin|off|path.bin>\n"
         "          Opening book for dchess's engine: the built-in one, none,\n"
         "          or a Polyglot .bin, for this run. The in-game 'book' command\n"
         "          sets the one remembered per profile.\n"
@@ -315,6 +318,17 @@ int cli_parse(int argc, char **argv, CliArgs *args)
         }
 
         /* --engines ─────────────────────────────────────────────────── */
+        if (strcmp(a, "--replay") == 0) {
+            if (i + 1 >= argc) {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Option '--replay' requires a PGN file");
+                args->error = 1;
+                return -1;
+            }
+            snprintf(args->replay, sizeof(args->replay), "%s", argv[++i]);
+            args->any_gameplay_flag = 1;
+            continue;
+        }
         if (strcmp(a, "--book") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),

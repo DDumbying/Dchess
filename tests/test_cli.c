@@ -122,6 +122,9 @@ static void test_profiles_cli(void)
     check("--book off", parse(&a, "--book off") == 0 && strcmp(a.book, "off") == 0);
     check("--book with a path", parse(&a, "--book /x.bin") == 0 && strcmp(a.book, "/x.bin") == 0);
     check("no --book leaves it empty", parse(&a, "") == 0 && a.book[0] == '\0');
+    check("--replay takes a file", parse(&a, "--replay /x.pgn") == 0 && strcmp(a.replay, "/x.pgn") == 0);
+    check("and skips the launcher", parse(&a, "--replay /x.pgn") == 0 && a.any_gameplay_flag);
+    check("--replay needs a file", parse(&a, "--replay") == -1 && a.error);
     check("--theme marks the theme as chosen", parse(&a, "--theme btop") == 0 && a.theme_set);
     check("otherwise it is not", parse(&a, "--white easy") == 0 && !a.theme_set);
     check("--white easy is still dchess", parse(&a, "--white easy") == 0 && engine(&a.players[WHITE], DIFF_EASY));

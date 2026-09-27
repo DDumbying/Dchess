@@ -32,11 +32,29 @@ int main(int argc, char **argv)
     }
 
     /* Normal game startup ───────────────────────────────────────────── */
+    static ReplayList games;
+    if (args.replay[0]) {
+        char err[256];
+        if (!replay_list(args.replay, &games, err, sizeof(err))) {
+            fprintf(stderr, "dchess: %s\n", err);
+            return 1;
+        }
+        if (!games.count) {
+            fprintf(stderr, "dchess: no games in %s\n", args.replay);
+            return 1;
+        }
+    }
+
     init_attacks();
 
     TUIState state;
     tui_init(&state, &args);
+    if (args.replay[0]) {
+        state.replay_list = &games;
+        snprintf(state.replay_path, sizeof(state.replay_path), "%s", args.replay);
+    }
     tui_run(&state);
+    replay_list_free(&games);
 
     return 0;
 }

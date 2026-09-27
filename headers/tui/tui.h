@@ -10,6 +10,7 @@
 #include <time.h>
 #include "game/players.h"
 #include "game/opponent.h"
+#include "game/replay.h"
 
 /* View and controller. The game itself lives in `game`, and the rules
  * logic belongs there, not here. */
@@ -64,6 +65,12 @@ typedef struct {
 
 
     int show_onboarding;
+    /* Replay mode: the game is shown at replay_ply of *replay. */
+    ReplayGame *replay;
+    int         replay_ply, replay_auto;
+    ReplayList *replay_list;             /* --replay: the file's games */
+    char        replay_path[512];
+
     int first_run;           /* no profiles.conf yet: the welcome creates it; 2 = unsaved */
 
     /* Index into the theme table; applied via init_colors(). */
@@ -74,5 +81,13 @@ typedef struct {
 void tui_init(TUIState *state, const CliArgs *args);
 void tui_run(TUIState *state);
 void tui_cleanup(void);
+
+/* The game screen, for modes that draw it outside tui_run(). */
+typedef struct Screen Screen;
+Screen *tui_screen_open(TUIState *state);
+void    tui_screen_paint(Screen *sc);
+void    tui_screen_resize(Screen *sc);
+WINDOW *tui_screen_input(Screen *sc);
+void    tui_screen_close(Screen *sc);
 
 #endif
