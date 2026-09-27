@@ -108,6 +108,9 @@ static void test_profiles_cli(void)
     check("--profile alice", parse(&a, "--profile alice") == 0 && strcmp(a.profile, "alice") == 0);
     check("an unknown --profile lists the profiles",
           parse(&a, "--profile bob") != 0 && strstr(a.error_msg, "saeed") && strstr(a.error_msg, "alice"));
+    check("--stats reads a --profile after it",
+          parse(&a, "--stats --profile alice") == 0 && a.show_stats && strcmp(a.profile, "alice") == 0);
+    check("--stats with an unknown profile is an error", parse(&a, "--stats --profile bob") != 0);
     check("--profiles asks for the list", parse(&a, "--profiles") == 0 && a.list_profiles);
     check("--white alice is that profile",
           parse(&a, "--white alice") == 0 && human(&a.players[WHITE]) &&

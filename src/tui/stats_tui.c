@@ -7,6 +7,7 @@
 #include "utils/dash.h"
 #include "utils/theme.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <wchar.h>
@@ -292,7 +293,15 @@ void stats_screen(TUIState *s)
 void stats_standalone(const char *profile)
 {
     ProfileList l;
-    if (!profiles_load(&l) || !l.count) {
+    if (!profiles_load(&l)) {
+        /* First run happens here too, so an upgrade shows its old games. */
+        DchessStats old;
+        char games[512];
+        stats_load(&old);
+        records_path(games, sizeof(games));
+        profiles_first_run(&l, getenv("USER"), &old, games);
+    }
+    if (!l.count) {
         printf("No profiles yet. Play a game first.\n");
         return;
     }

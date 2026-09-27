@@ -310,8 +310,8 @@ int cli_parse(int argc, char **argv, CliArgs *args)
 
         /* --stats / -s ─────────────────────────────────────────────── */
         if (strcmp(a, "--stats") == 0 || strcmp(a, "-s") == 0) {
-            args->show_stats = 1;
-            return 0;
+            args->show_stats = 1;   /* keeps parsing: --profile may follow */
+            continue;
         }
 
         /* --engines ─────────────────────────────────────────────────── */
