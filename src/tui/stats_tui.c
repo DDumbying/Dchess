@@ -253,6 +253,7 @@ static void draw(Page *pg)
     attron(COLOR_PAIR(pg->msg[0] ? CP_STATUS_ERR : CP_HINT));
     mvw_fit(stdscr, rows - 1, 1, cols - 2, pg->msg[0] ? pg->msg
             : pg->focus == FOCUS_RECENT && pg->can_replay ? "←→ profile  tab panel  ↑↓ move  ⏎ replay  esc back"
+            : pg->focus == FOCUS_RECENT ? "←→ profile  tab panel  ↑↓ move  esc back"
             : "←→ profile  tab panel  ↑↓ scroll  esc back");
     attroff(COLOR_PAIR(pg->msg[0] ? CP_STATUS_ERR : CP_HINT));
     refresh();

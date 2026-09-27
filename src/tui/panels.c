@@ -363,7 +363,7 @@ void draw_command_bar(WINDOW *cmd, const TUIState *state)
         const char *keys = state->replay_auto ? "space pause  esc back"
                          : "←→ step  home/end  space auto  p play  esc back";
         int kw = text_width(keys), sw = w - 4 - kw - 2;
-        if (state->status[0] && sw <= 8) {       /* no room for both: the message wins */
+        if (state->status[0] && text_width(state->status) > sw) {   /* no room for both: the message wins */
             wattron(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);
             mvw_fit(cmd, 2, 2, w - 4, state->status);
             wattroff(cmd, COLOR_PAIR(CP_STATUS_ERR) | A_BOLD);

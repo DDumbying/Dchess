@@ -190,7 +190,7 @@ static void draw_profiles(TUIState *s, Launch *L, int h, int y, int x)
 static void draw_game(TUIState *s, Launch *L, int h, int w, int y, int x, int small)
 {
     char title[64];
-    if (small) snprintf(title, sizeof(title), "new game · %s", active_name(s));
+    if (small && active_name(s)[0]) snprintf(title, sizeof(title), "new game · %s", active_name(s));
     else       snprintf(title, sizeof(title), "new game");
     WINDOW *p = panel(h, w, y, x, title, L->focus == FOCUS_GAME);
     if (!p) return;
@@ -375,13 +375,16 @@ static void draw(TUIState *s, Launch *L)
 static int prompt(const char *label, char *buf, size_t size)
 {
     int row = msg_row >= 0 ? msg_row : getmaxy(stdscr) - 2;
-    int len = (int)strlen(buf), col = msg_col + (int)strlen(label);
+    int len = (int)strlen(buf);
     curs_set(1);
     for (;;) {
+        /* Beside the block while it fits, else from the left edge. */
+        int x = msg_col + (int)strlen(label) + text_width(buf) + 2 > getmaxx(stdscr) ? 2 : msg_col;
+        int col = x + (int)strlen(label);
         move(row, 0);
         clrtoeol();
         attron(COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
-        mvprintw(row, msg_col, "%s", label);
+        mvprintw(row, x, "%s", label);
         attroff(COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
         mvprintw(row, col, "%s", buf);
         refresh();

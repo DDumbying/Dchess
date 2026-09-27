@@ -98,7 +98,7 @@ OPTIONS
                                    even if other flags were given
   --no-menu                       Skip the launcher and start immediately (classic instant-start)
   --theme <name>                  Color theme: gruvbox | tokyonight | btop | catppuccin
-                                   (default: classic)
+                                   (default: gruvbox)
   -s, --stats                     Show statistics in a full TUI screen and exit
   --replay <file.pgn>             Step through the games in a PGN file
   -V, --version                   Print version and exit
@@ -193,7 +193,7 @@ loadfen <FEN>
             load a custom position mid-game
 theme <name>
             switch color theme: gruvbox | tokyonight | btop | catppuccin
-st          open the full stats screen
+stats       open the full stats screen
 help        list in-game commands
 quit / q    exit
 ```

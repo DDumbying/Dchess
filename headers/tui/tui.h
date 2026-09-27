@@ -69,8 +69,8 @@ typedef struct {
     ReplayGame *replay;
     int         replay_ply, replay_auto;
     ReplayList *replay_list;             /* --replay: the file's games */
-    int         stats_only;
-    int         human_active[2];         /* this side is the active profile */              /* --stats: the stats page, not the launcher */
+    int         stats_only;              /* --stats: the stats page, not the launcher */
+    int         human_active[2];         /* this side is the active profile */
     char        replay_path[512];
 
     int first_run;           /* no profiles.conf yet: the welcome creates it; 2 = unsaved */
