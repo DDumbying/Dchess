@@ -25,7 +25,8 @@ typedef struct {
 SearchResult search(Position *pos, int max_depth, int time_limit_ms);
 
 /* The search's techniques, each switchable so their worth can be measured
- * (tools/match.c). Set before a search starts; the defaults are all on. */
+ * (tools/match.c). Set before a search starts; the defaults are the ones
+ * that measured as gains (all but tt_depth). */
 typedef struct { int pvs, aspiration, null_move, lmr, check_ext, tt_depth; } SearchOptions;
 SearchOptions search_default_options(void);
 void search_set_options(const SearchOptions *o);

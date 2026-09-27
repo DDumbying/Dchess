@@ -3,8 +3,8 @@
  *
  *   make match ARGS="--base none --cand pvs --games 80 --ms 50"
  *
- * Options are a comma list starting from all or none: pvs, asp, nmp, lmr,
- * ext, tt; "-name" turns one off. Every opening is played twice, colours
+ * Options are a comma list starting from all (the defaults) or none: pvs,
+ * asp, nmp, lmr, ext, tt; "-name" turns one off. Every opening is played twice, colours
  * swapped. The result is the candidate's score and the Elo difference with
  * a 95% error. */
 #include <math.h>

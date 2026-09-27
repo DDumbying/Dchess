@@ -129,9 +129,10 @@ typedef struct {
 
 static TTEntry *tt = NULL;
 
-static SearchOptions opt = { 1, 1, 1, 1, 1, 1 };
+/* tt_depth is off: it did not measure as a gain (see docs/overview.md). */
+static SearchOptions opt = { 1, 1, 1, 1, 1, 0 };
 
-SearchOptions search_default_options(void) { SearchOptions o = { 1, 1, 1, 1, 1, 1 }; return o; }
+SearchOptions search_default_options(void) { SearchOptions o = { 1, 1, 1, 1, 1, 0 }; return o; }
 void search_set_options(const SearchOptions *o) { opt = *o; }
 
 static void tt_ensure(void) {
@@ -330,7 +331,10 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
     TTEntry *hit = tt_probe(key);
     if (hit) {
         tt_move = hit->best;
-        if (hit->depth >= depth) {
+        /* On the principal line the search itself must run, or the line
+         * it reports would stop at the first table hit. */
+        int pv_node = beta - alpha > 1;
+        if (hit->depth >= depth && !(opt.tt_depth && pv_node)) {
             int hs = tt_score(hit, ply);
             if (hit->flag == TT_EXACT) return hs;
             if (hit->flag == TT_ALPHA && hs <= alpha) return alpha;
