@@ -287,7 +287,7 @@ void tui_init(TUIState *state, const CliArgs *args)
     char games[512];
     records_path(games, sizeof(games));
     if (!profiles_load(&state->profiles))
-        profiles_first_run(&state->profiles, getenv("USER"), &old, games);
+        profiles_first_run(&state->profiles, getenv("USER"), &old, games, NULL);
     state->file_active = state->profiles.active;
     if (args && args->profile[0]) {
         int i = profiles_find(&state->profiles, args->profile);

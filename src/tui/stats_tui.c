@@ -304,7 +304,7 @@ void stats_standalone(const char *profile)
         char games[512];
         stats_load(&old);
         records_path(games, sizeof(games));
-        profiles_first_run(&l, getenv("USER"), &old, games);
+        profiles_first_run(&l, getenv("USER"), &old, games, NULL);
     }
     if (!l.count) {
         printf("No profiles yet. Play a game first.\n");
