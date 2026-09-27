@@ -4,6 +4,8 @@
 #include "game/timectl.h"
 #include "engine/move.h"
 #include "engine/search.h"
+#include "engine/make.h"
+#include "engine/movegen.h"
 #include "utils/cli.h"
 #include "utils/constants.h"
 #include "utils/stats.h"
@@ -65,8 +67,17 @@ static void *search_thread(void *arg)
     pthread_mutex_lock(&job.lock);
     while (job.infinite && !job.stopped) pthread_cond_wait(&job.wake, &job.lock);
     pthread_mutex_unlock(&job.lock);
+    Move best = r.best_move;
+    if (!best) {                       /* stopped inside depth 1: any legal move beats none */
+        MoveList ml;
+        generate_moves(&job.pos, &ml);
+        for (int i = 0; i < ml.count && !best; i++) {
+            Position t = job.pos;
+            if (make_move(&t, ml.moves[i])) best = ml.moves[i];
+        }
+    }
     char mv[8] = "0000";
-    if (r.best_move) move_to_str(r.best_move, mv);
+    if (best) move_to_str(best, mv);
     say("bestmove %s", mv);
     pthread_mutex_lock(&job.lock);
     job.done = 1;
@@ -131,11 +142,17 @@ static void go(GameState *g, const char *args, Book *book, int own_book, unsigne
     long depth = field(args, "depth "), movetime = field(args, "movetime ");
     long left = field(args, side == WHITE ? "wtime " : "btime ");
     long inc  = field(args, side == WHITE ? "winc " : "binc ");
+    if (left < 0) {                    /* only the other clock: use that one */
+        left = field(args, side == WHITE ? "btime " : "wtime ");
+        inc  = field(args, side == WHITE ? "binc " : "winc ");
+    }
+    const char *rest = args + strspn(args, " \t");
     job.depth = depth > 0 ? (int)depth : MAX_DEPTH;
+    job.infinite = strstr(args, "infinite") != NULL || !*rest;
     job.ms = 0;
-    if (movetime > 0)   job.ms = movetime > 30 ? (int)movetime - 20 : 10;
-    else if (left >= 0) job.ms = tc_budget_ms(left, inc > 0 ? (int)inc : 0);
-    job.infinite = strstr(args, "infinite") != NULL || (depth <= 0 && movetime <= 0 && left < 0);
+    if (movetime > 0)        job.ms = movetime > 30 ? (int)movetime - 20 : 10;
+    else if (left >= 0)      job.ms = tc_budget_ms(left, inc > 0 ? (int)inc : 0);
+    else if (!job.infinite && depth <= 0) job.ms = 1000;   /* nodes, mate, …: a second */
     job.stopped = job.done = 0;
     job.pos = g->pos;
     job.running = pthread_create(&job.thread, NULL, search_thread, NULL) == 0;

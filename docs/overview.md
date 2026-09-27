@@ -607,9 +607,10 @@ not lose (80 games at 50 ms):
 | bishop pair, rooks on open files | 50.0%, 0 | 48.1%, −13 | no |
 
 PeSTO's published tables (tapered for every piece) were the clear win.
-King safety helped on its own. Pawn structure, mobility and the extras,
-with weights set by hand, did not — mobility clearly cost more in search
-speed than it gave. They stay in the code, switched off; tuning their
+King safety was kept: it did not lose on its own (53.8%, within the error
+of equal), though a gain is not shown. Pawn structure, mobility and the
+extras, with weights set by hand, did not earn their place — mobility lost
+clearly, most likely because it makes the evaluation about 60% slower. They stay in the code, switched off; tuning their
 weights automatically (e.g. Texel tuning) is the obvious next step.
 
 **UCI engine mode.** `dchess --uci` — or dchess started through pipes with
@@ -628,8 +629,8 @@ through the client dchess already had. Against Stockfish 18 with
 | before (new search, old evaluation) | 89.2%, +366 | 80.0%, +241 | 63.3%, +95 | — |
 | after (PeSTO + king safety) | — | — | 66.7%, +120 | 41.7%, −58 |
 
-The anchors nearest 50% put dchess at about 2400 before and 2450–2550
-after. Sixty games give an error of roughly ±80 Elo, so the before/after
+The anchors nearest 50% put dchess at about 2400 before and 2400–2550
+after (≈2420 against the 2300 anchor, ≈2540 against 2600). Sixty games give an error of roughly ±80 Elo, so the before/after
 gap is clearer in the self-play numbers above (+75 and +26) than here.
 
 Stockfish calibrates `UCI_Elo` at much longer time controls, so these are

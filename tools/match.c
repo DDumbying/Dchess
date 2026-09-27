@@ -87,7 +87,7 @@ static Move vs_move(const GameState *g)
     if (!opponent_start(vs, g)) return 0;
     while (!opponent_poll(vs, &r, &key)) nanosleep(&nap, NULL);
     const char *err = opponent_error(vs);
-    if (err && err[0]) { fprintf(stderr, "\nopponent: %s\n", err); return 0; }
+    if (err && err[0]) { fprintf(stderr, "\n%s\n", err); return 0; }
     return r.best_move;
 }
 
@@ -114,6 +114,11 @@ static int play_game(int opening, int cand_side, const Opts *base, const Opts *c
             search_clear();
             Position p = g.pos;
             m = search(&p, MAX_DEPTH, ms).best_move;
+        }
+        if (!m && vs && g.pos.side != cand_side) {
+            /* A broken opponent is no draw: stop rather than skew the score. */
+            fprintf(stderr, "the opponent failed; the match is abandoned\n");
+            exit(1);
         }
         if (!m) break;
         game_play(&g, m);
@@ -146,7 +151,7 @@ int main(int argc, char **argv)
     if (vs_path) {
         EngineEntry e;
         memset(&e, 0, sizeof(e));
-        snprintf(e.name, sizeof(e.name), "opponent");
+        snprintf(e.name, sizeof(e.name), "%s", strrchr(vs_path, '/') ? strrchr(vs_path, '/') + 1 : vs_path);
         snprintf(e.path, sizeof(e.path), "%s", vs_path);
         e.limit_ms = vs_ms > 0 ? vs_ms : ms;
         e.elo = vs_elo;

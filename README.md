@@ -83,7 +83,7 @@ and the recent games — any of which opens as a replay.
   `stop` takes its best move so far
 - A UCI engine too: `dchess --uci` (or dchess started through pipes, as GUIs
   do) plays in Arena, Cute Chess, BanksiaGUI and friends — and measures at
-  roughly 2450–2550 against a strength-limited Stockfish at 100 ms a move
+  roughly 2400–2550 against a strength-limited Stockfish at 100 ms a move
 
 **Interface**
 - ncurses with Unicode pieces, scaled to the terminal

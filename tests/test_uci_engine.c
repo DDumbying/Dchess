@@ -134,6 +134,16 @@ int main(void)
     send("go wtime 0 btime 60000");
     check("no time left still gives a move", expect("bestmove", 1500, NULL, 0));
 
+    send("position startpos moves e2e4");
+    send("go wtime 60000");
+    check("only the other side's clock still gives a move", expect("bestmove", 2500, line, sizeof(line)) &&
+                                                            strcmp(line, "bestmove 0000"));
+    send("position fen 6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1");
+    send("go nodes 20000");
+    check("go nodes answers", expect("bestmove", 2500, NULL, 0));
+    send("go mate 1");
+    check("go mate answers", expect("bestmove a1a8", 2500, NULL, 0));
+
     send("quit");
     pthread_join(th, NULL);
     check("quit ends the engine", 1);
