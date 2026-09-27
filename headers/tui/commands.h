@@ -37,6 +37,8 @@ void tui_remember_setup(TUIState *state);
 /* Analysis: starts, polls and restarts the analyser for the position
  * shown. Call once per loop pass. */
 void tui_analysis_tick(TUIState *state);
+/* Ends the game when the side to move has run out of time. */
+void tui_check_flag(TUIState *state);
 void tui_analysis_toggle(TUIState *state);
 void tui_analysis_free(TUIState *state);
 

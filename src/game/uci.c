@@ -205,6 +205,9 @@ typedef struct {
 
     UciState     state;
     long         deadline_ms;
+    char         go[96];
+    long         search_limit_ms;   /* timed games: stop after this long */
+    int          stop_sent;
     int          elo_supported, elo_min, elo_max;
 
     int          busy;         /* from start until the poll that returns */
@@ -280,14 +283,23 @@ static int say(Uci *u, const char *s)
     return 1;
 }
 
+void uci_go_command(const EngineEntry *e, const GameState *g, char *buf, size_t n)
+{
+    if (tc_timed(&g->tc))
+        snprintf(buf, n, "go wtime %ld btime %ld winc %d binc %d",
+                 game_time_left(g, WHITE), game_time_left(g, BLACK), g->tc.inc_ms[WHITE], g->tc.inc_ms[BLACK]);
+    else if (e->limit_depth)
+        snprintf(buf, n, "go depth %d", e->limit_depth);
+    else
+        snprintf(buf, n, "go movetime %d", e->limit_ms);
+}
+
 static void send_search(Uci *u)
 {
-    char go[48];
     if (u->fresh && !say(u, "ucinewgame")) return;
     if (!say(u, u->command)) return;
-    if (u->entry.limit_depth) snprintf(go, sizeof(go), "go depth %d", u->entry.limit_depth);
-    else                      snprintf(go, sizeof(go), "go movetime %d", u->entry.limit_ms);
-    if (!say(u, go)) return;
+    if (!say(u, u->go)) return;
+    u->stop_sent = 0;
     u->state = U_SEARCHING;
     u->pending = 0;
     u->searched = 1;
@@ -453,6 +465,11 @@ static void check_deadline(Uci *u)
 {
     if ((u->state == U_WAIT_UCIOK || u->state == U_WAIT_READY) && now_ms() > u->deadline_ms)
         fail(u, "no reply from engine");
+    if (u->state == U_SEARCHING && u->search_limit_ms && !u->stop_sent &&
+        now_ms() - u->started_ms > u->search_limit_ms) {
+        u->stop_sent = 1;
+        say(u, "stop");
+    }
 }
 
 static void launch(Uci *u)
@@ -486,6 +503,12 @@ static int uci_start(Opponent *o, const GameState *g)
     u->pos = g->pos;
     u->key = game_hash(g);
     uci_position_command(g, u->command, sizeof(u->command));
+    int clock = tc_timed(&g->tc) && !u->base.fixed_time;
+    if (clock) uci_go_command(&u->entry, g, u->go, sizeof(u->go));
+    else if (u->entry.limit_depth) snprintf(u->go, sizeof(u->go), "go depth %d", u->entry.limit_depth);
+    else snprintf(u->go, sizeof(u->go), "go movetime %d", u->entry.limit_ms);
+    /* A timed engine that overruns its own clock is told to stop. */
+    u->search_limit_ms = clock ? game_time_left(g, g->pos.side) + 1000 : 0;
     u->fresh = !u->searched || g->move_count < u->last_count ||
                strcmp(g->start_fen, u->last_fen) != 0;
     u->last_count = g->move_count;

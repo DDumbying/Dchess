@@ -1,4 +1,5 @@
 #include "utils/cli.h"
+#include "game/timectl.h"
 #include "utils/stats.h"
 #include "utils/constants.h"
 #include "engine/board.h"
@@ -81,6 +82,10 @@ void cli_help(void)
         "\n"
         "    --profiles\n"
         "          List the profiles with their records and exit.\n"
+        "\n"
+        "    --clock <M+S>\n"
+        "          Time control for this run: minutes + seconds of increment,\n"
+        "          e.g. 5+3, 0.5+0, or 5+0/1+0 for White/Black odds.\n"
         "\n"
         "    --replay <file.pgn>\n"
         "          Step through the games in a PGN file; pick one when there\n"
@@ -329,6 +334,17 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             continue;
         }
 
+        if (strcmp(a, "--clock") == 0) {
+            TimeControl tc;
+            if (i + 1 >= argc || !tc_parse(argv[i + 1], &tc)) {
+                snprintf(args->error_msg, sizeof(args->error_msg),
+                         "Option '--clock' needs minutes+seconds, e.g. 5+3 or 5+0/1+0");
+                args->error = 1;
+                return -1;
+            }
+            snprintf(args->clock, sizeof(args->clock), "%s", argv[++i]);
+            continue;
+        }
         if (strcmp(a, "--replay") == 0) {
             if (i + 1 >= argc) {
                 snprintf(args->error_msg, sizeof(args->error_msg),

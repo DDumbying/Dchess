@@ -22,6 +22,7 @@ static Analyser *wrap(Opponent *o, int builtin)
     if (!a) { opponent_free(o); return NULL; }
     a->o = o;
     a->builtin = builtin;
+    opponent_set_fixed_time(o, 1);   /* analysis thinks per position, not by the clock */
     return a;
 }
 

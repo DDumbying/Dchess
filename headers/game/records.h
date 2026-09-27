@@ -15,6 +15,7 @@ typedef struct {
     int      result;          /* 1 white won, 0 draw, -1 black won */
     char     end_reason[16];
     char     eco[4], opening[64];
+    char     tc[24];          /* "5+3", "5+0/1+0"; "" = untimed */
     int      plies, seconds, legacy;
     long     offset;          /* of the game's first tag line in the file */
 } Record;

@@ -150,6 +150,8 @@ static void test_profiles_cli(void)
     check("--book off", parse(&a, "--book off") == 0 && strcmp(a.book, "off") == 0);
     check("--book with a path", parse(&a, "--book /x.bin") == 0 && strcmp(a.book, "/x.bin") == 0);
     check("no --book leaves it empty", parse(&a, "") == 0 && a.book[0] == '\0');
+    check("--clock takes a time control", parse(&a, "--clock 5+3") == 0 && !strcmp(a.clock, "5+3"));
+    check("a bad --clock is an error", parse(&a, "--clock x") == -1 && a.error);
     check("--replay takes a file", parse(&a, "--replay /x.pgn") == 0 && strcmp(a.replay, "/x.pgn") == 0);
     check("and skips the launcher", parse(&a, "--replay /x.pgn") == 0 && a.any_gameplay_flag);
     check("--replay needs a file", parse(&a, "--replay") == -1 && a.error);

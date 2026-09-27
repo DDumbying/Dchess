@@ -19,6 +19,7 @@ typedef struct {
     int theme_set;      /* --theme was given */
     char book[256];     /* --book: builtin, off or a .bin path; empty = the profile's */
     char replay[512];   /* --replay: a PGN file to step through */
+    char clock[32];     /* --clock: a time control for this run, e.g. 5+3 */
     int human_active[2];   /* this side is the active profile, resolved at startup */
     int show_help;      /* --help flag     */
     char fen[128];       /* --fen <string>: custom starting position, empty = standard start */

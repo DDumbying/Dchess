@@ -40,22 +40,88 @@ static int times_repeated(const GameState *g)
     return seen;
 }
 
-/* Returns the seconds charged, for the log. */
+static long mono_ms(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000L + t.tv_nsec / 1000000L;
+}
+
+static long (*time_source)(void) = mono_ms;
+
+long game_now_ms(void)                        { return time_source(); }
+void game_set_time_source(long (*fn)(void))  { time_source = fn ? fn : mono_ms; }
+
+static long running_ms(const GameState *g)
+{
+    if (!g->clock_started || g->game_over) return 0;
+    long r = (g->clock_paused ? g->paused_at_ms : game_now_ms()) - g->turn_start_ms;
+    return r > 0 ? r : 0;
+}
+
+static void sync_seconds(GameState *g)
+{
+    g->white_clock = (int)(g->spent_ms[WHITE] / 1000);
+    g->black_clock = (int)(g->spent_ms[BLACK] / 1000);
+}
+
+static void start_turn(GameState *g)
+{
+    g->turn_start_ms = game_now_ms();
+    if (g->clock_paused) g->paused_at_ms = g->turn_start_ms;
+}
+
+/* Returns the milliseconds charged, for the log. */
 static int charge_clock(GameState *g)
 {
-    time_t now = time(NULL);
-    int elapsed = 0;
-
-    if (g->clock_started) {
-        elapsed = (int)(now - g->turn_start);
-        if (g->pos.side == WHITE) g->white_clock += elapsed;
-        else                      g->black_clock += elapsed;
-    }
+    long elapsed = running_ms(g);
+    g->spent_ms[g->pos.side] += elapsed;
+    g->moves_by[g->pos.side]++;
+    sync_seconds(g);
     g->clock_started = 1;
-    g->turn_start    = now;
-    clock_gettime(CLOCK_MONOTONIC, &g->turn_start_mono);
+    start_turn(g);
+    return (int)elapsed;
+}
 
-    return elapsed;
+long game_time_spent(const GameState *g, int side)
+{
+    return g->spent_ms[side] + (side == g->pos.side ? running_ms(g) : 0);
+}
+
+long game_time_left(const GameState *g, int side)
+{
+    return g->tc.base_ms[side] + (long)g->tc.inc_ms[side] * g->moves_by[side]
+         - game_time_spent(g, side);
+}
+
+void game_clock_pause(GameState *g)
+{
+    if (g->clock_paused) return;
+    g->clock_paused = 1;
+    g->paused_at_ms = game_now_ms();
+}
+
+void game_clock_resume(GameState *g)
+{
+    if (!g->clock_paused) return;
+    g->turn_start_ms += game_now_ms() - g->paused_at_ms;
+    g->clock_paused = 0;
+}
+
+static void reset_clocks(GameState *g)
+{
+    memset(g->spent_ms, 0, sizeof(g->spent_ms));
+    memset(g->moves_by, 0, sizeof(g->moves_by));
+    g->clock_started = 0;
+    g->clock_paused  = 0;
+    sync_seconds(g);
+}
+
+void game_set_time_control(GameState *g, const TimeControl *tc)
+{
+    g->tc = *tc;
+    reset_clocks(g);
+    start_turn(g);
 }
 
 /* Must be evaluated BEFORE the move is made. */
@@ -94,13 +160,9 @@ static void clear_progress(GameState *g, int keep_clocks)
     g->game_over         = 0;
     g->result[0]         = '\0';
 
-    if (!keep_clocks) {
-        g->white_clock   = 0;
-        g->black_clock   = 0;
-        g->clock_started = 0;
-    }
-    g->turn_start = time(NULL);
-    clock_gettime(CLOCK_MONOTONIC, &g->turn_start_mono);
+    /* A timed game always starts fresh: a new position is a new game. */
+    if (!keep_clocks || tc_timed(&g->tc)) reset_clocks(g);
+    start_turn(g);
 }
 
 /* Public API  */
@@ -282,11 +344,11 @@ int game_undo(GameState *g)
 
     /* Before restoring: the snapshot says whose time to refund. */
     if (g->move_count > 0) {
-        int spent = g->move_time[g->move_count - 1];
-        if (u->pos.side == WHITE) g->white_clock -= spent;
-        else                      g->black_clock -= spent;
-        if (g->white_clock < 0) g->white_clock = 0;
-        if (g->black_clock < 0) g->black_clock = 0;
+        int side = u->pos.side;
+        g->spent_ms[side] -= g->move_time[g->move_count - 1];
+        if (g->spent_ms[side] < 0) g->spent_ms[side] = 0;
+        if (g->moves_by[side] > 0) g->moves_by[side]--;
+        sync_seconds(g);
     }
 
     g->pos            = u->pos;
@@ -304,8 +366,8 @@ int game_undo(GameState *g)
     g->result[0] = '\0';
 
     g->clock_side = g->pos.side;
-    g->turn_start = time(NULL);
-    clock_gettime(CLOCK_MONOTONIC, &g->turn_start_mono);
+    if (g->undo_count == 0) g->clock_started = 0;   /* back before move 1 */
+    start_turn(g);
 
     return 1;
 }
@@ -326,5 +388,30 @@ int game_last_move(const GameState *g, Move *m)
 {
     if (g->move_count <= g->log_start) return 0;
     *m = g->move_made[g->move_count - 1];
+    return 1;
+}
+
+/* The winner cannot mate with a lone king or a king and one minor piece. */
+static int cannot_mate(const Position *pos, int side)
+{
+    int o = side == WHITE ? 0 : 6;    /* P..K, then p..k */
+    if (pos->bitboards[P + o] | pos->bitboards[R + o] | pos->bitboards[Q + o]) return 0;
+    return count_bits(pos->bitboards[N + o]) + count_bits(pos->bitboards[B + o]) <= 1;
+}
+
+int game_check_flag(GameState *g)
+{
+    if (!tc_timed(&g->tc) || g->game_over || !g->clock_started) return 0;
+    int side = g->pos.side;
+    if (game_time_left(g, side) > 0) return 0;
+    /* Stop the clock at exactly zero. */
+    g->spent_ms[side] = g->tc.base_ms[side] + (long)g->tc.inc_ms[side] * g->moves_by[side];
+    sync_seconds(g);
+    g->game_over = 1;
+    if (cannot_mate(&g->pos, !side))
+        snprintf(g->result, sizeof(g->result), "Time out, insufficient material — Draw!");
+    else
+        snprintf(g->result, sizeof(g->result), "%s loses on time — %s wins!",
+                 side == WHITE ? "White" : "Black", side == WHITE ? "Black" : "White");
     return 1;
 }

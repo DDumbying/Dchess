@@ -4,6 +4,7 @@
 #include "engine/board.h"
 #include "engine/move.h"
 #include "engine/fen.h"
+#include "game/timectl.h"
 #include <time.h>
 
 /* The played game: position, move log, clocks and draw bookkeeping.
@@ -34,7 +35,7 @@ typedef struct {
     char move_history[MAX_MOVE_HISTORY][8];  /* SAN: "e4", "Nxd5", "O-O" */
     Move move_made[MAX_MOVE_HISTORY];        /* the move itself */
     int  move_piece[MAX_MOVE_HISTORY];       /* piece index 0-11 that moved */
-    int  move_time[MAX_MOVE_HISTORY];        /* seconds spent on that move */
+    int  move_time[MAX_MOVE_HISTORY];        /* milliseconds spent on that move */
     int  move_count;                         /* half-moves played */
     int  log_start;                          /* first ply actually logged; a
                                                 FEN starting mid-game has
@@ -45,13 +46,17 @@ typedef struct {
     U64  repetition[GAME_REPETITION_WINDOW]; /* ring of recent position hashes */
     int  position_count;                     /* positions recorded, monotonic */
 
-    /* Clocks: total seconds spent by each side */
+    /* Clocks. white_clock/black_clock are whole seconds of spent_ms. */
+    TimeControl     tc;              /* untimed unless set */
+    long            spent_ms[2];
+    int             moves_by[2];     /* each side's moves, for increments */
     int             white_clock;
     int             black_clock;
-    time_t          turn_start;      /* when the current turn began */
-    struct timespec turn_start_mono; /* high-res start, for centiseconds */
+    long            turn_start_ms;   /* game_now_ms() when the turn began */
     int             clock_started;   /* clocks don't tick before move 1 */
     int             clock_side;      /* side whose clock is ticking */
+    int             clock_paused;
+    long            paused_at_ms;
 
     /* Outcome. result is non-empty exactly when game_over is set. */
     int  game_over;
@@ -73,8 +78,21 @@ typedef struct {
 
 void game_reset(GameState *g);
 
-/* Returns 0 and leaves `g` untouched on a malformed FEN. Keeps the clocks
- * running. */
+/* Clocks. The time source is monotonic ms; tests may replace it (NULL
+ * restores the real one). */
+long game_now_ms(void);
+void game_set_time_source(long (*fn)(void));
+/* Sets the control and restarts both clocks. */
+void game_set_time_control(GameState *g, const TimeControl *tc);
+long game_time_left(const GameState *g, int side);
+long game_time_spent(const GameState *g, int side);
+void game_clock_pause(GameState *g);
+void game_clock_resume(GameState *g);
+/* Ends the game when the side to move has run out; 1 when it just did. */
+int  game_check_flag(GameState *g);
+
+/* Returns 0 and leaves `g` untouched on a malformed FEN. An untimed game
+ * keeps its clocks running; a timed one starts them afresh. */
 int game_load_fen(GameState *g, const char *fen);
 
 /* `promo` is a FLAG_PROMO_* flag, or 0 for "queen if this is a promotion

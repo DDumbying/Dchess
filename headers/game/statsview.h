@@ -14,6 +14,8 @@ typedef struct {
     long last;                        /* records_time of the latest game; 0 if none */
 } SvOpponent;
 
+typedef struct { const char *name; int games, wins, draws, losses; } SvTc;
+
 /* Everything the stats page shows for one profile. */
 typedef struct {
     RecordTally total;                   /* includes the legacy line */
@@ -23,7 +25,8 @@ typedef struct {
     int   best_win_streak;
     int   per_week[4];                   /* [0] = the last 7 days, then older weeks */
     SvOpponent opp[SV_OPP_MAX]; int opp_count;   /* by games, most first */
-    int   mates, resigns, stalemates, repetitions, fifty, material;
+    int   mates, resigns, stalemates, repetitions, fifty, material, timeouts;
+    SvTc  by_tc[5];                      /* bullet, blitz, rapid, classical, untimed */
     int   avg_plies, avg_seconds;        /* recorded games only */
     const Record *recent[256]; int recent_count; /* newest first; points into the list */
 } StatsView;
