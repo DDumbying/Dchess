@@ -249,6 +249,15 @@ screen and pick it for a side.
 against another engine at a set strength — see the journal for the
 results.
 
+The evaluation's weights are tuned from games, not set by hand:
+`make genfens` has Stockfish play itself (5000 games, about half an hour on
+14 cores) and keeps the quiet positions with each game's result;
+`make tune ARGS="--terms pesto,king,mob"` then fits the weights of those
+terms to the results and writes `build/tuned_params.h`, plus a `.txt` copy
+for `make match ARGS="--cand all --cand-params build/tuned_params.h.txt"`.
+If the match says the new weights do not lose, copy the header over
+`src/engine/tuned_params.h`.
+
 ## Troubleshooting
 
 - **The pieces look wrong or misaligned.** The board uses the Unicode chess

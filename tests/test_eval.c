@@ -196,28 +196,38 @@ static void test_mirror_symmetry(void)
     };
     EvalOptions all = { 1, 1, 1, 1, 1 };
     eval_set_options(&all);
+    EvalParams saved = *eval_params();
+    const EvalParams *sets[] = { eval_default_params(), eval_tuned_params() };
     int ok = 1;
-    for (size_t i = 0; i < sizeof(fens) / sizeof(fens[0]); i++) {
-        char m[160];
-        mirror_fen(fens[i], m, sizeof(m));
-        int a = eval_fen(fens[i]), b = eval_fen(m);
-        if (a != b) { ok = 0; printf("    %d vs %d: %s\n", a, b, fens[i]); }
+    for (int k = 0; k < 2; k++) {
+        eval_set_params(sets[k]);
+        for (size_t i = 0; i < sizeof(fens) / sizeof(fens[0]); i++) {
+            char m[160];
+            mirror_fen(fens[i], m, sizeof(m));
+            int a = eval_fen(fens[i]), b = eval_fen(m);
+            if (a != b) { ok = 0; printf("    %d vs %d: %s\n", a, b, fens[i]); }
+        }
     }
-    check("a position and its mirror score the same", ok);
+    eval_set_params(&saved);
+    check("a position and its mirror score the same, either weights", ok);
     EvalOptions none = { 0 };
     eval_set_options(&none);
 }
 
-/* What one term adds to White's side of the score. */
+/* What one term adds to White's side of the score, with the hand-set weights. */
 static int term(const char *fen, int which)
 {
     EvalOptions o = { 0 }, none = { 0 };
     int *f[] = { &o.pesto, &o.pawns, &o.mobility, &o.king, &o.extras };
     *f[which] = 1;
+    EvalParams saved = *eval_params();
+    eval_set_params(eval_default_params());
     eval_set_options(&o);
     int with = eval_fen(fen);
     eval_set_options(&none);
-    return with - eval_fen(fen);
+    int without = eval_fen(fen);
+    eval_set_params(&saved);
+    return with - without;
 }
 
 static void test_terms(void)
@@ -238,9 +248,47 @@ static void test_terms(void)
                                                      term("k7/8/8/8/8/8/8/R6K w - - 0 1", PESTO) - 1000);
 }
 
+static void test_params_unchanged(void)
+{
+    printf("== the parameter table ==\n");
+    static const char *f[] = {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        "r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP2BPPP/R2QKB1R w KQ - 0 8",
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        "2r2rk1/pp3ppp/2n5/3p4/3P4/2PB1N2/P4PPP/R4RK1 b - - 0 1",
+        "8/5pk1/6p1/1PP5/8/6P1/5PK1/8 w - - 0 1",
+        "r1b2rk1/ppq2ppp/2nbpn2/3p4/2PP4/1PN1PN2/PB2BPPP/R2QK2R w KQ - 0 1",
+    };
+    static const int before[] = { 0, 52, 3, 134, 3, -319, 335, 3 };   /* the hand-set weights */
+    EvalOptions all = { 1, 1, 1, 1, 1 };
+    eval_set_options(&all);
+    EvalParams saved = *eval_params();
+    eval_set_params(eval_default_params());
+    int same = 1;
+    for (int i = 0; i < 8; i++)
+        if (eval_fen(f[i]) != before[i]) { same = 0; printf("    %d, was %d: %s\n", eval_fen(f[i]), before[i], f[i]); }
+    check("the default parameters are the hand-set weights", same);
+    eval_set_params(&saved);
+    EvalOptions none = { 0 };
+    eval_set_options(&none);
+}
+
+static void test_defaults(void)
+{
+    printf("== the defaults ==\n");
+    EvalOptions d = eval_default_options();
+    check("the default terms are PeSTO, king safety and mobility",
+          d.pesto && d.king && d.mobility && !d.pawns && !d.extras);
+    check("and the live weights start as the tuned ones",
+          !memcmp(eval_params(), eval_tuned_params(), sizeof(EvalParams)));
+}
+
 int main(void)
 {
     init_attacks();
+    test_defaults();
 
     printf("== piece-square table orientation (regression guard) ==\n");
     test_king_prefers_home_over_center_in_middlegame();
@@ -255,6 +303,7 @@ int main(void)
     printf("== king PST tapering ==\n");
     test_bare_king_endgame_prefers_centralization();
     test_mirror_symmetry();
+    test_params_unchanged();
     test_terms();
 
     printf("\n%s\n", failures == 0 ? "All eval tests passed."

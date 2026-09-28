@@ -5,7 +5,8 @@
  *
  * Options are a comma list starting from all (the defaults) or none:
  * search pvs, asp, nmp, lmr, ext, tt; evaluation pesto, pawns, mob, king,
- * xtra; "-name" turns one off. Every opening is played twice, colours
+ * xtra; "tuned" uses tools/tune.c's weights (on in all, "-tuned" for the
+ * hand-set ones); "-name" turns one off. Every opening is played twice, colours
  * swapped. The result is the candidate's score and the Elo difference with
  * a 95% error.
  *
@@ -19,6 +20,7 @@
 #include "engine/move.h"
 #include "engine/search.h"
 #include "engine/eval.h"
+#include "tune_core.h"
 #include "game/game.h"
 #include "game/openings.h"
 #include "game/opponent.h"
@@ -32,7 +34,7 @@
 #define MAX_PLIES     200
 
 /* A player's search and evaluation switches. */
-typedef struct { SearchOptions s; EvalOptions e; } Opts;
+typedef struct { SearchOptions s; EvalOptions e; int tuned; const EvalParams *params; } Opts;
 
 static int parse_options(const char *list, Opts *all)
 {
@@ -47,6 +49,7 @@ static int parse_options(const char *list, Opts *all)
         if (!strcmp(n, "all")) {
             *o = search_default_options();
             *e = eval_default_options();
+            all->tuned = 1;
             if (!on) memset(all, 0, sizeof(*all));
         }
         else if (!strcmp(n, "none")) memset(all, 0, sizeof(*all));
@@ -55,6 +58,7 @@ static int parse_options(const char *list, Opts *all)
         else if (!strcmp(n, "mob"))   e->mobility = on;
         else if (!strcmp(n, "king"))  e->king = on;
         else if (!strcmp(n, "xtra"))  e->extras = on;
+        else if (!strcmp(n, "tuned")) all->tuned = on;
         else if (!strcmp(n, "pvs"))  o->pvs = on;
         else if (!strcmp(n, "asp"))  o->aspiration = on;
         else if (!strcmp(n, "nmp"))  o->null_move = on;
@@ -111,6 +115,7 @@ static int play_game(int opening, int cand_side, const Opts *base, const Opts *c
             const Opts *me = g.pos.side == cand_side ? cand : base;
             search_set_options(&me->s);
             eval_set_options(&me->e);
+            eval_set_params(me->params ? me->params : me->tuned ? eval_tuned_params() : eval_default_params());
             search_clear();
             Position p = g.pos;
             m = search(&p, MAX_DEPTH, ms).best_move;
@@ -131,6 +136,7 @@ static int play_game(int opening, int cand_side, const Opts *base, const Opts *c
 int main(int argc, char **argv)
 {
     int games = 80, ms = 50, vs_elo = 0, vs_ms = 0;
+    const EvalParams *params_for[2] = { NULL, NULL };
     const char *base_s = "none", *cand_s = "all", *vs_path = NULL;
     for (int i = 1; i + 1 < argc; i += 2) {
         if      (!strcmp(argv[i], "--games")) games = atoi(argv[i + 1]);
@@ -140,10 +146,18 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--vs"))    vs_path = argv[i + 1];
         else if (!strcmp(argv[i], "--vs-elo")) vs_elo = atoi(argv[i + 1]);
         else if (!strcmp(argv[i], "--vs-ms")) vs_ms = atoi(argv[i + 1]);
+        else if (!strcmp(argv[i], "--base-params") || !strcmp(argv[i], "--cand-params")) {
+            static EvalParams loaded[2];
+            int k = argv[i][2] == 'c';
+            if (!tune_read_params(argv[i + 1], &loaded[k])) { fprintf(stderr, "cannot read %s\n", argv[i + 1]); return 2; }
+            params_for[k] = &loaded[k];
+        }
         else { fprintf(stderr, "unknown flag %s\n", argv[i]); return 2; }
     }
     Opts base, cand;
     if (!parse_options(base_s, &base) || !parse_options(cand_s, &cand)) return 2;
+    base.params = params_for[0];
+    cand.params = params_for[1];
     if (games < 2) games = 2;
     games += games % 2;
     init_attacks();
