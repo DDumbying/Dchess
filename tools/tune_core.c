@@ -9,8 +9,11 @@
 void tune_add(TuneSet *s, const Position *pos, float result, unsigned game)
 {
     if (s->n == s->cap) {
-        s->cap = s->cap ? s->cap * 2 : 4096;
-        s->p = realloc(s->p, (size_t)s->cap * sizeof(TunePos));
+        int cap = s->cap ? s->cap * 2 : 4096;
+        TunePos *p = realloc(s->p, (size_t)cap * sizeof(TunePos));
+        if (!p) return;   /* out of memory: the position is dropped */
+        s->p = p;
+        s->cap = cap;
     }
     s->p[s->n++] = (TunePos){ *pos, result, game };
 }
@@ -78,10 +81,17 @@ double tune_error(const TuneSet *s, double K, int threads)
     Slice sl[64];
     for (int i = 0; i < threads; i++) {
         sl[i] = (Slice){ s, (int)((long)s->n * i / threads), (int)((long)s->n * (i + 1) / threads), K, 0 };
-        pthread_create(&th[i], NULL, slice_error, &sl[i]);
+    }
+    int started[64];
+    for (int i = 0; i < threads; i++) {
+        started[i] = pthread_create(&th[i], NULL, slice_error, &sl[i]) == 0;
+        if (!started[i]) slice_error(&sl[i]);   /* no thread: do this slice here */
     }
     double sum = 0;
-    for (int i = 0; i < threads; i++) { pthread_join(th[i], NULL); sum += sl[i].sum; }
+    for (int i = 0; i < threads; i++) {
+        if (started[i]) pthread_join(th[i], NULL);
+        sum += sl[i].sum;
+    }
     return sum / s->n;
 }
 
@@ -107,6 +117,7 @@ int tune_pass(const TuneSet *s, double K, int threads, double *err)
         for (int dir = 1; dir >= -1; dir -= 2) {
             int stepped = 0;
             for (;;) {                       /* keep going while it helps */
+                if (abs(p.v[i] + dir) > TUNE_BOUND) break;
                 p.v[i] += dir;
                 eval_set_params(&p);
                 double e = tune_error(s, K, threads);
@@ -147,8 +158,29 @@ int tune_read_params(const char *path, EvalParams *p)
 {
     FILE *f = fopen(path, "r");
     if (!f) return 0;
-    int ok = 1;
+    int ok = 1, extra;
     for (int i = 0; i < EP_COUNT && ok; i++) ok = fscanf(f, "%d", &p->v[i]) == 1;
+    if (ok && fscanf(f, "%d", &extra) == 1) ok = 0;   /* written for another layout */
     fclose(f);
     return ok;
+}
+
+int tune_parse_terms(const char *list, EvalOptions *o, unsigned char mask[EP_COUNT])
+{
+    char buf[128], *save = NULL;
+    snprintf(buf, sizeof(buf), "%s", list);
+    memset(o, 0, sizeof(*o));
+    int any = 0;
+    for (char *t = strtok_r(buf, ",", &save); t; t = strtok_r(NULL, ",", &save), any = 1) {
+        if      (!strcmp(t, "pesto")) o->pesto = 1;
+        else if (!strcmp(t, "pawns")) o->pawns = 1;
+        else if (!strcmp(t, "mob"))   o->mobility = 1;
+        else if (!strcmp(t, "king"))  o->king = 1;
+        else if (!strcmp(t, "xtra"))  o->extras = 1;
+        else return 0;
+    }
+    for (int i = 0; i < EP_COUNT; i++)
+        mask[i] = (o->pawns && i < EP_MOB_TYPICAL) || (o->mobility && i >= EP_MOB_MG && i < EP_SHIELD) ||
+                  (o->king && (i == EP_SHIELD || i == EP_OPEN_FILE)) || (o->extras && i >= EP_PAIR_MG);
+    return any;
 }

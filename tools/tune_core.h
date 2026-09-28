@@ -13,12 +13,16 @@ void   tune_add(TuneSet *s, const Position *pos, float result, unsigned game);
 int    tune_load(const char *path, TuneSet *train, TuneSet *valid);
 double tune_sigmoid(int score, double K);
 /* Mean squared error of sigmoid(evaluation for White) against the results,
- * with every evaluation term on. */
+ * with the terms tune_set_terms() chose. */
 double tune_error(const TuneSet *s, double K, int threads);
 /* The evaluation terms the error uses (default: every one), and which
  * parameters a pass may move (default: all but mobility's expected counts). */
 void   tune_set_terms(const EvalOptions *o);
 void   tune_set_mask(const unsigned char *mask);
+/* "pesto,king,mob": exact names (pesto pawns mob king xtra); 0 on an unknown
+ * one. Fills the terms and the weights a pass may move. */
+int    tune_parse_terms(const char *list, EvalOptions *o, unsigned char mask[EP_COUNT]);
+#define TUNE_BOUND 500   /* no weight moves past ±this */
 double tune_fit_k(const TuneSet *s, int threads);
 /* One sweep over every parameter: each moves while it lowers the error.
  * Returns how many moved; *err is the error afterwards. */

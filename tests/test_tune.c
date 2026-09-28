@@ -4,6 +4,8 @@
  */
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 #include "tune_core.h"
 #include "engine/fen.h"
 #include "utils/bitboard.h"
@@ -60,6 +62,51 @@ int main(void)
     double before = tune_error(&w, K, 2), after;
     tune_pass(&w, K, 2, &after);
     check("a pass never raises the error", after <= before + 1e-12);
+
+    printf("== the tools' edges ==\n");
+    EvalOptions o;
+    unsigned char m[EP_COUNT];
+    int ok = tune_parse_terms("pesto,king,mob", &o, m);
+    check("terms are read by exact name", ok && o.pesto && o.king && o.mobility && !o.pawns && !o.extras &&
+                                          m[EP_MOB_MG] && m[EP_SHIELD] && !m[EP_MOB_TYPICAL] && !m[EP_PAIR_MG]);
+    check("unknown or loose names are refused", !tune_parse_terms("all", &o, m) &&
+          !tune_parse_terms("-pawns", &o, m) && !tune_parse_terms("pesto,foo", &o, m) &&
+          !tune_parse_terms("", &o, m));
+
+    char path[] = "/tmp/dchess-tune-XXXXXX";
+    int fd = mkstemp(path);
+    FILE *f = fdopen(fd, "w");
+    for (int i = 0; i <= EP_COUNT; i++) fprintf(f, "%d ", i);
+    fclose(f);
+    EvalParams rp;
+    check("a params file with extra numbers is refused", !tune_read_params(path, &rp));
+
+    f = fopen(path, "w");
+    for (unsigned g = 1; g <= 40; g++)
+        for (int k = 0; k < 3; k++) fprintf(f, "4k3/8/8/8/8/8/%dP%d/4K3 w - - 0 1;1;%u\n", k, 7 - k, g);
+    fclose(f);
+    TuneSet tr = { 0 }, va = { 0 };
+    tune_load(path, &tr, &va);
+    int split = tr.n && va.n;
+    for (int i = 0; i < tr.n; i++)
+        for (int j = 0; j < va.n; j++) if (tr.p[i].game == va.p[j].game) split = 0;
+    check("no game is in both the training and held-out sets", split);
+    unlink(path);
+
+    /* Data that always wants a bigger king shield. */
+    TuneSet k = { 0 };
+    for (int r = 0; r < 10; r++) add(&k, "q5k1/8/8/8/8/8/5PPP/Q5K1 w - - 0 1", 1.0f);
+    EvalOptions king = { 0, 0, 0, 1, 0 };
+    unsigned char only[EP_COUNT] = { 0 };
+    only[EP_SHIELD] = 1;
+    tune_set_terms(&king);
+    tune_set_mask(only);
+    EvalParams hi = *eval_default_params();
+    hi.v[EP_SHIELD] = TUNE_BOUND - 1;
+    eval_set_params(&hi);
+    tune_pass(&k, 1.0, 2, &after);
+    check("no weight passes the bound", eval_params()->v[EP_SHIELD] <= TUNE_BOUND &&
+                                        eval_params()->v[EP_SHIELD] >= TUNE_BOUND - 1);
 
     eval_set_params(eval_default_params());
     if (failures) {

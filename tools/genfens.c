@@ -2,9 +2,10 @@
  * varied openings, and every quiet position is written with the game's
  * result, as "FEN;result;game" (result 1, 0.5 or 0 for White).
  *
- *   ./build/genfens --games 400 --seed 3 --out part.txt [--ms 10] [--engine PATH]
+ *   ./build/genfens --games 400 --seed 3 --out part.txt [--ms 10] [--engine PATH] [--hang-ms 10000]
  *
- * make genfens runs several of these in parallel. */
+ * An engine silent for --hang-ms fails that game and is restarted. Exits 1
+ * when no game gave positions. make genfens runs several of these in parallel. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,7 +56,7 @@ static int random_move(GameState *g)
 
 int main(int argc, char **argv)
 {
-    int games = 100, ms = 10;
+    int games = 100, ms = 10, hang_ms = 10000;
     unsigned seed = 1;
     const char *out = "fens.txt", *engine = "/usr/bin/stockfish";
     for (int i = 1; i + 1 < argc; i += 2) {
@@ -64,6 +65,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--ms"))     ms = atoi(argv[i + 1]);
         else if (!strcmp(argv[i], "--out"))    out = argv[i + 1];
         else if (!strcmp(argv[i], "--engine")) engine = argv[i + 1];
+        else if (!strcmp(argv[i], "--hang-ms")) hang_ms = atoi(argv[i + 1]);
         else { fprintf(stderr, "unknown flag %s\n", argv[i]); return 2; }
     }
     init_attacks();
@@ -80,9 +82,10 @@ int main(int argc, char **argv)
     static GameState g;
     static char fens[MAX_PLIES][FEN_BUFSIZE];
     long positions = 0;
-    int failed = 0, capped = 0;
+    int failed = 0, capped = 0, dropped = 0;
     struct timespec nap = { 0, 1000000L };
     for (int gi = 0; gi < games; gi++) {
+        if (!sf) { failed += games - gi; break; }   /* the engine could not be restarted */
         memset(&g, 0, sizeof(g));
         game_reset(&g);
         char line[512], *save = NULL;
@@ -90,7 +93,7 @@ int main(int argc, char **argv)
         int cut = 4 + (int)(rnd() % 5), n = 0;
         for (char *t = strtok_r(line, " ", &save); t && n < cut; t = strtok_r(NULL, " ", &save), n++)
             if (!play_uci(&g, t)) break;
-        if (!random_move(&g) || !random_move(&g) || g.game_over) continue;
+        if (!random_move(&g) || !random_move(&g) || g.game_over) { dropped++; continue; }
 
         int count = 0, bad = 0;
         while (!g.game_over && g.move_count < MAX_PLIES) {
@@ -102,7 +105,14 @@ int main(int argc, char **argv)
             SearchResult r;
             U64 key;
             if (!opponent_start(sf, &g)) { bad = 1; break; }
-            while (!opponent_poll(sf, &r, &key)) nanosleep(&nap, NULL);
+            long waited = 0;
+            while (!opponent_poll(sf, &r, &key) && waited < hang_ms) { nanosleep(&nap, NULL); waited++; }
+            if (waited >= hang_ms) {   /* a silent engine: start a fresh one */
+                opponent_free(sf);
+                sf = opponent_uci(&e);
+                bad = 1;
+                break;
+            }
             const char *err = opponent_error(sf);
             if ((err && err[0]) || !r.best_move) { bad = 1; break; }
             game_play(&g, r.best_move);
@@ -116,7 +126,7 @@ int main(int argc, char **argv)
     }
     opponent_free(sf);
     fclose(f);
-    fprintf(stderr, "seed %u: %d games, %ld positions, %d failed, %d capped at %d plies\n",
-            seed, games, positions, failed, capped, MAX_PLIES);
-    return 0;
+    fprintf(stderr, "seed %u: %d games, %ld positions, %d failed, %d dropped, %d capped at %d plies\n",
+            seed, games, positions, failed, dropped, capped, MAX_PLIES);
+    return positions ? 0 : 1;
 }

@@ -31,13 +31,12 @@ int main(int argc, char **argv)
     eval_set_params(eval_default_params());
     if (terms) {
         /* Tune only what will be played: those terms, and their weights. */
-        EvalOptions o = { strstr(terms, "pesto") != NULL, strstr(terms, "pawns") != NULL,
-                          strstr(terms, "mob") != NULL, strstr(terms, "king") != NULL,
-                          strstr(terms, "xtra") != NULL };
-        unsigned char m[EP_COUNT] = { 0 };
-        for (int i = 0; i < EP_COUNT; i++)
-            m[i] = (o.pawns && i < EP_MOB_TYPICAL) || (o.mobility && i >= EP_MOB_MG && i < EP_SHIELD) ||
-                   (o.king && (i == EP_SHIELD || i == EP_OPEN_FILE)) || (o.extras && i >= EP_PAIR_MG);
+        EvalOptions o;
+        unsigned char m[EP_COUNT];
+        if (!tune_parse_terms(terms, &o, m)) {
+            fprintf(stderr, "--terms: a comma list of pesto, pawns, mob, king, xtra\n");
+            return 2;
+        }
         tune_set_terms(&o);
         tune_set_mask(m);
     }

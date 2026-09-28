@@ -158,6 +158,8 @@ int main(int argc, char **argv)
     if (!parse_options(base_s, &base) || !parse_options(cand_s, &cand)) return 2;
     base.params = params_for[0];
     cand.params = params_for[1];
+    for (int k = 0; k < 2; k++)
+        if (params_for[k]) fprintf(stderr, "note: --%s-params overrides tuned/-tuned\n", k ? "cand" : "base");
     if (games < 2) games = 2;
     games += games % 2;
     init_attacks();
