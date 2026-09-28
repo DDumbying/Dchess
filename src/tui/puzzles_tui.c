@@ -187,6 +187,11 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
         }
         if (v.advance_at) continue;   /* the next Rush puzzle is on its way */
         Move m;
+        if (mode == PM_RUSH && v.verdict != PV_OVER && game_now_ms() >= rush_end) {
+            v.rush_left_ms = 0;   /* the answer came after the clock ran out */
+            rush_over(ss, &v, "Time");
+            continue;
+        }
         if (ch == -2) {
             if (v.pz.done) continue;
             if (typed_move(&s->game, cmd, &m)) judge(ss, &v, m);
@@ -194,6 +199,11 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
             continue;
         }
         int picked = v.pz.done && (ch == '\n') ? 0 : tui_cursor_key(s, ch, &m);
+        if (picked == 1 && mode == PM_RUSH && game_now_ms() >= rush_end) {
+            v.rush_left_ms = 0;   /* the promotion prompt ran past the clock */
+            rush_over(ss, &v, "Time");
+            continue;
+        }
         if (picked == 1) { judge(ss, &v, m); continue; }
         if (picked == 0) continue;
         switch (ch) {

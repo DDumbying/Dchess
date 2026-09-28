@@ -222,6 +222,7 @@ static int promotion_piece(TUIState *state)
     case 'r': case 'R': return FLAG_PROMO_R;
     case 'b': case 'B': return FLAG_PROMO_B;
     case 'n': case 'N': return FLAG_PROMO_N;
+    case KEY_RESIZE: ungetch(KEY_RESIZE); return 0;   /* the screen loop rebuilds */
     default: return 0;
     }
 }
@@ -585,7 +586,10 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
                          "It is the engine's move — 'pause' to move for it");
             } else if (!state->game.game_over) {
                 Move m;
-                if (tui_cursor_key(state, ch, &m) == 1) play_chosen(state, m);
+                if (tui_cursor_key(state, ch, &m) == 1) {
+                    tui_check_flag(state);   /* the promotion prompt may have run the clock out */
+                    if (!state->game.game_over) play_chosen(state, m);
+                }
             }
             break;
 

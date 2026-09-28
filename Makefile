@@ -69,7 +69,7 @@ build/genfens: tools/genfens.c $(CORE_SRC) $(HEADERS) | build
 GAMES ?= 5000
 JOBS  ?= 14
 genfens: build/genfens
-	@pids=""; for j in $$(seq 1 $(JOBS)); do ./build/genfens --games $$(( ($(GAMES) + $(JOBS) - 1) / $(JOBS) )) --seed $$j --out build/fens-$$j.txt & pids="$$pids $$!"; done; \
+	@rm -f build/fens-*.txt; pids=""; for j in $$(seq 1 $(JOBS)); do ./build/genfens --games $$(( ($(GAMES) + $(JOBS) - 1) / $(JOBS) )) --seed $$j --out build/fens-$$j.txt & pids="$$pids $$!"; done; \
 	fail=0; for p in $$pids; do wait $$p || fail=1; done; [ $$fail = 0 ] || { echo "genfens: a job failed"; exit 1; }
 	@cat build/fens-*.txt > build/fens.txt && rm -f build/fens-*.txt && wc -l build/fens.txt
 
