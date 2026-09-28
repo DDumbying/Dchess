@@ -1,5 +1,5 @@
 # Dchess - DumbChess
-<img src="./assets/images/dchess.png" align="left" width="120" hspace="10" vspace="10">
+<img src="./assets/images/dchess.png" align="left" width="160" hspace="10" vspace="10">
 
 **A terminal chess engine written in C.**
 
