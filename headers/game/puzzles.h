@@ -22,4 +22,13 @@ extern const int puzzle_count;
 const char *puzzle_theme_name(int bit);           /* "mate in 1", "fork", … */
 int  puzzle_find(const char *id);                 /* index or -1 */
 
+/* Solving one. A move is right if it is the next solution move or gives
+ * mate; the opponent's replies play themselves. */
+typedef enum { PZ_WRONG, PZ_RIGHT, PZ_SOLVED } PuzzleVerdict;
+typedef struct { int index; Move line[PUZZLE_PLIES]; int len, next, failed, done; } Puzzle;
+int  puzzle_start(Puzzle *p, int index, GameState *g);    /* the FEN, then the opponent's move */
+PuzzleVerdict puzzle_try(Puzzle *p, GameState *g, Move m); /* WRONG leaves g unchanged */
+int  puzzle_hint(Puzzle *p);                              /* the from-square; counts as a fail */
+int  puzzle_show_step(Puzzle *p, GameState *g);           /* plays one move; 0 once done */
+
 #endif

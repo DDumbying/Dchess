@@ -121,7 +121,7 @@ static void normalise(const char *in, char *out, size_t n)
 }
 
 /* The one legal move written `tok`, or 0. */
-static Move find_san(const GameState *g, const char *tok)
+Move replay_find_san(const GameState *g, const char *tok)
 {
     char want[16], have[SAN_MAXLEN + 4], san[SAN_MAXLEN + 4];
     normalise(tok, want, sizeof(want));
@@ -180,7 +180,7 @@ static void play_movetext(const char *t, GameState *g, ReplayGame *out)
             snprintf(out->err, sizeof(out->err), "stopped at the %d-move limit", MAX_MOVE_HISTORY);
             return;
         }
-        Move mv = find_san(g, m);
+        Move mv = replay_find_san(g, m);
         if (!mv) goto bad;
         game_play(g, mv);
         game_update_status(g);
