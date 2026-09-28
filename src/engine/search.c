@@ -337,7 +337,7 @@ static int alpha_beta(Position *pos, int depth, int ply, int alpha, int beta) {
         /* On the principal line the search itself must run, or the line
          * it reports would stop at the first table hit. */
         int pv_node = beta - alpha > 1;
-        if (hit->depth >= depth && !(opt.tt_depth && pv_node)) {
+        if (hit->depth >= depth && !pv_node) {
             int hs = tt_score(hit, ply);
             if (hit->flag == TT_EXACT) return hs;
             if (hit->flag == TT_ALPHA && hs <= alpha) return alpha;
