@@ -12,6 +12,10 @@
 [Stock Fish](stockfishchess.org).
 [TSCP](https://www.tckerrigan.com/Chess/TSCP/)
 
+## Data
+
+[Lichess puzzle database](https://database.lichess.org/#puzzles) - *The bundled puzzles (CC0).*
+
 ## Interface
 
 *Still don't know*

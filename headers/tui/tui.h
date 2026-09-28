@@ -24,6 +24,8 @@ typedef struct {
     Analyser     *an;
 } ReplayReview;
 
+struct PuzzleView;
+
 typedef struct {
     /* Advance only via game_play(). */
     GameState game;
@@ -90,6 +92,8 @@ typedef struct {
     char        analysis_err[128];
 
     int         stats_only;              /* --stats: the stats page, not the launcher */
+    int         puzzles_only;            /* --puzzles: the puzzles menu, not the launcher */
+    const struct PuzzleView *puzzle;     /* set while a puzzle is on the board */
     int         human_active[2];         /* this side is the active profile */
     char        replay_path[512];
 
@@ -106,6 +110,11 @@ void tui_cleanup(void);
 
 /* A profile's remembered white/black word as a player. */
 Player tui_word_player(const TUIState *s, const char *w, Player fallback);
+
+/* Arrows / hjkl move the cursor; Enter picks up a piece, then its square.
+ * 1 when that chose a legal move (in *out, not played), 0 when the key was
+ * handled, -1 when it is not a cursor key. */
+int tui_cursor_key(TUIState *s, int ch, Move *out);
 
 /* The game screen, for modes that draw it outside tui_run(). */
 typedef struct Screen Screen;

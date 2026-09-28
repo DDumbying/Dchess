@@ -10,6 +10,7 @@
 #include "tui/launcher.h"
 #include "tui/welcome.h"
 #include "tui/replay_tui.h"
+#include "tui/puzzles_tui.h"
 #include "game/records.h"
 #include "engine/board.h"
 #include "engine/movegen.h"
@@ -206,26 +207,24 @@ static void select_square(TUIState *state, int sq)
              'a' + (sq % 8), (sq / 8) + 1);
 }
 
-/* Second Enter: play it to the cursor square. */
-static void move_to_square(TUIState *state, int to_sq)
+/* Second Enter: the move to the cursor square, if it is legal. */
+static int choose_move(TUIState *state, int to_sq, Move *out)
 {
     int from_sq = screen_to_square(state, state->sel_row, state->sel_col);
+    int found = game_find_move(&state->game, from_sq, to_sq, 0, out);
+    if (!found && !state->highlight[state->cursor_row][state->cursor_col])
+        snprintf(state->status, sizeof(state->status), "Not a legal move — select a highlighted square.");
+    clear_selection(state);
+    return found;
+}
 
-    Move m;
-    if (!game_find_move(&state->game, from_sq, to_sq, 0, &m)) {
-        if (!state->highlight[state->cursor_row][state->cursor_col])
-            snprintf(state->status, sizeof(state->status),
-                     "Not a legal move — select a highlighted square.");
-        clear_selection(state);
-        return;
-    }
-
+static void play_chosen(TUIState *state, Move m)
+{
     game_play(&state->game, m);
     snprintf(state->status, sizeof(state->status), "Played: %s",
              state->game.move_history[state->game.move_count - 1]);
 
     game_update_status(&state->game);
-    clear_selection(state);
     if (state->game.game_over) return;
 
     /* An engine's reply is drive_turn()'s job. */
@@ -237,13 +236,13 @@ static void move_to_square(TUIState *state, int to_sq)
     }
 }
 
-static void cursor_enter(TUIState *state)
+static int cursor_enter(TUIState *state, Move *out)
 {
     int sq = screen_to_square(state, state->cursor_row, state->cursor_col);
 
     if (!state->selected) {
         select_square(state, sq);
-        return;
+        return 0;
     }
 
     /* Enter on the already-selected square means "put it back down". */
@@ -251,10 +250,22 @@ static void cursor_enter(TUIState *state)
         state->cursor_col == state->sel_col) {
         clear_selection(state);
         snprintf(state->status, sizeof(state->status), "Deselected.");
-        return;
+        return 0;
     }
 
-    move_to_square(state, sq);
+    return choose_move(state, sq, out);
+}
+
+int tui_cursor_key(TUIState *state, int ch, Move *out)
+{
+    switch (ch) {
+    case KEY_UP:    case 'k': if (state->cursor_row > 0) state->cursor_row--; return 0;
+    case KEY_DOWN:  case 'j': if (state->cursor_row < 7) state->cursor_row++; return 0;
+    case KEY_LEFT:  case 'h': if (state->cursor_col > 0) state->cursor_col--; return 0;
+    case KEY_RIGHT: case 'l': if (state->cursor_col < 7) state->cursor_col++; return 0;
+    case '\n': case '\r': case KEY_ENTER: return cursor_enter(state, out);
+    default: return -1;
+    }
 }
 
 void tui_init(TUIState *state, const CliArgs *args)
@@ -516,16 +527,10 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
 
     switch (ch) {
         case KEY_UP:    case 'k':
-            if (state->cursor_row > 0) state->cursor_row--;
-            break;
         case KEY_DOWN:  case 'j':
-            if (state->cursor_row < 7) state->cursor_row++;
-            break;
         case KEY_LEFT:  case 'h':
-            if (state->cursor_col > 0) state->cursor_col--;
-            break;
         case KEY_RIGHT: case 'l':
-            if (state->cursor_col < 7) state->cursor_col++;
+            tui_cursor_key(state, ch, NULL);
             break;
 
         case '\n': case '\r': case KEY_ENTER:
@@ -541,7 +546,8 @@ static int handle_key(Screen *sc, int ch, const char *cmd_buf)
                 snprintf(state->status, sizeof(state->status),
                          "It is the engine's move — 'pause' to move for it");
             } else if (!state->game.game_over) {
-                cursor_enter(state);
+                Move m;
+                if (tui_cursor_key(state, ch, &m) == 1) play_chosen(state, m);
             }
             break;
 
@@ -596,6 +602,10 @@ void tui_run(TUIState *state)
             endwin();
             return;
         }
+    } else if (state->puzzles_only) {
+        puzzles_screen(state);
+        endwin();
+        return;
     } else if (state->replay_list) {
         ReplayList *list = state->replay_list;
         char file[512];

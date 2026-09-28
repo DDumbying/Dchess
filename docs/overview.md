@@ -691,6 +691,42 @@ Both anchors moved the same way: ≈2475 against 2300 and ≈2560 against
 2600. Each gain is inside sixty games' error, but it agrees with the
 self-play result.
 
+### Round 12 — puzzles
+
+**The set.** About 3200 puzzles from the Lichess puzzle database (CC0),
+compiled into dchess (`src/game/puzzles_data.c`, 360 KB) so they work
+offline. `tools/mkpuzzles.c` picks them from the 6.1 million in the CSV:
+popular (≥ 90), often played (≥ 1000) and with a settled rating, 140 per
+100 points from 600 to 2899. It takes every theme first, then the most
+popular. The strict filter left the ends short (81 puzzles in the 600s,
+none above 2800), so a looser one fills only those gaps. Every puzzle is
+replayed with dchess's own move generator before it is kept, and a test
+checks the whole set again: legal lines, and mates that mate.
+
+**The rules** (`game/puzzles.c`) are Lichess's: the opponent's move comes
+first; a move is right if it is the puzzle's or if it mates; a wrong one is
+taken back and the puzzle counts as missed. **The rating**
+(`game/puzzle_stats.c`) is Elo against the puzzle's rating, K 40 then 20,
+with a floor of 400. Each profile has a small text file of its rating,
+streaks, best Rush and the ids it has seen and missed.
+
+**The screen** reuses the game's board, cursor and command line: the cursor
+code became `tui_cursor_key`, which returns the chosen move instead of
+playing it. There are four modes (Rated, Themes, Rush, Missed), plus `?`
+hint, `s` show, `n` next and `r` retry. A retry or a skip never earns rating
+back.
+
+**A regression found on the way.** An analysis test began failing about one
+run in four after Round 11. The tuned evaluation had changed the timing
+enough to expose it. A table hit at a principal-variation node ended the
+reported line there, so analysis could show a one-move line. By the end of
+the iteration that table slot had often been overwritten, so no repair from
+the table afterwards could hold. The fix is the rule the code's comment
+already stated: no table cutoffs on the principal line. Measured over UCI
+against the old engine (200 games, 50 ms), it scored 58.0%, while the old
+engine against itself the same way scored 60.5%: about −18, well inside the
+error, for lines that are always complete.
+
 ## 4. Current architecture
 
 ```
@@ -717,12 +753,15 @@ Dchess/
 │   │   ├── book.c, openings.c — Polyglot and built-in books, opening names
 │   │   ├── profiles.c, records.c, statsview.c — people, history, stats
 │   │   ├── replay.c     — reading PGN files back
+│   │   ├── puzzles.c, puzzles_data.c — the bundled Lichess set, and judging moves
+│   │   ├── puzzle_stats.c — the puzzle rating, choosing the next one, the file
 │   │   └── timectl.c    — time-control text and engine time budgets
 │   ├── tui/             — ncurses screens
 │   │   ├── tui.c        — the game loop and window layout
 │   │   ├── commands.c   — commands, engine turns, analysis ticks
 │   │   ├── panels.c, render.c, input.c, art.c
-│   │   ├── welcome.c, launcher.c, engines_tui.c, stats_tui.c, replay_tui.c
+│   │   ├── welcome.c, launcher.c, engines_tui.c, stats_tui.c, replay_tui.c,
+│   │   │                  puzzles_tui.c
 │   └── utils/           — cli.c, engines.c, stats.c (legacy), theme.c,
 │                          text.c (display widths), dash.c, bitboard.c
 ├── headers/             — mirrors src/
@@ -731,6 +770,7 @@ Dchess/
 ├── tools/match.c        — the search against itself, as Elo (make match)
 ├── tools/genfens.c      — labelled positions from Stockfish self-play (make genfens)
 ├── tools/tune.c         — Texel tuning of the evaluation's weights (make tune)
+├── tools/mkpuzzles.c    — the puzzle set from the Lichess CSV (make puzzles)
 ├── tools/demo/          — scripted asciinema recordings for the README
 ├── docs/                — guide.md, this journal, specs and plans
 └── assets/              — logo and the README's clips
@@ -810,8 +850,7 @@ instead of by error.
 
 **Then, roughly by payoff:**
 - A small pass over the deferred items in §5.
-- Puzzles: mate-in-N positions with a streak on the profile, built on the
-  replay and analysis machinery.
+- Puzzles from your own games: the review's blunders, as positions to solve.
 - The depth-preferred table, re-measured with longer searches.
 - Incremental make/unmake and a re-entrant search.
 

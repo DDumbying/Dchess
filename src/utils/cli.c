@@ -116,6 +116,10 @@ void cli_help(void)
         "    -s, --stats\n"
         "          Show your game statistics and exit.\n"
         "\n"
+        "    --puzzles\n"
+        "          Solve puzzles: rated, by theme, a 3-minute rush, or the\n"
+        "          ones you missed (also 'z' in the launcher).\n"
+        "\n"
         "    -V, --version\n"
         "          Print version information and exit.\n"
         "\n"
@@ -134,6 +138,7 @@ void cli_help(void)
         "    dchess --white hard --black hard\n"
         "                                    Watch the engine play itself\n"
         "    dchess --stats                  View your stats\n"
+        "    dchess --puzzles --profile ann  Solve puzzles as ann\n"
         "\n"
         "  IN-GAME COMMANDS  (type in the command bar at the bottom)\n"
         "    e2e4        Make a move in algebraic notation\n"
@@ -293,6 +298,7 @@ int cli_parse(int argc, char **argv, CliArgs *args)
     Player chosen[2];
     args->show_version = 0;
     args->show_stats   = 0;
+    args->puzzles      = 0;
     args->list_engines = 0;
     args->list_profiles = 0;
     args->profile[0] = '\0';
@@ -325,6 +331,10 @@ int cli_parse(int argc, char **argv, CliArgs *args)
             return 0;
         }
 
+        if (strcmp(a, "--puzzles") == 0) {
+            args->puzzles = 1;      /* keeps parsing: --profile may follow */
+            continue;
+        }
         /* --stats / -s ─────────────────────────────────────────────── */
         if (strcmp(a, "--stats") == 0 || strcmp(a, "-s") == 0) {
             args->show_stats = 1;   /* keeps parsing: --profile may follow */

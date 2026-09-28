@@ -28,6 +28,8 @@ void replay_list_free(ReplayList *l);
 
 /* The game whose tags start at `offset`. A move that cannot be read stops
  * the game there, with out->err set; 0 only when the file cannot be read. */
+/* The one legal move written `tok` in SAN (check marks and "=" optional), or 0. */
+Move replay_find_san(const GameState *g, const char *tok);
 int  replay_read(const char *path, long offset, ReplayGame *out, char *err, size_t n);
 
 #endif

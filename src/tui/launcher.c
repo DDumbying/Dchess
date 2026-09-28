@@ -6,6 +6,8 @@
 #include "tui/panels.h"
 #include "tui/render.h"
 #include "tui/replay_tui.h"
+#include "tui/puzzles_tui.h"
+#include "game/puzzle_stats.h"
 #include "tui/stats_tui.h"
 #include "engine/fen.h"
 #include "game/records.h"
@@ -378,9 +380,9 @@ static void draw(TUIState *s, Launch *L)
     attroff(COLOR_PAIR(pair));
     attron(COLOR_PAIR(CP_HINT));
     mvw_fit(stdscr, rows - 1, 1, cols - 2, small
-             ? "⏎ play  ↑↓ move  ←→ change  p profile  e engines  s stats  esc quit"
-             : L->focus == FOCUS_CARD ? "⏎ replay  ↑↓ move  tab panel  e engines  s stats  esc quit"
-             : "⏎ play  tab panel  ↑↓ move  ←→ change  n new  r rename  d delete  e engines  s stats  esc quit");
+             ? "⏎ play  ↑↓ move  ←→ change  p profile  z puzzles  e engines  s stats  esc quit"
+             : L->focus == FOCUS_CARD ? "⏎ replay  ↑↓ move  tab panel  z puzzles  e engines  s stats  esc quit"
+             : "⏎ play  tab panel  ↑↓ move  ←→ change  n new  r rename  d delete  z puzzles  e engines  s stats  esc quit");
     attroff(COLOR_PAIR(CP_HINT));
     refresh();
 }
@@ -440,8 +442,9 @@ static void new_profile(TUIState *s, Launch *L)
 static void rename_profile(TUIState *s, Launch *L)
 {
     int i = L->pcursor;
-    char name[PLAYER_NAME_MAX + 1], err[96];
+    char name[PLAYER_NAME_MAX + 1], old[PLAYER_NAME_MAX + 1], err[96], dir[512];
     snprintf(name, sizeof(name), "%s", s->profiles.p[i].name);
+    snprintf(old, sizeof(old), "%s", name);
     if (!prompt("Rename to: ", name, sizeof(name))) { say(L, 0, "Cancelled"); return; }
     if (strcmp(name, s->profiles.p[i].name) == 0) return;
     if (!profiles_rename(&s->profiles, &s->engines, i, name, L->games, err, sizeof(err))) {
@@ -449,6 +452,7 @@ static void rename_profile(TUIState *s, Launch *L)
         return;
     }
     profiles_save(&s->profiles);
+    if (puzzle_stats_dir(dir, sizeof(dir))) puzzle_stats_rename(dir, old, name);
     reload(L);
     apply_profile(s, L);
     say(L, 0, "Renamed");
@@ -459,10 +463,12 @@ static void delete_profile(TUIState *s, Launch *L)
     int i = L->pcursor;
     char q[96];
     if (s->profiles.count == 1) { say(L, 1, "The last profile cannot be deleted"); return; }
-    snprintf(q, sizeof(q), "Delete %s? Its games stay in the history. y to confirm", s->profiles.p[i].name);
+    snprintf(q, sizeof(q), "Delete %s and its puzzle record? Its games stay. y to confirm", s->profiles.p[i].name);
     say(L, 1, q);
     draw(s, L);
     if (getch() != 'y') { say(L, 0, "Kept"); return; }
+    char dir[512];
+    if (puzzle_stats_dir(dir, sizeof(dir))) puzzle_stats_remove(dir, s->profiles.p[i].name);
     profiles_remove(&s->profiles, i);
     set_active(s, L, s->profiles.active);
     fix_selection(s, L);
@@ -583,6 +589,10 @@ int tui_launcher(TUIState *state)
             engines_screen(&state->engines);
             engines_load(&state->engines);
             fix_selection(state, &L);
+            clear();
+            break;
+        case 'z': case 'Z':
+            puzzles_screen(state);
             clear();
             break;
         case 's': case 'S':
