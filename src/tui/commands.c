@@ -424,12 +424,12 @@ int handle_command(TUIState *state, const char *cmd) {
     }
     if (strcmp(cmd, "book") == 0 || strncmp(cmd, "book ", 5) == 0) {
         if (cmd[4] != ' ' || !cmd[5]) {
-            snprintf(state->status, sizeof(state->status), "Book: %s", state->book_choice);
+            snprintf(state->status, sizeof(state->status), "Book: %.240s", state->book_choice);
             return 1;
         }
         snprintf(state->book_choice, sizeof(state->book_choice), "%s", cmd + 5);
         state->cli_book[0] = '\0';   /* a choice made here is remembered */
-        snprintf(state->status, sizeof(state->status), "Book: %s", state->book_choice);
+        snprintf(state->status, sizeof(state->status), "Book: %.240s", state->book_choice);
         cancel_engine_search(state);
         for (int side = WHITE; side <= BLACK; side++) {
             opponent_free(state->drivers[side]);
