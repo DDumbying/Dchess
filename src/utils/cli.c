@@ -1,6 +1,7 @@
 #include "utils/cli.h"
 #include "game/timectl.h"
 #include "utils/stats.h"
+#include "utils/version.h"
 #include "utils/constants.h"
 #include "engine/board.h"
 #include "engine/fen.h"

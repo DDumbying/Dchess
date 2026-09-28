@@ -95,6 +95,8 @@ int main(void)
 
     printf("== handshake ==\n");
     send("uci");
+    check("the engine names itself with the version", expect("id name", 2000, line, sizeof(line)) &&
+                                                     !strcmp(line, "id name dchess 1.0.0"));
     check("uci is answered with uciok", expect("uciok", 2000, NULL, 0));
     send("isready");
     check("isready with readyok", expect("readyok", 2000, NULL, 0));
