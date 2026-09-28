@@ -174,6 +174,7 @@ EXAMPLES
 ```
 h j k l / arrows   move the cursor
 Enter              select a piece / confirm a move
+q r b n            the promotion piece, when a pawn reaches the last rank
 Esc                deselect
 i                  command mode (type moves and commands)
 a                  analysis on / off
