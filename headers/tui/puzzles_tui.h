@@ -15,7 +15,7 @@ typedef struct PuzzleView {
     int        rating, delta, streak, rated;   /* rated: this result counted */
     int        score, strikes, left;           /* Rush; left: missed ones to go */
     int        missed_at;                      /* Missed: the place in the list */
-    long       rush_left_ms;
+    long       rush_left_ms, advance_at;       /* Rush: when the next puzzle comes */
     int        verdict, hint_sq, wrong_from, wrong_to;
 } PuzzleView;
 

@@ -14,6 +14,7 @@ typedef struct {
 
 void puzzle_stats_init(PuzzleStats *s);
 int  puzzle_stats_dir(char *buf, size_t n);   /* ~/.local/share/dchess/puzzles, created */
+int  puzzle_stats_can_save(const char *profile);   /* no '/', no leading '.', not empty */
 /* 1 if read; 0 gives the defaults. Unknown ids and bad lines are skipped. */
 int  puzzle_stats_load(const char *dir, const char *profile, PuzzleStats *s);
 int  puzzle_stats_save(const char *dir, const char *profile, const PuzzleStats *s);

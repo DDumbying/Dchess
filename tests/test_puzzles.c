@@ -58,7 +58,14 @@ static void test_data(void)
     for (int i = 0; i < puzzle_count && unique; i++)
         if (puzzle_find(puzzle_data[i].id) != i) unique = 0;
     for (int b = 6; b <= 27; b++) if (!in_bucket[b]) { buckets = 0; printf("    empty bucket %d00\n", b); }
-    check("there are enough puzzles", puzzle_count >= 2500);
+    int even = 1;
+    for (int i = 0; i < puzzle_count; i++) {
+        int n = 1;
+        for (const char *c = puzzle_data[i].moves; *c; c++) n += *c == ' ';
+        if (n % 2) even = 0;
+    }
+    check("there are enough puzzles, and they fit", puzzle_count >= 2500 && puzzle_count <= PUZZLE_MAX);
+    check("every line has an even length", even);
     check("every FEN loads and every move is legal", legal);
     check("every line is 2 to PUZZLE_PLIES plies", length);
     check("mate puzzles end in checkmate", mates);
@@ -147,6 +154,21 @@ static void test_rules(void)
     }
     if (found < 0) printf("    (no mate in 1 with a second mate; skipped)\n");
     else check("another mating move also solves it", puzzle_try(&p, &g, alt) == PZ_SOLVED);
+
+    /* A mate on a move that is not the last also ends it. */
+    static GameState m;
+    memset(&m, 0, sizeof(m));
+    game_reset(&m);
+    game_load_fen(&m, "6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1");
+    Puzzle hand;
+    memset(&hand, 0, sizeof(hand));
+    Move a2, a8;
+    game_find_move(&m, 0, 8, 0, &a2);
+    game_find_move(&m, 0, 56, 0, &a8);
+    hand.line[1] = a2;
+    hand.len = 4;
+    hand.next = 1;
+    check("a mate before the last move solves it", puzzle_try(&hand, &m, a8) == PZ_SOLVED && hand.done);
 
     /* A promotion, given as the cursor gives it: promo 0 means a queen. */
     int q = -1;
