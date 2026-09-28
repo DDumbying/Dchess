@@ -10,6 +10,6 @@ pkgbase = dchess
 	depends = glibc
 	depends = ncurses
 	source = dchess-1.0.0.tar.gz::https://github.com/DDumbying/dchess/archive/refs/tags/v1.0.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 89803b66a0eb63efe09cf7a5ebcfa98dfbc8ed1204dc8d88e0060a9032b7a0cd
 
 pkgname = dchess
