@@ -53,8 +53,8 @@ offline.
 
 ## Rating and storage
 
-- **File:** `~/.local/share/dchess/puzzles/<profile>.txt` (under
-  `$XDG_DATA_HOME` if set). A text file with lines of `key value`:
+- **File:** `~/.local/share/dchess/puzzles/<profile>.txt`, next to
+  `games.pgn`. A text file with lines of `key value`:
   `rating`, `played`, `streak`, `best_streak`, `rush_best`,
   `seen <ids…>`, `missed <ids…>`. It is written atomically (a tmp file,
   then rename).
@@ -97,7 +97,7 @@ offline.
   - your rating (with the change after each puzzle) and streak, or in
     Rush the score, strikes and clock;
   - after the puzzle, its rating and themes, and the Lichess id.
-- **Keys:** `h` hint, `s` show, `n` next, `r` retry, `esc` back to the
+- **Keys:** `?` hint (`h` is the cursor's), `s` show, `n` next, `r` retry, `esc` back to the
   menu. The status line lists them.
 - **Feedback:** a right move is tinted green, a wrong one red and taken
   back, and a solved puzzle gets a "Solved" banner.
