@@ -56,18 +56,24 @@ static void rate(Session *ss, PuzzleView *v, int solved)
     save(ss);
 }
 
+/* Themes and Rush keep their own seen lists, for this visit only. */
+static unsigned char visit_seen[PUZZLE_MAX];
+
 static int next_index(Session *ss, PuzzleView *v)
 {
-    static unsigned char rush_seen[PUZZLE_MAX];
     switch (v->mode) {
-    case PM_RATED:  return puzzle_pick(ss->st.seen, ss->st.rating, 0, &ss->seed);
-    case PM_THEMES: return puzzle_pick(ss->st.seen, ss->st.rating, v->theme, &ss->seed);
-    case PM_RUSH:
-        if (!v->score && !v->strikes) memset(rush_seen, 0, sizeof(rush_seen));
-        return puzzle_pick(rush_seen, RUSH_START + 100 * v->score, 0, &ss->seed);
+    case PM_RATED: {
+        int i = puzzle_stats_next_rated(&ss->st, &ss->seed);
+        save(ss);   /* an unfinished one comes back next time */
+        return i;
+    }
+    case PM_THEMES: return puzzle_pick(visit_seen, ss->st.rating, v->theme, &ss->seed);
+    case PM_RUSH:   return puzzle_pick(visit_seen, RUSH_START + 100 * v->score, 0, &ss->seed);
     case PM_MISSED:
         v->left = ss->st.nmissed;
-        return ss->st.nmissed ? ss->st.missed[0] : -1;
+        if (!ss->st.nmissed) return -1;
+        v->missed_at %= ss->st.nmissed;
+        return ss->st.missed[v->missed_at];
     }
     return -1;
 }
@@ -144,6 +150,7 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
     v.theme = theme;
     v.rating = ss->st.rating;
     v.streak = ss->st.streak;
+    memset(visit_seen, 0, sizeof(visit_seen));
     int first = next_index(ss, &v);
     if (first < 0) return;
     s->puzzle = &v;
@@ -162,9 +169,11 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
         WINDOW *in = tui_screen_input(sc);   /* a resize replaces the window */
         tui_screen_paint(sc);
         wtimeout(in, mode == PM_RUSH && v.verdict != PV_OVER ? 100 : -1);
+        int typing = s->insert_mode;
         int ch = read_key(in, cmd, sizeof(cmd), &s->insert_mode);
         if (ch == 0) continue;
         if (ch == KEY_RESIZE) { tui_screen_resize(sc); continue; }
+        if (ch == 27 && typing) continue;   /* Esc only cancelled the typing */
         if (ch == 27) {
             if (s->selected) { s->selected = 0; memset(s->highlight, 0, sizeof(s->highlight)); continue; }
             break;
@@ -199,6 +208,9 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
         case 'n': {
             if (mode == PM_RUSH) break;   /* no free skips */
             if (!v.pz.done) rate(ss, &v, 0);   /* skipping a rated puzzle counts as a miss */
+            if (mode == PM_MISSED &&
+                v.missed_at < ss->st.nmissed && ss->st.missed[v.missed_at] == v.pz.index)
+                v.missed_at++;                 /* still on the list: move past it */
             int i = next_index(ss, &v);
             if (i < 0) { snprintf(s->status, sizeof(s->status), "No more missed puzzles"); break; }
             begin(ss, &v, i);

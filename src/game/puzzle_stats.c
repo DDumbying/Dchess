@@ -10,6 +10,7 @@ void puzzle_stats_init(PuzzleStats *s)
 {
     memset(s, 0, sizeof(*s));
     s->rating = 1500;
+    s->pending = -1;
 }
 
 int puzzle_stats_dir(char *buf, size_t n)
@@ -66,6 +67,11 @@ int puzzle_stats_load(const char *dir, const char *profile, PuzzleStats *s)
             long n = v ? strtol(v, &end, 10) : -1;
             if (v && !*end && n >= 0 && n < 100000) *nums[i].field = (int)n;
         }
+        if (!strcmp(key, "pending")) {
+            char *id = strtok_r(NULL, " ", &save);
+            if (id) s->pending = puzzle_find(id);
+            continue;
+        }
         int is_seen = !strcmp(key, "seen"), is_missed = !strcmp(key, "missed");
         if (!is_seen && !is_missed) continue;
         for (char *id = strtok_r(NULL, " ", &save); id; id = strtok_r(NULL, " ", &save)) {
@@ -92,6 +98,7 @@ int puzzle_stats_save(const char *dir, const char *profile, const PuzzleStats *s
     fprintf(f, "\nmissed");
     for (int i = 0; i < s->nmissed; i++) fprintf(f, " %s", puzzle_data[s->missed[i]].id);
     fputc('\n', f);
+    if (s->pending >= 0) fprintf(f, "pending %s\n", puzzle_data[s->pending].id);
     int ok = !ferror(f);
     if (fclose(f) || !ok) { remove(tmp); return 0; }
     return rename(tmp, path) == 0;
@@ -134,6 +141,7 @@ void puzzle_stats_record(PuzzleStats *s, int index, int solved)
     s->rating = puzzle_rating_after(s->rating, s->played, puzzle_data[index].rating, solved);
     s->played++;
     s->seen[index] = 1;
+    if (s->pending == index) s->pending = -1;
     if (solved) {
         if (++s->streak > s->best_streak) s->best_streak = s->streak;
         puzzle_stats_forgive(s, index);
@@ -158,10 +166,18 @@ int puzzle_pick(unsigned char seen[PUZZLE_MAX], int target, unsigned themes, uns
             if (!count) continue;
             int pick = rand_r(seed) % count;
             for (int i = 0; i < puzzle_count; i++)
-                if (!seen[i] && matches(i, themes) && abs(puzzle_data[i].rating - target) <= w && !pick--)
+                if (!seen[i] && matches(i, themes) && abs(puzzle_data[i].rating - target) <= w && !pick--) {
+                    seen[i] = 1;
                     return i;
+                }
         }
         for (int i = 0; i < puzzle_count; i++) if (matches(i, themes)) seen[i] = 0;
     }
     return -1;
+}
+
+int puzzle_stats_next_rated(PuzzleStats *s, unsigned *seed)
+{
+    if (s->pending < 0) s->pending = puzzle_pick(s->seen, s->rating, 0, seed);
+    return s->pending;
 }

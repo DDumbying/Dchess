@@ -65,7 +65,7 @@ static void test_pick(void)
     check("an unseen puzzle within 100 of the rating", i >= 0 && near(i, 1500, 100));
     for (int k = 0; k < puzzle_count; k++) if (near(k, 1500, 300)) seen[k] = 1;
     i = puzzle_pick(seen, 1500, 0, &seed);
-    check("the window widens once those are seen", i >= 0 && !seen[i] && !near(i, 1500, 300));
+    check("the window widens once those are seen", i >= 0 && !near(i, 1500, 300));
     memset(seen, 1, sizeof(seen));
     i = puzzle_pick(seen, 1500, 0, &seed);
     check("all seen: the list starts over", i >= 0 && near(i, 1500, 100));
@@ -82,6 +82,35 @@ static void test_pick(void)
     i = puzzle_pick(seen, 1200, TH_FORK, &seed);
     for (int k = 0; k < puzzle_count; k++) if (!(puzzle_data[k].themes & TH_FORK) && !seen[k]) others_kept = 0;
     check("every fork seen: only the forks start over", i >= 0 && others_kept);
+}
+
+static void test_pending(void)
+{
+    printf("== a rated puzzle left unfinished ==\n");
+    static PuzzleStats s, t;
+    unsigned seed = 7;
+    puzzle_stats_init(&s);
+    int a = puzzle_stats_next_rated(&s, &seed), b = puzzle_stats_next_rated(&s, &seed);
+    check("comes back until it has a result", a >= 0 && a == b);
+    puzzle_stats_record(&s, a, 1);
+    check("then a new one", puzzle_stats_next_rated(&s, &seed) != a);
+    char dir[] = "/tmp/dchess-pp-XXXXXX", path[256];
+    if (!mkdtemp(dir)) { perror("mkdtemp"); failures++; return; }
+    int c = puzzle_stats_next_rated(&s, &seed);
+    puzzle_stats_save(dir, "p", &s);
+    puzzle_stats_load(dir, "p", &t);
+    check("and survives leaving dchess", puzzle_stats_next_rated(&t, &seed) == c);
+    snprintf(path, sizeof(path), "%s/p.txt", dir);
+    unlink(path);
+    rmdir(dir);
+
+    unsigned char seen[PUZZLE_MAX] = { 0 };
+    int dup = 0, picked[40];
+    for (int n = 0; n < 40; n++) {
+        picked[n] = puzzle_pick(seen, 1500, TH_FORK, &seed);
+        for (int m = 0; m < n; m++) dup |= picked[m] == picked[n];
+    }
+    check("picking marks a puzzle seen, so none repeats", !dup);
 }
 
 static void test_storage(void)
@@ -127,6 +156,7 @@ int main(void)
     test_rating();
     test_record();
     test_pick();
+    test_pending();
     test_storage();
     if (failures) {
         printf("\n%d puzzle stats test(s) FAILED.\n", failures);
