@@ -1,5 +1,6 @@
 CC      = gcc
-CFLAGS  = -Iheaders -O2 -Wall -pthread -D_XOPEN_SOURCE=600 $(shell ncursesw6-config --cflags 2>/dev/null || ncursesw5-config --cflags 2>/dev/null || echo "")
+CFLAGS_EXTRA ?=
+CFLAGS  = -Iheaders -O2 -Wall $(CFLAGS_EXTRA) -pthread -D_XOPEN_SOURCE=600 $(shell ncursesw6-config --cflags 2>/dev/null || ncursesw5-config --cflags 2>/dev/null || echo "")
 LDFLAGS = -lncursesw -pthread -lm
 
 SRC     = $(shell find src -name "*.c")
@@ -29,10 +30,15 @@ build:
 build/%: tests/%.c $(CORE_SRC) $(HEADERS) | build
 	$(CC) $(CFLAGS) -Itests $< $(CORE_SRC) -o $@ $(LDFLAGS)
 
-test: build/fake_uci build/genfens $(TEST_BIN)
+test: $(TARGET) build/fake_uci build/genfens $(TEST_BIN)
 	@for t in $(TEST_BIN); do \
 		echo "── $$t ──"; \
 		./$$t || exit 1; \
+		echo; \
+	done
+	@for t in tests/test_manpage.sh tests/test_install.sh; do \
+		echo "── $$t ──"; \
+		sh $$t || exit 1; \
 		echo; \
 	done
 	@echo "All suites passed."
@@ -80,4 +86,26 @@ clean:
 	rm -f $(TARGET)
 	rm -rf build
 
-.PHONY: all test bench match genfens tune puzzles clean
+# ── Install ─────────────────────────────────────────────────────────────
+PREFIX  ?= /usr/local
+DESTDIR ?=
+VERSION  = $(shell sed -n 's/.*DCHESS_VERSION "\(.*\)".*/\1/p' headers/utils/version.h)
+SHARE    = $(DESTDIR)$(PREFIX)/share
+
+install: $(TARGET)
+	install -Dm755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/dchess
+	install -d $(SHARE)/man/man6
+	sed 's/@VERSION@/$(VERSION)/' docs/dchess.6 > $(SHARE)/man/man6/dchess.6
+	chmod 644 $(SHARE)/man/man6/dchess.6
+	install -Dm644 README.md $(SHARE)/doc/dchess/README.md
+	install -Dm644 docs/guide.md $(SHARE)/doc/dchess/guide.md
+	install -Dm644 CHANGELOG.md $(SHARE)/doc/dchess/CHANGELOG.md
+	install -Dm644 LICENSE $(SHARE)/licenses/dchess/LICENSE
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/dchess $(SHARE)/man/man6/dchess.6
+	rm -f $(SHARE)/doc/dchess/README.md $(SHARE)/doc/dchess/guide.md $(SHARE)/doc/dchess/CHANGELOG.md
+	rm -f $(SHARE)/licenses/dchess/LICENSE
+	rmdir $(SHARE)/doc/dchess $(SHARE)/licenses/dchess 2>/dev/null || true
+
+.PHONY: all test bench match genfens tune puzzles install uninstall clean
