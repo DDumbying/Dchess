@@ -5,7 +5,7 @@
 
 [![test](https://github.com/DDumbying/dchess/actions/workflows/test.yml/badge.svg)](https://github.com/DDumbying/dchess/actions/workflows/test.yml)
 
-One of these nerdy things built out of passion — to actually understand how `C` works and how chess works technically, under the hood.
+One of these nerdy things built out of passion - to actually understand how `C` works and how chess works technically, under the hood.
 
 **Links:** [GitHub](https://github.com/ddumbying/) · [User guide](docs/guide.md) · [Project journal](docs/overview.md) · ~[Documentation](https://ddumbying.vercel.app/projects/dchess/)~ (*WIP*) </br>
 
