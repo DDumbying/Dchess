@@ -26,9 +26,14 @@ int puzzle_stats_dir(char *buf, size_t n)
     return 1;
 }
 
+int puzzle_stats_can_save(const char *profile)
+{
+    return profile[0] && profile[0] != '.' && !strchr(profile, '/');
+}
+
 static int file_for(const char *dir, const char *profile, char *buf, size_t n)
 {
-    if (!profile[0] || profile[0] == '.' || strchr(profile, '/')) return 0;
+    if (!puzzle_stats_can_save(profile)) return 0;
     return snprintf(buf, n, "%s/%s.txt", dir, profile) < (int)n;
 }
 
@@ -82,6 +87,8 @@ int puzzle_stats_load(const char *dir, const char *profile, PuzzleStats *s)
         }
     }
     free(text);
+    if (s->rating < 400)  s->rating = 400;
+    if (s->rating > 3500) s->rating = 3500;
     return 1;
 }
 

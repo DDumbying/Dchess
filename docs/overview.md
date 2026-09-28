@@ -727,6 +727,34 @@ against the old engine (200 games, 50 ms), it scored 58.0%, while the old
 engine against itself the same way scored 60.5%: about −18, well inside the
 error, for lines that are always complete.
 
+### Round 13 — loose ends, again
+
+The minor findings the tuning and puzzles reviews left behind, and one gap
+they surfaced.
+
+- **Promotion by cursor.** The cursor always made a queen; underpromotion
+  could only be typed. A pawn reaching the last rank now asks `q r b n`
+  (Enter for a queen, Esc takes it back). This works in games and puzzles
+  alike: the prompt repaints through the same hook in every screen.
+- **Puzzles.**
+  - Rush now shows a solve or a mistake for 0.7 s before moving on;
+  - leaving Rush with Esc keeps a new best;
+  - a damaged rating is clamped to 400–3500;
+  - a profile whose name can't be a file name says "(not saved)";
+  - the theme list scrolls.
+- **Tuning tools.**
+  - `--terms` takes exact names;
+  - weights stay within ±500;
+  - failed allocations and threads are handled;
+  - a params file from another layout is refused;
+  - genfens counts dropped games, gives up on a silent engine, and fails
+    when nothing was produced, and so does `make genfens`.
+- **The search.** The principal-line rule from Round 12 now applies only
+  with PVS on. Without it every window is full, so the table would never
+  cut, and ablation runs would crawl.
+- **Tests** for each of these, plus a genfens test that runs the real
+  binary against the fake engine, crashing and silent.
+
 ## 4. Current architecture
 
 ```

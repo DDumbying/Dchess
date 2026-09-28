@@ -75,6 +75,8 @@ typedef struct {
      * immediately. NULL until tui_run() installs it. */
     void (*request_redraw)(void *ctx);
     void  *redraw_ctx;
+    WINDOW *input_win;       /* the command window last painted */
+    int     promo_prompt;    /* asking which piece a pawn becomes */
 
 
     int show_onboarding;

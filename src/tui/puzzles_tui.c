@@ -13,18 +13,20 @@
 
 #define RUSH_MS 180000
 #define RUSH_START 800
+#define RUSH_PAUSE_MS 700
 
 typedef struct {
     TUIState    *s;
     PuzzleStats  st;
-    const char  *who;           /* NULL: a guest, nothing saved */
+    const char  *who;           /* NULL: a guest */
+    int          saves;         /* a profile whose name makes a file */
     char         dir[512];
     unsigned     seed;
 } Session;
 
 static void save(Session *ss)
 {
-    if (ss->who) puzzle_stats_save(ss->dir, ss->who, &ss->st);
+    if (ss->saves) puzzle_stats_save(ss->dir, ss->who, &ss->st);
 }
 
 static void begin(Session *ss, PuzzleView *v, int index)
@@ -101,8 +103,7 @@ static void judge(Session *ss, PuzzleView *v, Move m)
         if (v->mode == PM_RUSH) {
             if (++v->strikes >= 3) { rush_over(ss, v, "Three mistakes"); return; }
             snprintf(s->status, sizeof(s->status), "Wrong — %d of 3 mistakes", v->strikes);
-            int i = next_index(ss, v);
-            if (i >= 0) begin(ss, v, i);
+            v->advance_at = game_now_ms() + RUSH_PAUSE_MS;
             return;
         }
         rate(ss, v, 0);
@@ -117,8 +118,8 @@ static void judge(Session *ss, PuzzleView *v, Move m)
     v->verdict = PV_SOLVED;
     if (v->mode == PM_RUSH) {
         v->score++;
-        int i = next_index(ss, v);
-        if (i >= 0) begin(ss, v, i);
+        snprintf(s->status, sizeof(s->status), "Solved — %d so far", v->score);
+        v->advance_at = game_now_ms() + RUSH_PAUSE_MS;
         return;
     }
     rate(ss, v, !v->pz.failed);
@@ -164,7 +165,12 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
     for (;;) {
         if (mode == PM_RUSH && v.verdict != PV_OVER) {
             v.rush_left_ms = rush_end - game_now_ms();
-            if (v.rush_left_ms <= 0) { v.rush_left_ms = 0; rush_over(ss, &v, "Time"); }
+            if (v.rush_left_ms <= 0) { v.rush_left_ms = 0; v.advance_at = 0; rush_over(ss, &v, "Time"); }
+        }
+        if (v.advance_at && game_now_ms() >= v.advance_at) {   /* the verdict has been seen */
+            v.advance_at = 0;
+            int i = next_index(ss, &v);
+            if (i >= 0) begin(ss, &v, i);
         }
         WINDOW *in = tui_screen_input(sc);   /* a resize replaces the window */
         tui_screen_paint(sc);
@@ -176,9 +182,16 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
         if (ch == 27 && typing) continue;   /* Esc only cancelled the typing */
         if (ch == 27) {
             if (s->selected) { s->selected = 0; memset(s->highlight, 0, sizeof(s->highlight)); continue; }
+            if (mode == PM_RUSH && v.verdict != PV_OVER) rush_over(ss, &v, "Stopped");   /* keeps a new best */
             break;
         }
+        if (v.advance_at) continue;   /* the next Rush puzzle is on its way */
         Move m;
+        if (mode == PM_RUSH && v.verdict != PV_OVER && game_now_ms() >= rush_end) {
+            v.rush_left_ms = 0;   /* the answer came after the clock ran out */
+            rush_over(ss, &v, "Time");
+            continue;
+        }
         if (ch == -2) {
             if (v.pz.done) continue;
             if (typed_move(&s->game, cmd, &m)) judge(ss, &v, m);
@@ -186,6 +199,11 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
             continue;
         }
         int picked = v.pz.done && (ch == '\n') ? 0 : tui_cursor_key(s, ch, &m);
+        if (picked == 1 && mode == PM_RUSH && game_now_ms() >= rush_end) {
+            v.rush_left_ms = 0;   /* the promotion prompt ran past the clock */
+            rush_over(ss, &v, "Time");
+            continue;
+        }
         if (picked == 1) { judge(ss, &v, m); continue; }
         if (picked == 0) continue;
         switch (ch) {
@@ -232,7 +250,7 @@ static void run_mode(Session *ss, PuzzleMode mode, unsigned theme)
     s->status[0] = '\0';
 }
 
-static void draw_menu(const Session *ss, const char *const *items, int n, int sel, const char *title,
+static void draw_menu(const Session *ss, const char *const *items, int n, int sel, int top, const char *title,
                       const char *msg)
 {
     int rows, cols;
@@ -243,15 +261,19 @@ static void draw_menu(const Session *ss, const char *const *items, int n, int se
     attron(COLOR_PAIR(CP_TITLE) | A_BOLD);
     mvw_fit(stdscr, 0, 1, cols - 2, line);
     attroff(COLOR_PAIR(CP_TITLE) | A_BOLD);
+    char who[80];
+    if (!ss->who) snprintf(who, sizeof(who), "guest (not saved)");
+    else snprintf(who, sizeof(who), "%.60s%s", ss->who, ss->saves ? "" : " (not saved)");
     snprintf(line, sizeof(line), "%s · rating %d · streak %d (best %d) · rush best %d · %d missed",
-             ss->who ? ss->who : "guest (not saved)", ss->st.rating, ss->st.streak, ss->st.best_streak,
+             who, ss->st.rating, ss->st.streak, ss->st.best_streak,
              ss->st.rush_best, ss->st.nmissed);
     attron(COLOR_PAIR(CP_HINT));
     mvw_fit(stdscr, 1, 1, cols - 2, line);
     attroff(COLOR_PAIR(CP_HINT));
-    for (int i = 0; i < n && 3 + i < rows - 2; i++) {
+    for (int r = 0; top + r < n && 3 + r < rows - 2; r++) {
+        int i = top + r;
         if (i == sel) attron(A_REVERSE);
-        mvw_fit(stdscr, 3 + i, 3, cols - 6, items[i]);
+        mvw_fit(stdscr, 3 + r, 3, cols - 6, items[i]);
         if (i == sel) attroff(A_REVERSE);
     }
     if (msg && msg[0]) {
@@ -270,8 +292,13 @@ static int choose(const Session *ss, const char *const *items, int n, int *sel, 
                   const char *msg)
 {
     keypad(stdscr, TRUE);
+    int top = 0;
     for (;;) {
-        draw_menu(ss, items, n, *sel, title, msg);
+        int page = getmaxy(stdscr) - 5;   /* the title rows, the message and the keys */
+        if (page < 1) page = 1;
+        if (*sel < top) top = *sel;
+        if (*sel >= top + page) top = *sel - page + 1;
+        draw_menu(ss, items, n, *sel, top, title, msg);
         int ch = getch();
         switch (ch) {
         case KEY_UP:   case 'k': *sel = (*sel + n - 1) % n; break;
@@ -291,8 +318,9 @@ void puzzles_screen(TUIState *s)
     ss.s = s;
     ss.seed = (unsigned)time(NULL) ^ (unsigned)getpid();
     ss.who = s->profiles.count && s->first_run != 2 ? s->profiles.p[s->profiles.active].name : NULL;
+    ss.saves = ss.who && puzzle_stats_can_save(ss.who);
     puzzle_stats_dir(ss.dir, sizeof(ss.dir));
-    if (ss.who) puzzle_stats_load(ss.dir, ss.who, &ss.st);
+    if (ss.saves) puzzle_stats_load(ss.dir, ss.who, &ss.st);
     else puzzle_stats_init(&ss.st);
 
     int sel = 0, theme_sel = 0;

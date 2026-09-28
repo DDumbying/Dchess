@@ -142,6 +142,18 @@ static void test_storage(void)
           puzzle_stats_load(dir, "alice", &t) == 0);
     check("renaming a profile with no file is fine", puzzle_stats_rename(dir, "nobody", "someone"));
     check("remove deletes it", puzzle_stats_remove(dir, "alicia") && puzzle_stats_load(dir, "alicia", &t) == 0);
+    snprintf(path, sizeof(path), "%s/dan.txt", dir);
+    f = fopen(path, "w");
+    fprintf(f, "rating 9000\n");
+    fclose(f);
+    int high = puzzle_stats_load(dir, "dan", &t) && t.rating == 3500;
+    f = fopen(path, "w");
+    fprintf(f, "rating 12\n");
+    fclose(f);
+    check("a damaged rating is clamped to 400..3500", high && puzzle_stats_load(dir, "dan", &t) && t.rating == 400);
+    unlink(path);
+    check("names that make no file are known", puzzle_stats_can_save("ann") && !puzzle_stats_can_save("a/b") &&
+                                               !puzzle_stats_can_save(".x") && !puzzle_stats_can_save(""));
     check("names with a slash or a leading dot are refused",
           !puzzle_stats_save(dir, "../evil", &s) && !puzzle_stats_save(dir, "a/b", &s) &&
           !puzzle_stats_save(dir, "", &s) && !puzzle_stats_remove(dir, ".."));

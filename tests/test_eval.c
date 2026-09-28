@@ -244,6 +244,15 @@ static void test_terms(void)
           term("q5k1/8/8/8/8/8/5PPP/Q5K1 w - - 0 1", KING) > term("q5k1/8/8/8/8/8/8/Q5K1 w - - 0 1", KING));
     check("the bishop pair scores above bishop and knight",
           term("k7/8/8/8/8/8/8/2B1BK2 w - - 0 1", XTRA) > term("k7/8/8/8/8/8/8/2B1NK2 w - - 0 1", XTRA));
+    EvalParams saved = *eval_params();
+    EvalOptions mob = { 0, 0, 1, 0, 0 }, none = { 0 };
+    eval_set_params(eval_tuned_params());
+    eval_set_options(&mob);
+    int open_rook = eval_fen("k7/8/8/8/8/8/8/R6K w - - 0 1");
+    int boxed_rook = eval_fen("k7/8/8/8/8/8/PP6/RB5K w - - 0 1") - eval_fen("k7/8/8/8/8/8/PP6/1B5K w - - 0 1");
+    eval_set_options(&none);
+    eval_set_params(&saved);
+    check("under the tuned weights a free rook outscores a boxed one", open_rook > boxed_rook);
     check("PeSTO tables value a queen above a rook", term("k7/8/8/8/8/8/8/Q6K w - - 0 1", PESTO) >
                                                      term("k7/8/8/8/8/8/8/R6K w - - 0 1", PESTO) - 1000);
 }

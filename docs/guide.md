@@ -52,7 +52,9 @@ Any gameplay flag on the command line (`--no-menu`, `--color`, `--white`,
 Two ways to move:
 
 - **Cursor.** Move with `hjkl` or the arrows, Enter on a piece to see its
-  legal moves, Enter on a target to play. `Esc` drops the piece.
+  legal moves, Enter on a target to play. `Esc` drops the piece. A pawn
+  reaching the last rank asks which piece it becomes: `q` `r` `b` `n`, Enter
+  for a queen, Esc to take the move back.
 - **Typing.** Press `i`, type `e2e4` (or a command) and Enter.
 
 The side panel shows the evaluation (or analysis), the clocks, the moves with
@@ -297,7 +299,12 @@ The evaluation's weights are tuned from games, not set by hand:
 terms to the results and writes `build/tuned_params.h`, plus a `.txt` copy
 for `make match ARGS="--cand all --cand-params build/tuned_params.h.txt"`.
 If the match says the new weights do not lose, copy the header over
-`src/engine/tuned_params.h`.
+`src/engine/tuned_params.h`. `--terms` takes exact names (`pesto`, `pawns`,
+`mob`, `king`, `xtra`), and no weight moves past ±500.
+
+`make genfens` fails if any of its jobs does. A job fails when none of its
+games gave positions; an engine that says nothing for 10 seconds
+(`--hang-ms`) loses that game and is restarted.
 
 ## Troubleshooting
 

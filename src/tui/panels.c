@@ -515,6 +515,13 @@ void draw_command_bar(WINDOW *cmd, const TUIState *state)
     int h, w;
     getmaxyx(cmd, h, w);
     (void)h;
+    if (state->promo_prompt) {
+        wattron(cmd, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
+        mvw_fit(cmd, 2, 2, w - 4, "Promote to: Q R B N (⏎ queen, Esc cancels)");
+        wattroff(cmd, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
+        wnoutrefresh(cmd);
+        return;
+    }
 
     if (state->replay) {
         const ReplayGame *rp = state->replay;
