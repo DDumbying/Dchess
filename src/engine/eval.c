@@ -278,7 +278,12 @@ static int is_passed(int sq, int side, U64 enemy_pawns)
     return 1;
 }
 
-static const EvalParams hand_set = { {
+/* A weight table from a plain list, so a missing or extra value fails to compile. */
+#define PARAM_TABLE(name, ...) \
+    _Static_assert(sizeof((int[])__VA_ARGS__) / sizeof(int) == EP_COUNT, #name " lists every EP_* parameter"); \
+    static const EvalParams name = { __VA_ARGS__ };
+
+PARAM_TABLE(hand_set, {
     -10, -20,                        /* doubled */
     -15, -10,                        /* isolated */
     5, 10, 15, 25, 40, 60,           /* passed, middlegame, ranks 1..6 */
@@ -289,11 +294,10 @@ static const EvalParams hand_set = { {
     10, -15,                         /* king shield pawn, open file by the king */
     30, 50,                          /* bishop pair */
     20, 10, 10, 5,                   /* rook on an open, a half-open file */
-} };
-_Static_assert(sizeof(hand_set.v) / sizeof(int) == EP_COUNT, "hand_set lists every parameter");
+})
 
 #include "tuned_params.h"
-_Static_assert(TUNED_PARAM_COUNT == EP_COUNT, "tuned_params.h matches the EP_* layout");
+PARAM_TABLE(tuned, TUNED_PARAMS)
 
 static EvalParams params = tuned;
 

@@ -5,7 +5,8 @@
  * Fits the sigmoid scale K, then moves each parameter while the training
  * error falls, and stops when a pass changes nothing or the held-out games'
  * error has risen twice; the best parameters on those games are written to
- * src/engine/tuned_params.h. */
+ * build/tuned_params.h (and .txt, for match --cand-params). Copy the header
+ * to src/engine/ once a match says it does not lose. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,7 +15,7 @@
 
 int main(int argc, char **argv)
 {
-    const char *in = "build/fens.txt", *out = "src/engine/tuned_params.h", *terms = NULL;
+    const char *in = "build/fens.txt", *out = "build/tuned_params.h", *terms = NULL;
     int threads = 14, max_passes = 200;
     for (int i = 1; i + 1 < argc; i += 2) {
         if      (!strcmp(argv[i], "--in"))      in = argv[i + 1];

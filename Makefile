@@ -9,13 +9,14 @@ TARGET  = dchess
 # utilities. The tests link against this set -- they must never need
 # ncurses or a terminal to run.
 CORE_SRC = $(shell find src/engine src/game src/utils -name "*.c")
+HEADERS  = $(shell find headers src tools tests -name "*.h")
 
 TEST_SRC  = $(wildcard tests/test_*.c) tests/perft.c
 TEST_BIN  = $(patsubst tests/%.c,build/%,$(TEST_SRC))
 
 all: $(TARGET)
 
-$(TARGET): $(SRC)
+$(TARGET): $(SRC) $(HEADERS)
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 # ── Tests ───────────────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ $(TARGET): $(SRC)
 build:
 	@mkdir -p build
 
-build/%: tests/%.c $(CORE_SRC) | build
+build/%: tests/%.c $(CORE_SRC) $(HEADERS) | build
 	$(CC) $(CFLAGS) -Itests $< $(CORE_SRC) -o $@ $(LDFLAGS)
 
 test: build/fake_uci $(TEST_BIN)
@@ -37,24 +38,24 @@ test: build/fake_uci $(TEST_BIN)
 	@echo "All suites passed."
 
 # Not part of `make test`: it measures, it does not pass or fail.
-build/match: tools/match.c tools/tune_core.c $(CORE_SRC) | build
+build/match: tools/match.c tools/tune_core.c $(CORE_SRC) $(HEADERS) | build
 	$(CC) $(CFLAGS) -Itools $< tools/tune_core.c $(CORE_SRC) -o $@ $(LDFLAGS)
 
 # Search options against each other, e.g. make match ARGS="--base none --cand pvs"
 match: build/match
 	./build/match $(ARGS)
 
-build/test_tune: tests/test_tune.c tools/tune_core.c $(CORE_SRC) | build
+build/test_tune: tests/test_tune.c tools/tune_core.c $(CORE_SRC) $(HEADERS) | build
 	$(CC) $(CFLAGS) -Itools $< tools/tune_core.c $(CORE_SRC) -o $@ $(LDFLAGS)
 
-build/tune: tools/tune.c tools/tune_core.c $(CORE_SRC) | build
+build/tune: tools/tune.c tools/tune_core.c $(CORE_SRC) $(HEADERS) | build
 	$(CC) $(CFLAGS) -Itools $< tools/tune_core.c $(CORE_SRC) -o $@ $(LDFLAGS)
 
 # Tune the evaluation's added terms on build/fens.txt (make genfens first)
 tune: build/tune
 	./build/tune $(ARGS)
 
-build/genfens: tools/genfens.c $(CORE_SRC) | build
+build/genfens: tools/genfens.c $(CORE_SRC) $(HEADERS) | build
 	$(CC) $(CFLAGS) $< $(CORE_SRC) -o $@ $(LDFLAGS)
 
 # Labelled positions from Stockfish self-play (GAMES in total, JOBS at once)

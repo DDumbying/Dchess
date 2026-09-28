@@ -128,10 +128,9 @@ void tune_write_header(const char *path, const EvalParams *p)
     if (!f) { perror(path); return; }
     fprintf(f, "/* Written by tools/tune.c from Stockfish self-play positions; see\n"
                " * docs/overview.md (round 11). Order: the EP_* enum in eval.h. */\n"
-               "#define TUNED_PARAM_COUNT %d\n"
-               "static const EvalParams tuned = { {", EP_COUNT);
+               "#define TUNED_PARAMS {");
     for (int i = 0; i < EP_COUNT; i++) fprintf(f, "%s%d", i ? ", " : " ", p->v[i]);
-    fprintf(f, " } };\n");
+    fprintf(f, " }\n");
     fclose(f);
 }
 
