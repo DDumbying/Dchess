@@ -207,11 +207,39 @@ static void select_square(TUIState *state, int sq)
              'a' + (sq % 8), (sq / 8) + 1);
 }
 
+/* The piece a pawn becomes, asked in the command bar; 0 if cancelled. */
+static int promotion_piece(TUIState *state)
+{
+    WINDOW *w = state->input_win;
+    if (!w || !state->request_redraw) return FLAG_PROMO_Q;
+    state->promo_prompt = 1;
+    state->request_redraw(state->redraw_ctx);
+    int ch;
+    while ((ch = wgetch(w)) == ERR) {}   /* a timed screen polls; wait for a key */
+    state->promo_prompt = 0;
+    switch (ch) {
+    case 'q': case 'Q': case '\n': case '\r': case KEY_ENTER: return FLAG_PROMO_Q;
+    case 'r': case 'R': return FLAG_PROMO_R;
+    case 'b': case 'B': return FLAG_PROMO_B;
+    case 'n': case 'N': return FLAG_PROMO_N;
+    default: return 0;
+    }
+}
+
 /* Second Enter: the move to the cursor square, if it is legal. */
 static int choose_move(TUIState *state, int to_sq, Move *out)
 {
     int from_sq = screen_to_square(state, state->sel_row, state->sel_col);
     int found = game_find_move(&state->game, from_sq, to_sq, 0, out);
+    if (found && (FLAGS(*out) & FLAG_PROMOTION)) {
+        int promo = promotion_piece(state);
+        if (!promo) {
+            snprintf(state->status, sizeof(state->status), "Promotion cancelled");
+            clear_selection(state);
+            return 0;
+        }
+        found = game_find_move(&state->game, from_sq, to_sq, promo, out);
+    }
     if (!found && !state->highlight[state->cursor_row][state->cursor_col])
         snprintf(state->status, sizeof(state->status), "Not a legal move — select a highlighted square.");
     clear_selection(state);
@@ -362,6 +390,8 @@ void tui_cleanup(void) { endwin(); }
 struct Screen {
     WINDOW   *board, *side, *cmd;
     TUIState *state;
+    void    (*prev_redraw)(void *);
+    void     *prev_ctx;
 };
 
 /* Smallest terminal that fits a COMPLETE board: eight ranks plus file
@@ -455,6 +485,7 @@ static void screen_paint(const Screen *sc)
 
     werase(stdscr);
     wnoutrefresh(stdscr);
+    sc->state->input_win = sc->cmd;
     render_all(sc->board, sc->side, sc->cmd, sc->state);
 
     for (int i = 0; i < n; i++) if (wins[i]) touchwin(wins[i]);
@@ -506,6 +537,10 @@ Screen *tui_screen_open(TUIState *state)
         wgetch(stdscr);
     }
     *sc = screen_create(state);
+    sc->prev_redraw = state->request_redraw;
+    sc->prev_ctx = state->redraw_ctx;
+    state->request_redraw = screen_paint_hook;
+    state->redraw_ctx = sc;
     return sc;
 }
 
@@ -516,6 +551,9 @@ WINDOW *tui_screen_input(Screen *sc)  { return sc->cmd; }
 void tui_screen_close(Screen *sc)
 {
     if (!sc) return;
+    sc->state->request_redraw = sc->prev_redraw;
+    sc->state->redraw_ctx = sc->prev_ctx;
+    sc->state->input_win = NULL;
     screen_destroy(sc);
     free(sc);
 }
