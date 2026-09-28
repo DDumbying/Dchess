@@ -9,6 +9,7 @@
  */
 
 #include "tui/render.h"
+#include "tui/puzzles_tui.h"
 #include "utils/text.h"
 #include "tui/colors.h"
 #include "tui/piece_art.h"
@@ -423,7 +424,10 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
                              state->sel_col == file);
             int is_hint   = (state->analysis_on && state->analysis_ready && !state->game.game_over &&
                              state->analysis.best && !is_cursor && !is_sel &&
-                             (sq == FROM(state->analysis.best) || sq == TO(state->analysis.best)));
+                             (sq == FROM(state->analysis.best) || sq == TO(state->analysis.best))) ||
+                            (state->puzzle && state->puzzle->hint_sq == sq && !is_cursor && !is_sel);
+            int is_wrong  = state->puzzle && !is_cursor && !is_sel &&
+                            (sq == state->puzzle->wrong_from || sq == state->puzzle->wrong_to);
             int is_movehi = (state->selected &&
                              !is_cursor && !is_sel &&
                              state->highlight[drow][file]) || is_hint;
@@ -431,7 +435,7 @@ static void draw_board_grid(WINDOW *win, const TUIState *state,
                              (sq == lm_from || sq == lm_to));
 
             attr_t sq_attr;
-            if      (is_check)  sq_attr = COLOR_PAIR(CP_CHECK_SQ);
+            if      (is_check || is_wrong) sq_attr = COLOR_PAIR(CP_CHECK_SQ);
             else if (is_sel)    sq_attr = COLOR_PAIR(CP_SEL);
             else if (is_cursor) sq_attr = COLOR_PAIR(CP_CURSOR);
             else if (is_movehi) sq_attr = COLOR_PAIR(CP_MOVE_HI);
@@ -530,7 +534,9 @@ void render_all(WINDOW *board, WINDOW *side, WINDOW *cmd, const TUIState *state)
 {
     werase(board);
     char title[2 * PLAYER_NAME_MAX + 8];
-    if (state->replay) {
+    if (state->puzzle) {
+        snprintf(title, sizeof(title), "puzzles");
+    } else if (state->replay) {
         const ReplayEntry *e = &state->replay->info;
         snprintf(title, sizeof(title), "%s vs %s", e->white[0] ? e->white : "?", e->black[0] ? e->black : "?");
     } else {

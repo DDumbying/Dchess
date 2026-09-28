@@ -1,5 +1,6 @@
 #include "tui/panels.h"
 #include "tui/replay_tui.h"
+#include "tui/puzzles_tui.h"
 #include "utils/text.h"
 #include "game/book.h"
 #include "tui/render.h"
@@ -409,6 +410,65 @@ static void draw_engine_panel(WINDOW *p, const TUIState *state)
     engine_row(p, 3, "nps",   nps);
 }
 
+static void draw_puzzle_panel(WINDOW *p, const TUIState *state)
+{
+    const PuzzleView *v = state->puzzle;
+    static const char *const modes[] = { "Rated", "Themes", "Rush", "Missed" };
+    panel_frame(p, "puzzle", CP_ACC_BOARD);
+    int h, w, row = 1;
+    getmaxyx(p, h, w);
+    char line[128];
+    if (v->mode == PM_THEMES) snprintf(line, sizeof(line), "Themes · %s", puzzle_theme_name((int)v->theme));
+    else if (v->mode == PM_MISSED) snprintf(line, sizeof(line), "Missed · %d to go", v->left);
+    else snprintf(line, sizeof(line), "%s", modes[v->mode]);
+    wattron(p, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
+    mvw_fit(p, row++, 2, w - 4, line);
+    wattroff(p, COLOR_PAIR(CP_ACC_BOARD) | A_BOLD);
+
+    static const char *const says[] = { "Find the best move", "Right — keep going", "Wrong",
+                                        "Solved", "Solution shown", "Run over" };
+    int good = v->verdict == PV_RIGHT || v->verdict == PV_SOLVED;
+    int bad = v->verdict == PV_WRONG || v->verdict == PV_OVER;
+    attr_t a = good ? COLOR_PAIR(CP_STATUS_OK) | A_BOLD : bad ? COLOR_PAIR(CP_STATUS_ERR) | A_BOLD
+                    : COLOR_PAIR(CP_INFO_VAL);
+    snprintf(line, sizeof(line), "You play %s", state->view_side == WHITE ? "White" : "Black");
+    mvw_fit(p, row++, 2, w - 4, line);
+    wattron(p, a);
+    mvw_fit(p, row++, 2, w - 4, says[v->verdict]);
+    wattroff(p, a);
+    row++;
+
+    if (v->mode == PM_RUSH) {
+        long s = (v->rush_left_ms + 999) / 1000;
+        snprintf(line, sizeof(line), "Solved %d   Mistakes %d/3   %ld:%02ld", v->score, v->strikes, s / 60, s % 60);
+    } else if (v->mode == PM_RATED && v->rated) {
+        snprintf(line, sizeof(line), "Rating %d (%+d)   Streak %d", v->rating, v->delta, v->streak);
+    } else if (v->mode == PM_RATED) {
+        snprintf(line, sizeof(line), "Rating %d   Streak %d", v->rating, v->streak);
+    } else {
+        snprintf(line, sizeof(line), "Unrated");
+    }
+    mvw_fit(p, row++, 2, w - 4, line);
+    row++;
+
+    if (v->pz.done || v->pz.failed) {   /* what it was, once it can no longer help */
+        const PuzzleData *d = &puzzle_data[v->pz.index];
+        snprintf(line, sizeof(line), "Puzzle rated %d", d->rating);
+        mvw_fit(p, row++, 2, w - 4, line);
+        line[0] = '\0';
+        for (int b = 0; b < TH_BITS; b++)
+            if (d->themes & (1 << b)) {
+                size_t n = strlen(line);
+                snprintf(line + n, sizeof(line) - n, "%s%s", n ? ", " : "", puzzle_theme_name(1 << b));
+            }
+        wattron(p, COLOR_PAIR(CP_HINT));
+        if (line[0] && row < h - 2) mvw_fit(p, row++, 2, w - 4, line);
+        snprintf(line, sizeof(line), "lichess.org/training/%s", d->id);
+        if (row < h - 1) mvw_fit(p, row++, 2, w - 4, line);
+        wattroff(p, COLOR_PAIR(CP_HINT));
+    }
+}
+
 void draw_side_column(WINDOW *side, const TUIState *state)
 {
     if (!side) return;
@@ -417,6 +477,15 @@ void draw_side_column(WINDOW *side, const TUIState *state)
     int h, w;
     getmaxyx(side, h, w);
     (void)w;
+    if (state->puzzle) {
+        WINDOW *p = sub(side, 0, h);
+        if (p) {
+            draw_puzzle_panel(p, state);
+            delwin(p);
+        }
+        wnoutrefresh(side);
+        return;
+    }
     DashSide L = dash_side_layout(h);
 
     struct { int h; void (*draw)(WINDOW *, const TUIState *); } panes[4] = {
@@ -481,6 +550,23 @@ void draw_command_bar(WINDOW *cmd, const TUIState *state)
         wattron(cmd, COLOR_PAIR(CP_HINT));
         mvw_fit(cmd, 2, kw < w - 4 ? w - 2 - kw : 2, kw < w - 4 ? kw : w - 4, keys);
         wattroff(cmd, COLOR_PAIR(CP_HINT));
+        wnoutrefresh(cmd);
+        return;
+    }
+    if (state->puzzle) {
+        const char *keys = "i type  ⏎ move  ? hint  s show  n next  r retry  esc back";
+        int kw = text_width(keys), room = w - 4;
+        int bad = strncmp(state->status, "Wrong", 5) == 0 || strncmp(state->status, "Not a", 5) == 0;
+        attr_t a = bad ? COLOR_PAIR(CP_STATUS_ERR) | A_BOLD : COLOR_PAIR(CP_STATUS_OK) | A_BOLD;
+        int sw = kw + 2 < room ? room - kw - 2 : room;
+        wattron(cmd, a);
+        mvw_fit(cmd, 2, 2, sw, state->status);
+        wattroff(cmd, a);
+        if (kw + 2 < room && text_width(state->status) <= sw) {
+            wattron(cmd, COLOR_PAIR(CP_HINT));
+            mvw_fit(cmd, 2, w - 2 - kw, kw, keys);
+            wattroff(cmd, COLOR_PAIR(CP_HINT));
+        }
         wnoutrefresh(cmd);
         return;
     }

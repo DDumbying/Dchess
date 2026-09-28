@@ -82,6 +82,8 @@ int read_key(WINDOW *win, char *buf, int maxlen, int *insert_mode)
                 return ' ';
             case 'a':   /* analysis on/off */
                 return 'a';
+            case '?': case 's': case 'n': case 'r':   /* the puzzle keys */
+                return ch;
             case 'i':
                 *insert_mode = 1;
                 curs_set(1);

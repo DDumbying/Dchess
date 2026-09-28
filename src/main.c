@@ -35,7 +35,7 @@ int main(int argc, char **argv)
     if (args.list_profiles) cli_list_profiles(); /* exits */
 
 
-    if (args.show_stats) args.no_menu = 1;   /* the stats page instead */
+    if (args.show_stats || args.puzzles) args.no_menu = 1;   /* that page instead */
 
     /* Normal game startup ───────────────────────────────────────────── */
     static ReplayList games;
@@ -56,6 +56,7 @@ int main(int argc, char **argv)
     TUIState state;
     tui_init(&state, &args);
     state.stats_only = args.show_stats;
+    state.puzzles_only = args.puzzles;
     if (args.replay[0]) {
         state.replay_list = &games;
         snprintf(state.replay_path, sizeof(state.replay_path), "%s", args.replay);

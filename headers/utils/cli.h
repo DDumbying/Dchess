@@ -13,6 +13,7 @@ typedef struct {
     Player players[2];  /* by colour; from -c/-d/-2, then --white/--black */
     int show_version;   /* --version flag */
     int show_stats;     /* --stats flag    */
+    int puzzles;        /* --puzzles: the puzzles menu */
     int list_engines;   /* --engines flag */
     int list_profiles;  /* --profiles flag */
     int uci;            /* --uci: speak UCI on stdin/stdout, no TUI */
