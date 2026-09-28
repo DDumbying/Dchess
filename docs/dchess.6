@@ -1,0 +1,201 @@
+.TH DCHESS 6 "2026-09-28" "dchess @VERSION@" "Games"
+.SH NAME
+dchess \- chess in your terminal
+.SH SYNOPSIS
+.B dchess
+[\fIOPTIONS\fR]
+.br
+.B dchess \-\-uci
+.SH DESCRIPTION
+.B dchess
+is a chess program for the terminal, with its own engine.
+Play against it at three levels or against any UCI engine, play a friend,
+or watch two engines play each other.
+It keeps profiles with their game history and statistics, replays and
+reviews games, analyses positions, and has about 3200 built-in puzzles.
+.PP
+Started with no options it opens a launcher: profiles, a new-game setup
+and your recent games.
+Started through pipes with no arguments, as chess GUIs start engines, it
+speaks UCI.
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-color " \fIwhite\fR|\fIblack\fR"
+The side you play (default white).
+.TP
+.BR \-d ", " \-\-difficulty " \fIeasy\fR|\fImedium\fR|\fIhard\fR"
+The engine's strength: easy searches to depth 2 in up to 1.5 s, medium to
+depth 5 in up to 3 s (the default), hard as deep as it gets in 5 s.
+.TP
+.BR \-2 ", " \-\-two\-player
+Two people at one keyboard, no engine; the board turns after each move.
+.TP
+.BR \-\-white " \fIwho\fR, " \-\-black " \fIwho\fR"
+Who plays a side: a profile name,
+.BR guest ,
+.BR human ,
+a level
+.RB ( easy ", " medium ", " hard ),
+or the name of a registered engine.
+Overrides
+.BR \-c ", " \-d " and " \-2 .
+.TP
+.BR \-\-profile " \fIname\fR"
+Play as this profile for this run.
+.TP
+.B \-\-profiles
+List the profiles with their records and exit.
+.TP
+.B \-\-uci
+Run as a UCI engine on standard input and output.
+.TP
+.BR \-\-clock " \fIM\fR+\fIS\fR"
+A time control: minutes plus seconds of increment, e.g.
+.BR 5+3 ,
+.BR 0.5+0 ,
+or
+.B 5+0/1+0
+for White/Black time odds.
+.TP
+.BR \-\-replay " \fIfile.pgn\fR"
+Step through the games in a PGN file, choosing one when there are several.
+.TP
+.BR \-\-book " \fIbuiltin\fR|\fIoff\fR|\fIpath.bin\fR"
+The opening book for dchess's engine for this run: the built-in one, none,
+or a Polyglot book.
+.TP
+.B \-\-engines
+List the registered UCI engines and exit.
+.TP
+.BR \-\-fen " \fIFEN\fR"
+Start from this position.
+.TP
+.BR \-m ", " \-\-menu
+Show the launcher even when other options were given.
+.TP
+.B \-\-no\-menu
+Skip the launcher and start at once.
+.TP
+.BR \-\-theme " \fIname\fR"
+The colour theme:
+.BR gruvbox " (default), " tokyonight ", " btop " or " catppuccin .
+.TP
+.BR \-s ", " \-\-stats
+Show the statistics page and exit.
+.TP
+.B \-\-puzzles
+Solve puzzles: rated, by theme, a three-minute rush, or the ones you
+missed.
+.TP
+.BR \-V ", " \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print the options and exit.
+.SH KEYS
+.SS Game
+.TP
+.BR h " " j " " k " " l ", arrows"
+Move the cursor.
+.TP
+.B Enter
+Pick up a piece, then play it to the cursor.
+A pawn reaching the last rank asks for the piece:
+.BR q " " r " " b " " n ,
+Enter for a queen, Esc to take the move back.
+.TP
+.B Esc
+Put the piece back.
+.TP
+.B i
+Type a move
+.RB ( e2e4 )
+or a command
+.RB ( go ", " stop ", " new ", " undo ", " flip ", " swap ", " pgn ", " fen ", " help ,
+and more).
+.TP
+.B a
+Analysis on or off.
+.TP
+.B u
+Take back a move.
+.TP
+.B Space
+Pause or resume; in a timed game this freezes both clocks.
+.TP
+.B Tab
+A statistics popup.
+.SS Launcher
+.TP
+.BR "\(ua \(da \(<- \(->"
+Move between rows, change a value.
+.TP
+.B Tab
+Profiles, the new game, your card.
+.TP
+.BR n " " r " " d
+New, rename, delete a profile.
+.TP
+.B Enter
+Start, or replay the game selected on your card.
+.TP
+.BR z " " e " " s " " Esc
+Puzzles, engines, statistics, quit.
+.SS Puzzles
+.TP
+.BR Enter ", " i
+Play a move by cursor, or type it
+.RB ( Nf3 " or " g1f3 ).
+.TP
+.BR ? " " s
+A hint, or the solution; either counts as a miss.
+.TP
+.BR n " " r " " Esc
+The next puzzle, this one again, back to the menu.
+.SS Replay
+.TP
+.BR "\(<- \(->" ", Home, End"
+Step, or jump to the start or the end.
+.TP
+.B Space
+Play the moves one a second.
+.TP
+.BR a " " r " " n " " N
+Analysis, review every move, the next or previous marked move.
+.TP
+.B p
+Play on from this position.
+.SH FILES
+.TP
+.I ~/.config/dchess/profiles.conf
+Profiles and their remembered setup.
+.TP
+.I ~/.config/dchess/engines.conf
+Registered UCI engines.
+.TP
+.I ~/.local/share/dchess/games.pgn
+Every finished game, as PGN.
+.TP
+.I ~/.local/share/dchess/puzzles/\fIprofile\fP.txt
+A profile's puzzle rating, streaks, and seen and missed puzzles.
+.PP
+The two configuration files follow
+.B XDG_CONFIG_HOME
+when it is set.
+.SH UCI
+.B dchess \-\-uci
+understands
+.BR uci ", " isready ", " ucinewgame ", " position ", " go
+(with
+.BR wtime ", " btime ", " winc ", " binc ", " movetime ", " depth ", " infinite ),
+.BR stop " and " quit ,
+reports
+.B info
+lines as it searches, and has one option,
+.BR OwnBook .
+.SH SEE ALSO
+The guide and the project journal:
+.I https://github.com/DDumbying/dchess
+.SH AUTHOR
+The dchess project,
+.IR https://github.com/DDumbying/dchess .

@@ -9,6 +9,7 @@
 #include "utils/cli.h"
 #include "utils/constants.h"
 #include "utils/stats.h"
+#include "utils/version.h"
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdlib.h>

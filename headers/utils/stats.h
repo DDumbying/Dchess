@@ -4,8 +4,6 @@
 /* Persisted to ~/.local/share/dchess/stats.dat as a plain binary struct
  * behind a versioned magic header. */
 
-#define DCHESS_VERSION "1.0.0-alpha"
-
 /* Maximum number of individual game records kept for the history graph */
 #define DCHESS_MAX_HISTORY 256
 

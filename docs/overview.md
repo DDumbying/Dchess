@@ -755,6 +755,24 @@ they surfaced.
 - **Tests** for each of these, plus a genfens test that runs the real
   binary against the fake engine, crashing and silent.
 
+### Round 14 — v1.0.0
+
+dchess is now something you can install like any Unix program.
+
+- **One version,** in `headers/utils/version.h`: `--version`, the UCI
+  `id name` and the man page all read it.
+- **`make install` / `make uninstall`,** with `PREFIX` and `DESTDIR`: the
+  binary, a man page (`man 6 dchess`), the docs and the license.
+  Uninstalling removes exactly those files; profiles and games are never
+  touched.
+- **Kept in step by tests:** one checks that the man page names every
+  option `--help` prints and renders without warnings; another installs
+  into a scratch directory and uninstalls again.
+- **CHANGELOG.md,** from this journal, and **CI** on every push and pull
+  request, with warnings as errors.
+- **An Arch package** (`packaging/aur/`), built and checked locally with
+  `makepkg` (its `check()` runs the whole suite).
+
 ## 4. Current architecture
 
 ```

@@ -12,6 +12,7 @@
 #include "game/game.h"
 #include "engine/move.h"
 #include "utils/bitboard.h"
+#include "utils/version.h"
 
 static int failures = 0;
 static int to_engine, from_engine;
@@ -95,6 +96,8 @@ int main(void)
 
     printf("== handshake ==\n");
     send("uci");
+    check("the engine names itself with the version", expect("id name", 2000, line, sizeof(line)) &&
+                                                     !strcmp(line, "id name dchess " DCHESS_VERSION));
     check("uci is answered with uciok", expect("uciok", 2000, NULL, 0));
     send("isready");
     check("isready with readyok", expect("readyok", 2000, NULL, 0));
