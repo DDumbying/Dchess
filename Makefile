@@ -55,6 +55,13 @@ build/tune: tools/tune.c tools/tune_core.c $(CORE_SRC) $(HEADERS) | build
 tune: build/tune
 	./build/tune $(ARGS)
 
+build/mkpuzzles: tools/mkpuzzles.c $(CORE_SRC) $(HEADERS) | build
+	$(CC) $(CFLAGS) $< $(CORE_SRC) -o $@ $(LDFLAGS)
+
+# The bundled puzzle set, from the Lichess puzzle CSV (database.lichess.org)
+puzzles: build/mkpuzzles
+	./build/mkpuzzles --csv $(CSV) --out src/game/puzzles_data.c
+
 build/genfens: tools/genfens.c $(CORE_SRC) $(HEADERS) | build
 	$(CC) $(CFLAGS) $< $(CORE_SRC) -o $@ $(LDFLAGS)
 
@@ -72,4 +79,4 @@ clean:
 	rm -f $(TARGET)
 	rm -rf build
 
-.PHONY: all test bench match genfens tune clean
+.PHONY: all test bench match genfens tune puzzles clean
