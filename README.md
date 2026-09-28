@@ -3,6 +3,8 @@
 
 **A terminal chess engine written in C.**
 
+[![test](https://github.com/DDumbying/dchess/actions/workflows/test.yml/badge.svg)](https://github.com/DDumbying/dchess/actions/workflows/test.yml)
+
 One of these nerdy things built out of passion — to actually understand how `C` works and how chess works technically, under the hood.
 
 **Links:** [GitHub](https://github.com/ddumbying/) · [User guide](docs/guide.md) · [Project journal](docs/overview.md) · ~[Documentation](https://ddumbying.vercel.app/projects/dchess/)~ (*WIP*) </br>
@@ -113,6 +115,18 @@ make          # needs ncursesw and a C compiler
 `make test` runs the test suites. The first start greets you with a name and
 theme; after that `dchess` opens the launcher. Pass any gameplay flag
 (`--no-menu`, `--color`, `--white`, …) to skip it.
+
+### Installing
+
+```bash
+make && sudo make install         # /usr/local/bin/dchess, and `man 6 dchess`
+sudo make uninstall               # removes exactly what install put there
+make PREFIX=~/.local install      # or just for you
+```
+
+Your profiles and games (`~/.config/dchess`, `~/.local/share/dchess`) are
+never touched by either. An Arch (AUR) package is on its way; the
+[changelog](CHANGELOG.md) lists what each release brings.
 
 The [user guide](docs/guide.md) walks through everything in more depth:
 engines, time controls, analysis and review, replays, profiles and the files
