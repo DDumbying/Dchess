@@ -11,6 +11,7 @@ the short version and the full key and command lists; the
 - [The opening book](#the-opening-book)
 - [Analysis and game review](#analysis-and-game-review)
 - [Replays](#replays)
+- [Puzzles](#puzzles)
 - [Profiles, history and stats](#profiles-history-and-stats)
 - [Files](#files)
 - [dchess in other programs (UCI)](#dchess-in-other-programs-uci)
@@ -173,6 +174,45 @@ annotation glyphs, `0-0` and `o-o`, `e8=Q`, `e.p.`, CRLF files, and files of
 bare moves with no tags. A move it cannot read stops that game there with
 "stopped at move N".
 
+## Puzzles
+
+`z` in the launcher, or `dchess --puzzles` (with `--profile NAME` to solve as
+someone else), opens the puzzles menu:
+
+- **Rated:** puzzles near your rating, never repeated until you have seen
+  them all.
+- **Themes:** one kind at a time — mate in 1, 2 or 3, longer mates, forks,
+  pins, skewers, discovered attacks, hanging pieces, sacrifices, endgames,
+  promotions, back-rank mates, defence. Unrated.
+- **Rush:** three minutes, starting easy and getting harder with each solve.
+  Three mistakes end the run. Your best score is kept.
+- **Missed:** the rated puzzles you got wrong, oldest first. A clean solve
+  takes one off the list.
+
+The opponent's move is played first; you then find the best reply. A move is
+right if it is the puzzle's move or any move that mates. The opponent's
+answers play themselves. A wrong move is taken back and tinted red; you may
+keep trying, but the puzzle counts as missed.
+
+Keys: move by cursor (⏎ twice) or type it after `i` (`Nf3` or `g1f3`); `?`
+tints the piece to move, `s` shows the solution — both count as a miss, and
+end a Rush run; `n` moves on (an unfinished rated puzzle counts as a miss),
+`r` tries it again (unrated), Esc goes back to the menu.
+
+**The rating** starts at 1500 and moves like Elo against the puzzle's
+Lichess rating: by up to 40 points a puzzle for your first 20, then 20. It
+never drops below 400. Once a puzzle is over, the panel shows its rating,
+themes and its Lichess page. Everything is kept per profile in
+`~/.local/share/dchess/puzzles/<profile>.txt`. Renaming a profile keeps it;
+deleting one deletes it.
+
+**The set** is about 3200 puzzles from the
+[Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0),
+built into dchess. `make puzzles CSV=lichess_db_puzzle.csv` rebuilds it from
+the full CSV: popular, often-played puzzles with settled ratings, 140 per
+100 points from 600 to 2899, every theme represented, each checked with
+dchess's own move generator.
+
 ## Profiles, history and stats
 
 Each profile keeps its own remembered setup (players, clock, book, analysis
@@ -198,6 +238,7 @@ another profile for one run.
 | `~/.config/dchess/profiles.conf` | profiles and their remembered setup |
 | `~/.config/dchess/engines.conf` | registered UCI engines |
 | `~/.local/share/dchess/games.pgn` | every finished game |
+| `~/.local/share/dchess/puzzles/<profile>.txt` | a profile's puzzle rating and history |
 | `~/.local/share/dchess/stats.dat` | stats from before profiles, imported once |
 
 The config files follow `XDG_CONFIG_HOME` when it is set. All of them are

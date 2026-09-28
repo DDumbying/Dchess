@@ -57,6 +57,15 @@ and the recent games — any of which opens as a replay.
   board) and the line the engine expects, from dchess or a UCI engine
 - A game review marks inaccuracies, mistakes and blunders in any replay
 
+**Puzzles**
+- About 3200 puzzles from the Lichess puzzle database (CC0), rated 600–2900,
+  built in, so they work offline
+- Rated puzzles near your rating, themed practice (mates in 1–3, forks, pins,
+  skewers, endgames, …), a three-minute Rush, and a list of the ones you
+  missed to try again
+- A hint or the whole solution when you're stuck; your rating, streak and
+  best Rush are kept on your profile
+
 **Profiles, history and stats**
 - A first-run welcome, then profiles that each keep their own history and
   remembered setup (players, clock, book, analysis engine, theme)
@@ -138,6 +147,7 @@ OPTIONS
   --theme <name>                  Color theme: gruvbox | tokyonight | btop | catppuccin
                                    (default: gruvbox)
   -s, --stats                     Show statistics in a full TUI screen and exit
+  --puzzles                       Solve puzzles (also z in the launcher)
   --uci                           Run as a UCI engine on stdin/stdout
   -V, --version                   Print version and exit
   -h, --help                      Show help and exit
@@ -155,6 +165,7 @@ EXAMPLES
   dchess --white "Stockfish 1500" --black hard
                                   A registered UCI engine against dchess
   dchess --stats                  View your stats
+  dchess --puzzles                Solve puzzles
 ```
 
 ## Controls
@@ -202,7 +213,14 @@ resign · quit      resign for the human side · leave
 Tab                profiles → new game → your card
 n · r · d          new · rename · delete a profile
 ⏎                  start (or replay the game selected on your card)
-e · s · Esc        engines screen · stats · quit
+z · e · s · Esc    puzzles · engines screen · stats · quit
+```
+
+**Puzzles**
+```
+⏎ / i + move       play a move by cursor, or type it (Nf3 or g1f3)
+? · s              hint (the piece to move) · show the solution
+n · r · Esc        next puzzle · retry this one · back to the menu
 ```
 
 **Replay**
@@ -222,6 +240,7 @@ Esc                back
 | `~/.config/dchess/engines.conf` | registered UCI engines |
 | `~/.local/share/dchess/games.pgn` | every finished game, standard PGN |
 | `~/.local/share/dchess/stats.dat` | pre-profile stats, imported on first run |
+| `~/.local/share/dchess/puzzles/<profile>.txt` | a profile's puzzle rating, streaks, seen and missed puzzles |
 
 The two config files follow `XDG_CONFIG_HOME` when it is set.
 
